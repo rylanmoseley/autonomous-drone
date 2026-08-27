@@ -48,7 +48,7 @@ This section outlines the 6 core subsystems, their responsibilities, interaction
 * **Overview**: Processes camera feed to identify shapes and determine the drone's position, calculating where the drone should move next.
 * **Hardware**: Raspberry Pi CM4 + Global Shutter Camera.
 * **Interactions**:
-    * **FCU**: Sends movement commands (velocity/position setpoints) over UART.
+    * **FCU**: Sends 3D displacement vectors and the identified shape sequence over UART.
     * **Power**: Requires stable 5V from the BMS/PDB.
 * **Research Notes**: The CM4 is powerful but heavy and power-hungry. To meet the <250g requirement, a custom, ultra-light carrier board is likely mandatory. If SLAM proves too heavy, consider falling back to a Raspberry Pi Zero 2 W for simple shape detection and relying on dead-reckoning. 
 * **Interaction Note**: UART comms between CM4 and ESP32 should not use raw strings. Recommend **COBS** framing with **Nanopb** or a packed C-struct.
