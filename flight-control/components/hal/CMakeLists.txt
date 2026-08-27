@@ -1,1 +1,7 @@
-idf_component_register(INCLUDE_DIRS "include")
+if(COMMAND idf_component_register)
+    idf_component_register(INCLUDE_DIRS "include" REQUIRES units_lib)
+else()
+    add_library(hal INTERFACE)
+    target_include_directories(hal INTERFACE include)
+    target_link_libraries(hal INTERFACE units_lib)
+endif()

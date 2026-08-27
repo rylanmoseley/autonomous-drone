@@ -17,6 +17,10 @@ void MockMotors::init() {
     std::cout << "[MockMotors] Initialized." << std::endl;
 }
 
-void MockMotors::set_throttle(int motor_index, float percentage) {
+void MockMotors::set_torque(int motor_index, units::torque::newton_meter_t output) {
     // Intentionally empty to avoid spamming the console at 100Hz
+}
+
+units::angular_velocity::revolutions_per_minute_t MockMotors::get_rpm(int motor_index) {
+    return units::angular_velocity::revolutions_per_minute_t(0.0);
 }
