@@ -4,6 +4,8 @@ project(desktop_sim)
 set(CMAKE_CXX_STANDARD 17)
 
 # Include the control system library natively
+add_subdirectory(../components/units_lib units_lib_build)
+add_subdirectory(../components/eigen_lib eigen_lib_build)
 add_subdirectory(../components/control_system control_system_build)
 
 add_executable(sim_main main.cpp mock_hardware.cpp)
