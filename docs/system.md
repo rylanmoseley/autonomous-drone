@@ -9,13 +9,13 @@ The drone must fly indoors in a stable and controllable way. It must read from s
 The drone must be capable of a hands-off demonstration workflow: Power-on -> show shape pattern to the drone (initiation method at group's discretion) -> drone executes the pattern autonomously. 
 
 ### 4. Autonomous Navigation
-The drone must be able to move autonomously to the shapes, in the order they are shown. Because direct control will only be done in low-stakes environments, the drone must remain stable under heavy RF interference by relying on this autonomy.
+The drone must be able to move autonomously to trace the shapes, in the order they are shown. This must be possible without any external connection.
 
 ## Implicit and Optional Requirements
 ### 5. Flight Time
 The drone's battery must last long enough to complete the flight. A drone of this size, with these capabilities should be able to run for 5-10 minutes?
 ### 6. Flight Telemetry & Comms
-The drone should report live, useful telemetry data to a computer for diagnostics, as well as record to an SD card. The demonstration room may have heavy RF interference from concurrent demos. The telemetry system must be stable under these conditions.
+The drone should report (optional) live, useful telemetry data to a computer for diagnostics, as well as record to an SD card. The demonstration room may have heavy RF interference from concurrent demos. The telemetry system must be stable under these conditions.
 ### 7. Software Simulation
 The drone's Flight Control firmware should be able to be run in a desktop simulation environment, for testing and hardware-independant development.
 ### 8. Localization/SLAM - Optional
@@ -28,25 +28,25 @@ The drone will operate in classroom or ballroom lighting. The floor and wall sur
 ### 10. Safety & Failsafes
 The drone must support two primary failsafe states: "stop immediately" (disarm motors) and "land immediately". These states must be invokable by the base station. Because of potential RF interference, an additional, highly resilient mechanism for emergency stop should be explored.
 
-## Subsystems & Handoff Notes
+## Subsystems
 
-This section outlines the 6 core subsystems, their responsibilities, interactions, and current research considerations. (Role assignments are currently generic).
+This section outlines the 6 core subsystems, their responsibilities, interactions, and current research considerations.
 
 ### 1. Flight Controller (FCU)
 * **Domain**: Firmware, Core Logic, Integration, Telemetry
 * **Overview**: The central brain for flight stability. Reads sensor data, computes PID loops, and sends throttle commands to the ESCs.
-* **Hardware**: ESP32-S3 (Dual-core allows separation of control loops and comms).
+* **Hardware Candidate**: ESP32-S3 (Dual-core allows separation of control loops and comms) or other embedded MCU.
 * **Interactions**:
     * **Sensors**: Reads IMU and ToF/LiDAR via I2C/SPI.
-    * **Motors/ESCs**: Outputs CAN or UART signals for FOC.
+    * **Motors/ESCs**: Outputs CAN or UART signals, or possibly PWM.
     * **Vision Processor**: Receives navigation setpoints via UART.
-    * **Ground Station**: Sends telemetry via Wi-Fi/ESP-NOW.
-* **Research Notes**: Firmware is being developed with a Hardware Abstraction Layer (HAL) to allow for desktop SITL (Software-In-The-Loop) simulation before physical hardware arrives.
+    * **Ground Station**: Sends telemetry via Wi-Fi/ESP-NOW/low-bandwidth radio.
+* **Research Notes**: Firmware should be developed with a Hardware Abstraction Layer (HAL) to allow for desktop SITL (Software-In-The-Loop) simulation before physical hardware arrives.
 
 ### 2. Vision Processor
 * **Domain**: Image Recognition, SLAM, Autonomous Navigation Setpoints
 * **Overview**: Processes camera feed to identify shapes and determine the drone's position, calculating where the drone should move next.
-* **Hardware**: Raspberry Pi CM4 + Global Shutter Camera.
+* **Hardware Candidate**: Raspberry Pi CM4 + Global Shutter Camera, or similar vision processor.
 * **Interactions**:
     * **FCU**: Sends 3D displacement vectors and the identified shape sequence over UART.
     * **Power**: Requires stable 5V from the BMS/PDB.
@@ -66,7 +66,7 @@ This section outlines the 6 core subsystems, their responsibilities, interaction
 * **Interactions**:
     * **FCU**: Receives throttle/velocity signals via **CAN** or **UART**.
     * **Power**: Draws high current directly from the battery/BMS.
-* **Research Notes**: Given the 250g weight limit and 5-10 minute flight time requirement, a commercial **CAN/UART FOC (Field-Oriented Control) BLDC 4-in-1 ESC** is highly recommended. Designing custom ESCs is time-prohibitive for this project's scope.
+* **Research Notes**: Given the 250g weight limit and 5-10 minute flight time requirement, a commercial **CAN/UART FOC (Field-Oriented Control) BLDC 4-in-1 ESC** is highly recommended. A custom CAN / FOC BLDC ESC is pretty complex but not impossible.
 
 ### 5. Battery & Power Distribution (BMS/PDB)
 * **Domain**: Power Management
