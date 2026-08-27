@@ -2,7 +2,7 @@
 
 ## Project Requirements
 ### 1. Maximum Weight 250g
-The drone must be small ($\le$250 grams). It must be sturdy enough to fly reliably.
+The drone must be small ( $\le$ 250 grams). It must be sturdy enough to fly reliably.
 ### 2. Drone Flight
 The drone must fly indoors in a stable and controllable way. It must read from sensors (IMU, distance to ground) and output via rotor-attached motors.
 ### 3. Image Recognition
