@@ -2,14 +2,14 @@
 
 ## Project Requirements
 ### 1. Maximum Weight 250g
-The drone must be small ( $\le$ 250 grams). It must be sturdy enough to fly reliably.
+The drone must be small ( $\lt$ 250 grams). It must be sturdy enough to fly reliably.
 ### 2. Drone Flight
 The drone must fly indoors in a stable and controllable way. It must read from sensors (IMU, distance to ground) and output via rotor-attached motors.
 ### 3. Image Recognition & Autonomy Workflow
 The drone must be capable of a hands-off demonstration workflow: Power-on -> show shape pattern to the drone (initiation method at group's discretion) -> drone executes the pattern autonomously. 
 
 ### 4. Autonomous Navigation
-The drone must be able to move autonomously to trace the shapes, in the order they are shown. This must be possible without any external connection.
+The drone must be able to move autonomously to go through the goals, in the order they are shown. This must be possible without any external connection.
 
 ## Implicit and Optional Requirements
 ### 5. Flight Time

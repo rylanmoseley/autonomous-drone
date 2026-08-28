@@ -1,5 +1,12 @@
 # autonomous-drone
-capstone design group project
+A University of Kentucky Electrical and Computer Engineering Capstone Group Design Project
+
+## Project Task: "Autonomous Drone"
+- Design and build an autonomous indoor drone
+- Less than 250gram
+- Recognize circle, triangle, square symbols
+- Recognize which orders these are
+- Fly autonomousl through goals of the shapes shown in the order they are shown
 
 ## Project Layout
 ```
@@ -18,6 +25,8 @@ docs/
 		docs and progress updates for the Sensor Processing System
 	vision-processor/
 		docs and progress updates for the Vision Processing System
+	system-diagram.excalidraw
+		excalidraw (virtual whiteboard) system diagram
 	system.md
 		system overview and documentation
 flight-control/
