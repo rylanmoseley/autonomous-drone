@@ -1,0 +1,11 @@
+- Apriltag goal detection
+    - good for finding a specific target
+    - gives highly specific and accurate position offset data
+- SLAM vision localization
+- OpenCV to detect goal sequence
+- binary format logging, with post-processor for optimization
+    - desktop simulation log ingestion for log replay debugger tools
+- wireless camera feed stream
+    - may require wireless-capable vision coprocessor
+    - not really viable otherwise
+    
