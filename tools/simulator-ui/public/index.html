@@ -290,6 +290,14 @@
             }
         }
         setInterval(fetchTelemetry, 33);
+        
+        // Command State (Consumer RC style)
+        let rcState = {
+            throttle: 0,
+            yaw: 0,
+            pitch: 0,
+            roll: 0
+        };
 
         // Send commands at 20Hz to prevent network flooding/lag
         const sendCommand = async () => {
@@ -297,47 +305,89 @@
                 await fetch('command', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(cmdState)
+                    body: JSON.stringify(rcState)
                 });
+                
+                // Update UI visually
+                document.getElementById('rc-throttle').textContent = rcState.throttle.toFixed(2);
+                document.getElementById('rc-yaw').textContent = rcState.yaw.toFixed(2);
+                document.getElementById('rc-pitch').textContent = rcState.pitch.toFixed(2);
+                document.getElementById('rc-roll').textContent = rcState.roll.toFixed(2);
             } catch(e) {}
         };
         setInterval(sendCommand, 50);
 
-        // Build Sliders
-        const sliderContainer = document.getElementById('command-sliders');
-        ['lx', 'ly', 'lz', 'ax', 'ay', 'az'].forEach(key => {
-            const row = document.createElement('div');
-            row.className = 'row';
-            
-            const lbl = document.createElement('label');
-            lbl.textContent = key;
-            
-            const input = document.createElement('input');
-            input.type = 'range';
-            input.min = -1;
-            input.max = 1;
-            input.step = 0.01;
-            input.value = 0;
-            
-            const valSpan = document.createElement('span');
-            valSpan.textContent = '0.00';
-            
-            input.addEventListener('input', (e) => {
-                const val = parseFloat(e.target.value);
-                valSpan.textContent = val.toFixed(2);
-                cmdState[key] = val;
-            });
-            
-            row.appendChild(lbl);
-            row.appendChild(input);
-            row.appendChild(valSpan);
-            sliderContainer.appendChild(row);
+        // Keyboard Controls (Mode 2)
+        // W/S: Throttle, A/D: Yaw
+        // Up/Down: Pitch, Left/Right: Roll
+        
+        const keys = {
+            w: false, s: false, a: false, d: false,
+            ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false
+        };
+
+        window.addEventListener('keydown', (e) => {
+            if (keys.hasOwnProperty(e.key)) keys[e.key] = true;
         });
+        window.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.key)) keys[e.key] = false;
+        });
+        
+        // Control loop for keyboard -> RC State
+        setInterval(() => {
+            const step = 0.05;
+            const decay = 0.9; // spring to center for everything except throttle
+            
+            // Throttle (No spring to center)
+            if (keys.w) rcState.throttle = Math.min(1.0, rcState.throttle + step);
+            else if (keys.s) rcState.throttle = Math.max(0.0, rcState.throttle - step);
+            
+            // Yaw
+            if (keys.a) rcState.yaw = Math.max(-1.0, rcState.yaw - step);
+            else if (keys.d) rcState.yaw = Math.min(1.0, rcState.yaw + step);
+            else rcState.yaw *= decay;
+            
+            // Pitch (Forward/Back)
+            if (keys.ArrowUp) rcState.pitch = Math.max(-1.0, rcState.pitch - step); // Nose down (Wait, standard Pitch mapping: stick forward = nose down. Let's just say positive pitch = move forward, so stick up = positive)
+            else if (keys.ArrowDown) rcState.pitch = Math.min(1.0, rcState.pitch + step);
+            else rcState.pitch *= decay;
+            
+            // Roll (Left/Right)
+            if (keys.ArrowLeft) rcState.roll = Math.max(-1.0, rcState.roll - step);
+            else if (keys.ArrowRight) rcState.roll = Math.min(1.0, rcState.roll + step);
+            else rcState.roll *= decay;
+            
+            // Fix small float errors
+            if (Math.abs(rcState.yaw) < 0.01) rcState.yaw = 0;
+            if (Math.abs(rcState.pitch) < 0.01) rcState.pitch = 0;
+            if (Math.abs(rcState.roll) < 0.01) rcState.roll = 0;
+
+        }, 33);
+        
+        // Build RC Display
+        const uiContainer = document.getElementById('command-sliders');
+        uiContainer.innerHTML = `
+            <div style="margin-bottom: 10px; font-weight: bold;">Keyboard Controls (Mode 2)</div>
+            <div style="display: flex; gap: 20px;">
+                <div>
+                    <div><strong>Left Stick</strong></div>
+                    <div>W / S (Throttle): <span id="rc-throttle">0.00</span></div>
+                    <div>A / D (Yaw): <span id="rc-yaw">0.00</span></div>
+                </div>
+                <div>
+                    <div><strong>Right Stick</strong></div>
+                    <div>Up / Down (Pitch): <span id="rc-pitch">0.00</span></div>
+                    <div>Left / Right (Roll): <span id="rc-roll">0.00</span></div>
+                </div>
+            </div>
+            <button id="btn-zero" style="margin-top:10px;">Emergency Stop (Zero Throttle)</button>
+        `;
 
         document.getElementById('btn-zero').addEventListener('click', () => {
-            Object.keys(cmdState).forEach(k => cmdState[k] = 0);
-            sliderContainer.querySelectorAll('input[type="range"]').forEach(inp => { inp.value = 0; });
-            sliderContainer.querySelectorAll('span').forEach(sp => { sp.textContent = '0.00'; });
+            rcState.throttle = 0;
+            rcState.yaw = 0;
+            rcState.pitch = 0;
+            rcState.roll = 0;
         });
 
         // --- Rotor Configuration GUI Logic ---

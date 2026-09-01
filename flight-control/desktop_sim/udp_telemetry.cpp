@@ -1,4 +1,5 @@
 #include "udp_telemetry.h"
+#include "control_system/rc_translator.h"
 #include "third_party/json.hpp"
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -112,12 +113,15 @@ bool UdpTelemetry::poll_commands(Config::DroneHardwareConfig& out_config, Comman
                 }
                 config_updated = true;
             } else if (j["type"] == "command") {
-                if (j["data"].contains("lx")) out_cmd.lx = j["data"]["lx"].get<float>();
-                if (j["data"].contains("ly")) out_cmd.ly = j["data"]["ly"].get<float>();
-                if (j["data"].contains("lz")) out_cmd.lz = j["data"]["lz"].get<float>();
-                if (j["data"].contains("ax")) out_cmd.ax = j["data"]["ax"].get<float>();
-                if (j["data"].contains("ay")) out_cmd.ay = j["data"]["ay"].get<float>();
-                if (j["data"].contains("az")) out_cmd.az = j["data"]["az"].get<float>();
+                // Parse consumer RC inputs
+                RCState rc;
+                if (j["data"].contains("throttle")) rc.throttle = j["data"]["throttle"].get<float>();
+                if (j["data"].contains("yaw")) rc.yaw = j["data"]["yaw"].get<float>();
+                if (j["data"].contains("pitch")) rc.pitch = j["data"]["pitch"].get<float>();
+                if (j["data"].contains("roll")) rc.roll = j["data"]["roll"].get<float>();
+                
+                // Use the firmware software layer to translate RC to 6D control vector
+                out_cmd = RCTranslator::translate(rc);
             }
         } catch (...) {
             // Silently ignore parse errors for UDP packets
