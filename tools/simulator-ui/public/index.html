@@ -116,6 +116,8 @@
         const velocityArrow = new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,0), 0, 0x00ff00);
         scene.add(velocityArrow);
 
+        let chaseCamera = false;
+
         // Resize handler
         window.addEventListener('resize', () => {
             camera.aspect = container.clientWidth / container.clientHeight;
@@ -126,7 +128,20 @@
         // Render loop
         function animate() {
             requestAnimationFrame(animate);
-            controls.update();
+            if (controls.enabled) {
+                controls.update();
+            }
+            
+            if (chaseCamera) {
+                // Calculate position behind the drone
+                // Offset: 0.5m up, 1.5m behind
+                const offset = new THREE.Vector3(0, 0.5, 1.5);
+                offset.applyQuaternion(droneGroup.quaternion);
+                
+                // Smoothly interpolate or just snap camera position
+                camera.position.copy(droneGroup.position).add(offset);
+                camera.lookAt(droneGroup.position);
+            }
             
             // Spin propellers
             rotorMeshes.forEach(group => {
@@ -335,7 +350,7 @@
         
         // Control loop for keyboard -> RC State
         setInterval(() => {
-            const step = 0.05;
+            const step = 0.01;
             const decay = 0.9; // spring to center for everything except throttle
             
             // Throttle (No spring to center)
@@ -380,7 +395,10 @@
                     <div>Left / Right (Roll): <span id="rc-roll">0.00</span></div>
                 </div>
             </div>
-            <button id="btn-zero" style="margin-top:10px;">Emergency Stop (Zero Throttle)</button>
+            <div style="margin-top:10px;">
+                <button id="btn-zero">Emergency Stop (Zero Throttle)</button>
+                <button id="btn-cam" style="margin-left:10px;">Toggle Chase Camera</button>
+            </div>
         `;
 
         document.getElementById('btn-zero').addEventListener('click', () => {
@@ -388,6 +406,15 @@
             rcState.yaw = 0;
             rcState.pitch = 0;
             rcState.roll = 0;
+        });
+
+        document.getElementById('btn-cam').addEventListener('click', () => {
+            chaseCamera = !chaseCamera;
+            controls.enabled = !chaseCamera;
+            if (!chaseCamera) {
+                // When returning to orbit, reset target to drone position so it doesn't snap weirdly
+                controls.target.copy(droneGroup.position);
+            }
         });
 
         // --- Rotor Configuration GUI Logic ---
