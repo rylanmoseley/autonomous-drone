@@ -123,6 +123,16 @@
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
+            
+            // Spin propellers
+            rotorMeshes.forEach(group => {
+                group.children.forEach(child => {
+                    if (child.userData.isProp) {
+                        child.rotation.y += child.userData.spinSpeed;
+                    }
+                });
+            });
+
             renderer.render(scene, camera);
         }
         animate();
@@ -144,15 +154,50 @@
             if (tel.rotors && rotorMeshes.length !== tel.rotors.length) {
                 rotorMeshes.forEach(m => droneGroup.remove(m));
                 rotorMeshes = [];
-                const rotorGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.02, 16);
-                const rotorMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, transparent: true, opacity: 0.7 });
+                
+                const propGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.005, 16);
+                const propMat = new THREE.MeshStandardMaterial({ color: 0x88ccff, transparent: true, opacity: 0.6 });
+                
+                const motorGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.04, 16);
+                const motorMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+
+                const armMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
                 
                 tel.rotors.forEach(r => {
-                    const mesh = new THREE.Mesh(rotorGeo, rotorMat);
+                    const group = new THREE.Group();
+                    
                     // Map NED offsets to ThreeJS coordinates
-                    mesh.position.set(r.position[0], -r.position[2], r.position[1]);
-                    droneGroup.add(mesh);
-                    rotorMeshes.push(mesh);
+                    const px = r.position[0];
+                    const py = -r.position[2];
+                    const pz = r.position[1];
+                    group.position.set(px, py, pz);
+                    
+                    // Motor
+                    const motor = new THREE.Mesh(motorGeo, motorMat);
+                    motor.position.y = -0.01;
+                    group.add(motor);
+                    
+                    // Propeller
+                    const prop = new THREE.Mesh(propGeo, propMat);
+                    prop.position.y = 0.02;
+                    // Tag the prop so we can spin it in animate loop
+                    prop.userData.isProp = true;
+                    // Fake spin speed/direction based on typical CW/CCW
+                    prop.userData.spinSpeed = (Math.random() * 0.2 + 0.3) * (r.position[0] * r.position[1] > 0 ? 1 : -1); 
+                    group.add(prop);
+
+                    // Arm (Line from center to motor)
+                    const distance = Math.sqrt(px*px + py*py + pz*pz);
+                    const armGeo = new THREE.BoxGeometry(0.02, 0.02, distance);
+                    const arm = new THREE.Mesh(armGeo, armMat);
+                    
+                    // Position arm halfway between center and motor
+                    arm.position.set(-px/2, -py/2, -pz/2);
+                    arm.lookAt(0, 0, 0); // Point back to center
+                    group.add(arm);
+
+                    droneGroup.add(group);
+                    rotorMeshes.push(group);
                 });
             }
         }
