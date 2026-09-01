@@ -279,10 +279,10 @@
 
         // --- Rotor Configuration GUI Logic ---
         let uiRotors = [
-            { x: 0.1, y: 0.1, z: 0, kf: 0.05, km: 0.001, cw: false },
-            { x: -0.1, y: -0.1, z: 0, kf: 0.05, km: 0.001, cw: false },
-            { x: 0.1, y: -0.1, z: 0, kf: 0.05, km: 0.001, cw: true },
-            { x: -0.1, y: 0.1, z: 0, kf: 0.05, km: 0.001, cw: true }
+            { x: 0.1, y: 0.1, z: 0, kf: 0.00001, km: 0.0000002, cw: false },
+            { x: -0.1, y: -0.1, z: 0, kf: 0.00001, km: 0.0000002, cw: false },
+            { x: 0.1, y: -0.1, z: 0, kf: 0.00001, km: 0.0000002, cw: true },
+            { x: -0.1, y: 0.1, z: 0, kf: 0.00001, km: 0.0000002, cw: true }
         ];
 
         const rotorListEl = document.getElementById('rotor-list');
@@ -307,8 +307,8 @@
                         Z:<input type="number" step="0.01" value="${r.z}" onchange="updateRotor(${idx}, 'z', this.value)" style="width: 40px">
                     </div>
                     <div style="display: flex; gap: 4px; font-size: 11px;">
-                        Kf:<input type="number" step="0.01" value="${r.kf}" onchange="updateRotor(${idx}, 'kf', this.value)" style="width: 40px">
-                        Km:<input type="number" step="0.001" value="${r.km}" onchange="updateRotor(${idx}, 'km', this.value)" style="width: 40px">
+                        Kf:<input type="number" step="any" value="${r.kf}" onchange="updateRotor(${idx}, 'kf', this.value)" style="width: 60px">
+                        Km:<input type="number" step="any" value="${r.km}" onchange="updateRotor(${idx}, 'km', this.value)" style="width: 60px">
                         <label><input type="checkbox" ${r.cw ? 'checked' : ''} onchange="updateRotor(${idx}, 'cw', this.checked)"> CW</label>
                     </div>
                 `;
