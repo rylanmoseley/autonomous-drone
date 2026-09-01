@@ -10,19 +10,21 @@ enum class ControlMode {
     EMERGENCY_STOP
 };
 
+// 6D state representation (e.g., 3D Linear + 3D Angular).
+// We use a struct to allow strict typing of the different units (e.g., meters vs radians)
+// while conceptually treating it as a 6D spatial vector.
+struct SpatialState6D {
+    // Depending on the exact control loop, these could represent Position/Attitude or Velocity/Rates.
+    // Assuming Velocity/Rates (Twist) as the most common interface for high-level drone autonomy:
+    Eigen::Matrix<units::velocity::meters_per_second_t, 3, 1> linear;
+    Eigen::Matrix<units::angular_velocity::radians_per_second_t, 3, 1> angular;
+};
+
 struct CommandData {
     units::time::millisecond_t timestamp;
     
     ControlMode mode;
-    
-    // Setpoints (could be velocity, position, or attitude depending on autonomy level)
-    Eigen::Matrix<units::velocity::meters_per_second_t, 3, 1> velocity_setpoint;
-    units::angle::degree_t yaw_setpoint;
-    
-    // Fallback direct overrides (if mode == MANUAL_FALLBACK)
-    units::percentage::percent_t manual_throttle;
-    units::angle::degree_t manual_roll;
-    units::angle::degree_t manual_pitch;
+    SpatialState6D setpoint;
     
     bool is_connected;
 };
@@ -32,7 +34,10 @@ public:
     virtual ~CommandInterface() = default;
     virtual void init() = 0;
     
-    virtual bool update(CommandData& data) = 0;
+    // Polled by the internal flight loop.
+    // Takes in the current Process Variable (PV) to send back to the higher-order controller (telemetry),
+    // and populates `new_command` with the latest desired setpoint (from autonomy or manual fallback).
+    virtual bool update(const SpatialState6D& current_pv, CommandData& new_command) = 0;
 };
 
 } // namespace HAL
