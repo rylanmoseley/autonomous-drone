@@ -49,6 +49,14 @@ void MockMotors::set_speed(int motor_id, units::angular_velocity::revolutions_pe
     }
 }
 
+void MockMotors::set_throttle(int motor_id, float percentage) {
+    if (engine_) {
+        // Map 0-1 percentage to 0-10000 RPM (or whatever max RPM is configured in the engine)
+        units::angular_velocity::revolutions_per_minute_t speed(percentage * 10000.0f);
+        engine_->set_motor_output(motor_id, units::torque::newton_meter_t(0), speed);
+    }
+}
+
 units::angular_velocity::revolutions_per_minute_t MockMotors::get_speed(int motor_id) {
     return units::angular_velocity::revolutions_per_minute_t(0.0);
 }

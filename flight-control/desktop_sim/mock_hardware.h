@@ -23,6 +23,7 @@ public:
     void init() override;
     void set_torque(int motor_id, units::torque::newton_meter_t output) override;
     void set_speed(int motor_id, units::angular_velocity::revolutions_per_minute_t speed) override;
+    void set_throttle(int motor_id, float percentage) override;
 
     units::angular_velocity::revolutions_per_minute_t get_speed(int motor_id) override;
     units::current::ampere_t get_current(int motor_id) override;
