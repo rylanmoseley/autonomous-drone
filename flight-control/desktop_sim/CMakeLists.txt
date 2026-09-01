@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.16...4.5)
+set(CMAKE_POLICY_VERSION_MINIMUM "3.5" CACHE STRING "Minimum policy version for 3rd party deps")
 project(desktop_sim)
 
 set(CMAKE_CXX_STANDARD 17)

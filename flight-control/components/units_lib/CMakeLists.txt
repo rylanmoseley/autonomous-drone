@@ -1,3 +1,6 @@
+# Tell CMake 4.x to forgive older dependencies that specify < 3.5 minimums
+set(CMAKE_POLICY_VERSION_MINIMUM "3.5" CACHE STRING "Minimum policy version for 3rd party deps")
+
 include(FetchContent)
 
 FetchContent_Declare(
