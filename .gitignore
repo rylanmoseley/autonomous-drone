@@ -1,0 +1,36 @@
+# CMake and Build Artifacts
+build/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Makefile
+cmake_install.cmake
+install/
+Testing/
+_deps/
+*.elf
+*.bin
+*.map
+*.o
+*.a
+
+# ESP-IDF specific
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+bootloader/
+partition_table/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

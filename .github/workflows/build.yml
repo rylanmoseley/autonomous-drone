@@ -1,0 +1,42 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-desktop-sim:
+    name: Build Desktop Simulator
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ make
+
+      - name: Configure CMake
+        run: cmake -B flight-control/desktop_sim/build -S flight-control/desktop_sim
+
+      - name: Build Desktop Simulation
+        run: cmake --build flight-control/desktop_sim/build --parallel 4
+
+  build-firmware:
+    name: Build ESP32 Firmware
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:release-v5.1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure Git to trust the workspace
+        run: git config --global --add safe.directory /__w/autonomous-drone/autonomous-drone
+
+      - name: Build Firmware
+        working-directory: flight-control
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py build
