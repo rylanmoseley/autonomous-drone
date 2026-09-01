@@ -220,7 +220,12 @@
                     <div><b>Current:</b> ${data.current_draw.toFixed(2)}A</div>
                     <div><b>Consumed:</b> ${data.consumed_capacity.toFixed(2)}mAh</div>
                 `;
-            } catch (e) {}
+            } catch (e) {
+                // Log once every couple seconds to avoid spamming the console 30 times a second
+                if (Math.random() < 0.02) {
+                    console.error("Telemetry fetch/parse error:", e);
+                }
+            }
         }
         setInterval(fetchTelemetry, 33);
 

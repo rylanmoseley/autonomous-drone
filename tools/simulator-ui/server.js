@@ -50,19 +50,19 @@ udpServer.on("message", (msg, rinfo) => {
 });
 
 // HTTP fallback for strict proxies (like VS Code server)
-app.get('/telemetry', (req, res) => {
+app.get('*/telemetry', (req, res) => {
     res.json(latestTelemetry);
 });
 
 // Command fallback
 app.use(express.json());
-app.post('/command', (req, res) => {
+app.post('*/command', (req, res) => {
     const msg = Buffer.from(JSON.stringify({ type: "command", data: req.body }));
     udpClient.send(msg, UDP_SEND_PORT, C_PLUS_PLUS_IP);
     res.sendStatus(200);
 });
 
-app.post('/config', (req, res) => {
+app.post('*/config', (req, res) => {
     const msg = Buffer.from(JSON.stringify({ type: "config", data: req.body }));
     udpClient.send(msg, UDP_SEND_PORT, C_PLUS_PLUS_IP);
     res.sendStatus(200);
