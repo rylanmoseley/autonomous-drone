@@ -53,8 +53,8 @@ void PhysicsEngine::calculate_forces_and_torques(
     out_force.setZero();
     out_torque.setZero();
     
-    // 1. Gravity (Z is down in NED, so gravity is positive Z)
-    out_force(2) = (config_.mass * units::acceleration::meters_per_second_squared_t(9.81)).to<float>();
+    // 1. Gravity (Assume Z-Up coordinate system: gravity is negative Z)
+    out_force(2) = (config_.mass * units::acceleration::meters_per_second_squared_t(-9.81)).to<float>();
     
     // 2. Aerodynamic Drag (Simplified linear drag model)
     out_force(0) -= config_.linear_drag_coefficient * state_.velocity(0);
@@ -149,11 +149,11 @@ void PhysicsEngine::step(units::time::second_t dt) {
     state_.velocity += state_.acceleration * dt_sec;
     state_.position += state_.velocity * dt_sec;
     
-    // Simple ground constraint (NED coordinate system: Z > 0 is underground)
-    if (state_.position(2) > 0.0f) {
+    // Simple ground constraint (Z-Up coordinate system: Z < 0 is underground)
+    if (state_.position(2) < 0.0f) {
         state_.position(2) = 0.0f; // Rest on ground
         
-        if (state_.velocity(2) > 0.0f) {
+        if (state_.velocity(2) < 0.0f) {
             state_.velocity(2) = 0.0f; // Stop falling
             state_.acceleration(2) = 0.0f;
         }
