@@ -47,19 +47,19 @@ PhysicsEngine::TrueState PhysicsEngine::get_true_state() {
 }
 
 void PhysicsEngine::calculate_forces_and_torques(
-    Eigen::Matrix<units::force::newton_t, 3, 1>& out_force, 
-    Eigen::Matrix<units::torque::newton_meter_t, 3, 1>& out_torque) 
+    Eigen::Vector3f& out_force, 
+    Eigen::Vector3f& out_torque) 
 {
     out_force.setZero();
     out_torque.setZero();
     
     // 1. Gravity (Z is down in NED, so gravity is positive Z)
-    out_force(2) = units::force::newton_t((config_.mass * units::acceleration::meters_per_second_squared_t(9.81)).to<float>());
+    out_force(2) = (config_.mass * units::acceleration::meters_per_second_squared_t(9.81)).to<float>();
     
     // 2. Aerodynamic Drag (Simplified linear drag model)
-    out_force(0) -= units::force::newton_t(config_.linear_drag_coefficient * state_.velocity(0).to<float>());
-    out_force(1) -= units::force::newton_t(config_.linear_drag_coefficient * state_.velocity(1).to<float>());
-    out_force(2) -= units::force::newton_t(config_.linear_drag_coefficient * state_.velocity(2).to<float>());
+    out_force(0) -= config_.linear_drag_coefficient * state_.velocity(0);
+    out_force(1) -= config_.linear_drag_coefficient * state_.velocity(1);
+    out_force(2) -= config_.linear_drag_coefficient * state_.velocity(2);
     
     // 3. Rotor forces and torques
     for (size_t i = 0; i < config_.rotors.size(); ++i) {
@@ -72,16 +72,12 @@ void PhysicsEngine::calculate_forces_and_torques(
         Eigen::Vector3f thrust_vec = config_.rotors[i].thrust_axis * thrust_mag;
         
         // Add to total force
-        out_force(0) += units::force::newton_t(thrust_vec(0));
-        out_force(1) += units::force::newton_t(thrust_vec(1));
-        out_force(2) += units::force::newton_t(thrust_vec(2));
+        out_force(0) += thrust_vec(0);
+        out_force(1) += thrust_vec(1);
+        out_force(2) += thrust_vec(2);
         
         // Structural Torque = r x F
-        Eigen::Vector3f position_vec(
-            config_.rotors[i].position(0).to<float>(),
-            config_.rotors[i].position(1).to<float>(),
-            config_.rotors[i].position(2).to<float>()
-        );
+        Eigen::Vector3f position_vec = config_.rotors[i].position;
         Eigen::Vector3f structural_torque = position_vec.cross(thrust_vec);
         
         // Drag Torque (Yaw authority) = k_m * w^2
@@ -92,9 +88,9 @@ void PhysicsEngine::calculate_forces_and_torques(
         // Assuming rotors are mounted perfectly vertically for drag torque (aligned with Z)
         Eigen::Vector3f drag_torque(0.0f, 0.0f, drag_torque_mag * torque_direction);
         
-        out_torque(0) += units::torque::newton_meter_t(structural_torque(0) + drag_torque(0));
-        out_torque(1) += units::torque::newton_meter_t(structural_torque(1) + drag_torque(1));
-        out_torque(2) += units::torque::newton_meter_t(structural_torque(2) + drag_torque(2));
+        out_torque(0) += structural_torque(0) + drag_torque(0);
+        out_torque(1) += structural_torque(1) + drag_torque(1);
+        out_torque(2) += structural_torque(2) + drag_torque(2);
     }
 }
 
@@ -136,39 +132,48 @@ void PhysicsEngine::step(units::time::second_t dt) {
     }
     
     // 2. Calculate sum of forces and torques
-    Eigen::Matrix<units::force::newton_t, 3, 1> total_force;
-    Eigen::Matrix<units::torque::newton_meter_t, 3, 1> total_torque;
+    Eigen::Vector3f total_force;
+    Eigen::Vector3f total_torque;
     calculate_forces_and_torques(total_force, total_torque);
     
     // 3. Integrate Rigid Body Dynamics
     // Linear
     Eigen::Vector3f a(
-        total_force(0).to<float>() / config_.mass.to<float>(),
-        total_force(1).to<float>() / config_.mass.to<float>(),
-        total_force(2).to<float>() / config_.mass.to<float>()
+        total_force(0) / config_.mass.to<float>(),
+        total_force(1) / config_.mass.to<float>(),
+        total_force(2) / config_.mass.to<float>()
     );
     
-    state_.acceleration(0) = units::acceleration::meters_per_second_squared_t(a(0));
-    state_.acceleration(1) = units::acceleration::meters_per_second_squared_t(a(1));
-    state_.acceleration(2) = units::acceleration::meters_per_second_squared_t(a(2));
+    state_.acceleration = a;
     
     state_.velocity += state_.acceleration * dt_sec;
     state_.position += state_.velocity * dt_sec;
     
+    // Simple ground constraint (NED coordinate system: Z > 0 is underground)
+    if (state_.position(2) > 0.0f) {
+        state_.position(2) = 0.0f; // Rest on ground
+        
+        if (state_.velocity(2) > 0.0f) {
+            state_.velocity(2) = 0.0f; // Stop falling
+            state_.acceleration(2) = 0.0f;
+        }
+        
+        // Apply heavy friction/damping when resting on the ground
+        state_.velocity(0) *= 0.9f;
+        state_.velocity(1) *= 0.9f;
+        state_.angular_velocity *= 0.9f;
+        state_.euler_angles(0) *= 0.9f; // Force level roll
+        state_.euler_angles(1) *= 0.9f; // Force level pitch
+    }
+    
     // Angular: I * omega_dot + omega x (I * omega) = tau
-    Eigen::Vector3f tau(total_torque(0).to<float>(), total_torque(1).to<float>(), total_torque(2).to<float>());
-    Eigen::Vector3f omega(
-        state_.angular_velocity(0).to<float>(),
-        state_.angular_velocity(1).to<float>(),
-        state_.angular_velocity(2).to<float>()
-    );
+    Eigen::Vector3f tau = total_torque;
+    Eigen::Vector3f omega = state_.angular_velocity;
     
     // omega_dot = I^-1 * (tau - omega x (I * omega))
     Eigen::Vector3f angular_accel = config_.moment_of_inertia.inverse() * (tau - omega.cross(config_.moment_of_inertia * omega));
     
-    state_.angular_acceleration(0) = units::angular_acceleration::radians_per_second_squared_t(angular_accel(0));
-    state_.angular_acceleration(1) = units::angular_acceleration::radians_per_second_squared_t(angular_accel(1));
-    state_.angular_acceleration(2) = units::angular_acceleration::radians_per_second_squared_t(angular_accel(2));
+    state_.angular_acceleration = angular_accel;
     
     state_.angular_velocity += state_.angular_acceleration * dt_sec;
     
