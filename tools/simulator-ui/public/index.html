@@ -146,10 +146,11 @@
 
         function updateDroneVisuals(tel) {
             if (!tel.position) return;
-            // Convert Z-Up (X-Forward, Y-Right, Z-Up) to Three.js (X-Right, Y-Up, Z-Forward)
-            droneGroup.position.set(tel.position[1], tel.position[2], tel.position[0]);
-            // Extremely simplified rotation mapping for visualization
-            droneGroup.rotation.set(tel.euler_angles[0], tel.euler_angles[2], tel.euler_angles[1]);
+            // Convert Z-Up (X-Forward, Y-Right, Z-Up) to Three.js (X-Right, Y-Up, Z-Backward)
+            droneGroup.position.set(tel.position[1], tel.position[2], -tel.position[0]);
+            
+            // Map rotations: Physics Roll(X) -> Three Roll(-Z), Physics Pitch(Y) -> Three Pitch(X), Physics Yaw(Z) -> Three Yaw(Y)
+            droneGroup.rotation.set(tel.euler_angles[1], tel.euler_angles[2], -tel.euler_angles[0], 'YXZ');
 
             // Rebuild rotors if config changed or first load
             if (tel.rotors && rotorMeshes.length !== tel.rotors.length) {
@@ -170,7 +171,7 @@
                     // Map Z-Up offsets to ThreeJS coordinates
                     const px = r.position[1]; // Physics Y to Three X
                     const py = r.position[2]; // Physics Z to Three Y
-                    const pz = r.position[0]; // Physics X to Three Z
+                    const pz = -r.position[0]; // Physics X to Three -Z
                     group.position.set(px, py, pz);
                     
                     // Motor
