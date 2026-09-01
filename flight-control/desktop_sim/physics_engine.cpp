@@ -163,6 +163,29 @@ void PhysicsEngine::step(units::time::second_t dt) {
         state_.euler_angles(1) *= 0.9f; // Force level pitch
     }
     
+    // Ceiling constraint (10m)
+    if (state_.position(2) > 10.0f) {
+        state_.position(2) = 10.0f;
+        if (state_.velocity(2) > 0.0f) state_.velocity(2) = 0.0f;
+    }
+    
+    // Wall constraints (20x20m grid -> +/- 10m on X and Y)
+    if (state_.position(0) > 10.0f) {
+        state_.position(0) = 10.0f;
+        if (state_.velocity(0) > 0.0f) state_.velocity(0) = 0.0f;
+    } else if (state_.position(0) < -10.0f) {
+        state_.position(0) = -10.0f;
+        if (state_.velocity(0) < 0.0f) state_.velocity(0) = 0.0f;
+    }
+    
+    if (state_.position(1) > 10.0f) {
+        state_.position(1) = 10.0f;
+        if (state_.velocity(1) > 0.0f) state_.velocity(1) = 0.0f;
+    } else if (state_.position(1) < -10.0f) {
+        state_.position(1) = -10.0f;
+        if (state_.velocity(1) < 0.0f) state_.velocity(1) = 0.0f;
+    }
+    
     // Angular: I * omega_dot + omega x (I * omega) = tau
     Eigen::Vector3f tau = total_torque;
     Eigen::Vector3f omega = state_.angular_velocity;
