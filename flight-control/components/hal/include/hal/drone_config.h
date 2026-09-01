@@ -51,6 +51,9 @@ struct DroneHardwareConfig {
     units::mass::kilogram_t mass;
     Eigen::Matrix3f moment_of_inertia; // 3x3 inertia tensor (kg * m^2)
     
+    // Aerodynamic properties
+    float linear_drag_coefficient; // Simplified linear drag (N / (m/s))
+    
     std::vector<RotorConfig> rotors;
     MotorESCConfig motor_params;
     BatteryConfig battery_params;

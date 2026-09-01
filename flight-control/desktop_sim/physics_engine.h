@@ -30,6 +30,8 @@ public:
         Eigen::Matrix<units::angular_acceleration::radians_per_second_squared_t, 3, 1> angular_acceleration;
         
         units::current::ampere_t total_current_draw;
+        units::voltage::volt_t battery_voltage;
+        units::charge::ampere_hour_t consumed_capacity;
     };
     
     TrueState get_true_state();
