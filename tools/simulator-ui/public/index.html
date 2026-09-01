@@ -363,8 +363,8 @@
             else rcState.yaw *= decay;
             
             // Pitch (Forward/Back)
-            if (keys.ArrowUp) rcState.pitch = Math.max(-1.0, rcState.pitch - step); // Nose down (Wait, standard Pitch mapping: stick forward = nose down. Let's just say positive pitch = move forward, so stick up = positive)
-            else if (keys.ArrowDown) rcState.pitch = Math.min(1.0, rcState.pitch + step);
+            if (keys.ArrowDown) rcState.pitch = Math.max(-1.0, rcState.pitch - step); // Nose down (Wait, standard Pitch mapping: stick forward = nose down. Let's just say positive pitch = move forward, so stick up = positive)
+            else if (keys.ArrowUp) rcState.pitch = Math.min(1.0, rcState.pitch + step);
             else rcState.pitch *= decay;
             
             // Roll (Left/Right)
