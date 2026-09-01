@@ -204,7 +204,7 @@
 
         async function fetchTelemetry() {
             try {
-                const res = await fetch('/telemetry');
+                const res = await fetch('telemetry');
                 if (!res.ok) return;
                 const data = await res.json();
                 if (Object.keys(data).length === 0) return;
@@ -225,7 +225,7 @@
         setInterval(fetchTelemetry, 33);
 
         const sendCommand = () => {
-            fetch('/command', {
+            fetch('command', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(cmdState)
@@ -339,7 +339,7 @@
                 spins_clockwise: r.cw
             }));
 
-            fetch('/config', {
+            fetch('config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
