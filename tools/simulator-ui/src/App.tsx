@@ -12,8 +12,8 @@ export default function App() {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    // Connect to Node.js proxy server
-    socketRef.current = io('http://localhost:3001');
+    // Connect to Node.js proxy server (proxied via Vite)
+    socketRef.current = io();
 
     socketRef.current.on('telemetry', (data) => {
       setTelemetry(data);
