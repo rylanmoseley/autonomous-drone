@@ -54,10 +54,14 @@ void PhysicsEngine::calculate_forces_and_torques(
     // 1. Gravity (Assume Z-Up coordinate system: gravity is negative Z)
     out_force(2) = (config_.mass * units::acceleration::meters_per_second_squared_t(-9.81)).to<float>();
     
-    // 2. Aerodynamic Drag (Simplified linear drag model)
+    // 2. Aerodynamic Drag (Simplified linear and angular drag model)
     out_force(0) -= config_.linear_drag_coefficient * state_.velocity(0);
     out_force(1) -= config_.linear_drag_coefficient * state_.velocity(1);
     out_force(2) -= config_.linear_drag_coefficient * state_.velocity(2);
+    
+    out_torque(0) -= config_.angular_drag_coefficient * state_.angular_velocity(0);
+    out_torque(1) -= config_.angular_drag_coefficient * state_.angular_velocity(1);
+    out_torque(2) -= config_.angular_drag_coefficient * state_.angular_velocity(2);
     
     Eigen::Vector3f body_thrust_force(0.0f, 0.0f, 0.0f);
     

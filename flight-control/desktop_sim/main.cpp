@@ -18,6 +18,7 @@ int main() {
     config.moment_of_inertia = Eigen::Matrix3f::Identity() * 0.05f; 
     
     config.linear_drag_coefficient = 0.5f;
+    config.angular_drag_coefficient = 0.05f;
     config.battery_params.nominal_voltage = units::voltage::volt_t(14.8);
     config.motor_params.time_constant = units::time::second_t(0.02);
     config.motor_params.max_rpm = units::angular_velocity::revolutions_per_minute_t(10000);

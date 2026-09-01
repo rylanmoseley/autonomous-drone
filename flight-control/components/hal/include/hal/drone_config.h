@@ -53,6 +53,7 @@ struct DroneHardwareConfig {
     
     // Aerodynamic properties
     float linear_drag_coefficient; // Simplified linear drag (N / (m/s))
+    float angular_drag_coefficient; // Simplified angular drag (Nm / (rad/s))
     
     std::vector<RotorConfig> rotors;
     MotorESCConfig motor_params;
