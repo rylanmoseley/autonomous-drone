@@ -29,13 +29,13 @@ void ControlSystem::tick() {
             float percent = throttle;
             const auto& r = config_.rotors[i];
             
-            // Mix pitch (ay): Front/Back
-            if (r.position(0) > 0.01f) percent -= current_cmd_.ay * 0.2f;
-            else if (r.position(0) < -0.01f) percent += current_cmd_.ay * 0.2f;
+            // Mix pitch (ax): Front/Back controls X-axis movement
+            if (r.position(0) > 0.01f) percent -= current_cmd_.ax * 0.2f;
+            else if (r.position(0) < -0.01f) percent += current_cmd_.ax * 0.2f;
             
-            // Mix roll (ax): Left/Right
-            if (r.position(1) > 0.01f) percent -= current_cmd_.ax * 0.2f;
-            else if (r.position(1) < -0.01f) percent += current_cmd_.ax * 0.2f;
+            // Mix roll (ay): Left/Right controls Y-axis movement
+            if (r.position(1) > 0.01f) percent -= current_cmd_.ay * 0.2f;
+            else if (r.position(1) < -0.01f) percent += current_cmd_.ay * 0.2f;
             
             // Mix yaw (az): CW/CCW
             if (r.spins_clockwise) percent += current_cmd_.az * 0.2f;

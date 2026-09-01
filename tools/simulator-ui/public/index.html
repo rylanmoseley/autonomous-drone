@@ -165,6 +165,14 @@
 
                 const armMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
                 
+                // Add a "nose" pointing forward (-Z in Three.js, which is +X in Physics) to indicate direction
+                const noseGeo = new THREE.ConeGeometry(0.04, 0.1, 16);
+                const noseMat = new THREE.MeshLambertMaterial({ color: 0xff0000 });
+                const nose = new THREE.Mesh(noseGeo, noseMat);
+                nose.rotation.x = -Math.PI / 2; // Point cone forward
+                nose.position.z = -0.15; // Place at front of drone
+                droneGroup.add(nose);
+
                 tel.rotors.forEach(r => {
                     const group = new THREE.Group();
                     
