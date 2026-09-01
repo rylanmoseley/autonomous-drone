@@ -26,9 +26,8 @@ int main() {
     PhysicsEngine sim_engine(config);
 
     // 3. Instantiate Mock Hardware Drivers and bind them to the Physics Engine
-    // TODO: Pass a reference to `sim_engine` into these mock drivers so they can read/write the TrueState
-    MockIMU imu_sensor;
-    MockMotors motor_driver;
+    MockIMU imu_sensor(&sim_engine);
+    MockMotors motor_driver(&sim_engine);
     
     // 4. Instantiate the Flight Control System (Above HAL)
     ControlSystem flight_controller(&imu_sensor, &motor_driver);
@@ -41,11 +40,16 @@ int main() {
     units::time::second_t dt(0.001); // 1000Hz internal simulation step
     int tick_count = 0;
     
+    CommandVector cmd;
+    
     while(true) {
         // Allow external runtime configurations
-        if (telemetry.poll_commands(config)) {
+        if (telemetry.poll_commands(config, cmd)) {
             sim_engine.update_config(config);
+            flight_controller.set_config(config); // Keep controller in sync with dynamic rotors
         }
+        
+        flight_controller.set_command(cmd);
 
         // Step the physics engine
         sim_engine.step(dt);

@@ -37,10 +37,10 @@ void UdpTelemetry::broadcast_state(const PhysicsEngine::TrueState& state, const 
     json j;
     j["type"] = "telemetry";
     
-    j["position"] = {state.position(0).to<float>(), state.position(1).to<float>(), state.position(2).to<float>()};
-    j["velocity"] = {state.velocity(0).to<float>(), state.velocity(1).to<float>(), state.velocity(2).to<float>()};
-    j["euler_angles"] = {state.euler_angles(0).to<float>(), state.euler_angles(1).to<float>(), state.euler_angles(2).to<float>()};
-    j["angular_velocity"] = {state.angular_velocity(0).to<float>(), state.angular_velocity(1).to<float>(), state.angular_velocity(2).to<float>()};
+    j["position"] = {state.position(0), state.position(1), state.position(2)};
+    j["velocity"] = {state.velocity(0), state.velocity(1), state.velocity(2)};
+    j["euler_angles"] = {state.euler_angles(0), state.euler_angles(1), state.euler_angles(2)};
+    j["angular_velocity"] = {state.angular_velocity(0), state.angular_velocity(1), state.angular_velocity(2)};
     
     j["battery_voltage"] = state.battery_voltage.to<float>();
     j["current_draw"] = state.total_current_draw.to<float>();
@@ -50,7 +50,7 @@ void UdpTelemetry::broadcast_state(const PhysicsEngine::TrueState& state, const 
     json rotors = json::array();
     for (const auto& r : config.rotors) {
         rotors.push_back({
-            {"position", {r.position(0).to<float>(), r.position(1).to<float>(), r.position(2).to<float>()}}
+            {"position", {r.position(0), r.position(1), r.position(2)}}
         });
     }
     j["rotors"] = rotors;
@@ -59,7 +59,7 @@ void UdpTelemetry::broadcast_state(const PhysicsEngine::TrueState& state, const 
     sendto(sockfd_, payload.c_str(), payload.length(), 0, (struct sockaddr*)&dest_addr_, sizeof(dest_addr_));
 }
 
-bool UdpTelemetry::poll_commands(Config::DroneHardwareConfig& out_config) {
+bool UdpTelemetry::poll_commands(Config::DroneHardwareConfig& out_config, CommandVector& out_cmd) {
     char buffer[4096];
     struct sockaddr_in src_addr;
     socklen_t src_len = sizeof(src_addr);
@@ -88,35 +88,38 @@ bool UdpTelemetry::poll_commands(Config::DroneHardwareConfig& out_config) {
                     for (const auto& r : j["data"]["rotors"]) {
                         Config::RotorConfig rc;
                         
-                        // Default thrust axis
-                        rc.thrust_axis = Eigen::Vector3f(0, 0, -1);
+                        // Default thrust axis (Z-up, so thrust points down? Wait, thrust pushes UP, so thrust axis is +Z)
+                        rc.thrust_axis = Eigen::Vector3f(0, 0, 1);
                         
                         if (r.contains("position") && r["position"].is_array() && r["position"].size() == 3) {
-                            rc.position(0) = units::length::meter_t(r["position"][0].get<float>());
-                            rc.position(1) = units::length::meter_t(r["position"][1].get<float>());
-                            rc.position(2) = units::length::meter_t(r["position"][2].get<float>());
+                            rc.position(0) = r["position"][0].get<float>();
+                            rc.position(1) = r["position"][1].get<float>();
+                            rc.position(2) = r["position"][2].get<float>();
                         }
                         
                         if (r.contains("thrust_coefficient")) rc.thrust_coefficient = r["thrust_coefficient"].get<float>();
-                        else rc.thrust_coefficient = 0.0f; // Default
+                        else rc.thrust_coefficient = 0.0f;
 
                         if (r.contains("torque_coefficient")) rc.torque_coefficient = r["torque_coefficient"].get<float>();
-                        else rc.torque_coefficient = 0.0f; // Default
+                        else rc.torque_coefficient = 0.0f;
 
                         if (r.contains("spins_clockwise")) rc.spins_clockwise = r["spins_clockwise"].get<bool>();
                         else rc.spins_clockwise = true;
-
+                        
                         out_config.rotors.push_back(rc);
                     }
                 }
-                
-                std::cout << "[UdpTelemetry] Received config update! Mass: " << out_config.mass.to<float>() << "kg, Rotors: " << out_config.rotors.size() << std::endl;
                 config_updated = true;
             } else if (j["type"] == "command") {
-                // TODO: Inject into HAL
+                if (j["data"].contains("lx")) out_cmd.lx = j["data"]["lx"].get<float>();
+                if (j["data"].contains("ly")) out_cmd.ly = j["data"]["ly"].get<float>();
+                if (j["data"].contains("lz")) out_cmd.lz = j["data"]["lz"].get<float>();
+                if (j["data"].contains("ax")) out_cmd.ax = j["data"]["ax"].get<float>();
+                if (j["data"].contains("ay")) out_cmd.ay = j["data"]["ay"].get<float>();
+                if (j["data"].contains("az")) out_cmd.az = j["data"]["az"].get<float>();
             }
         } catch (...) {
-            // Parse error
+            // Silently ignore parse errors for UDP packets
         }
     }
     return config_updated;

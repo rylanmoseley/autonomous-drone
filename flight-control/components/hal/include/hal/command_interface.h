@@ -16,8 +16,8 @@ enum class ControlMode {
 struct SpatialState6D {
     // Depending on the exact control loop, these could represent Position/Attitude or Velocity/Rates.
     // Assuming Velocity/Rates (Twist) as the most common interface for high-level drone autonomy:
-    Eigen::Matrix<units::velocity::meters_per_second_t, 3, 1> linear;
-    Eigen::Matrix<units::angular_velocity::radians_per_second_t, 3, 1> angular;
+    Eigen::Vector3f linear;
+    Eigen::Vector3f angular;
 };
 
 struct CommandData {

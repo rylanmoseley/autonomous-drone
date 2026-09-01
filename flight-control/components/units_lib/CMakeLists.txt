@@ -3,7 +3,7 @@ include(FetchContent)
 FetchContent_Declare(
   units
   GIT_REPOSITORY https://github.com/nholthaus/units.git
-  GIT_TAG master
+  GIT_TAG v2.3.3
 )
 FetchContent_MakeAvailable(units)
 

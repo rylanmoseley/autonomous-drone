@@ -20,14 +20,14 @@ public:
     // ---- Outputs to Mock Sensors ----
     // Get the true simulated state
     struct TrueState {
-        Eigen::Matrix<units::length::meter_t, 3, 1> position;
-        Eigen::Matrix<units::velocity::meters_per_second_t, 3, 1> velocity;
-        Eigen::Matrix<units::acceleration::meters_per_second_squared_t, 3, 1> acceleration;
+        Eigen::Vector3f position;
+        Eigen::Vector3f velocity;
+        Eigen::Vector3f acceleration;
         
         // Orientation (Roll, Pitch, Yaw)
-        Eigen::Matrix<units::angle::radian_t, 3, 1> euler_angles;
-        Eigen::Matrix<units::angular_velocity::radians_per_second_t, 3, 1> angular_velocity;
-        Eigen::Matrix<units::angular_acceleration::radians_per_second_squared_t, 3, 1> angular_acceleration;
+        Eigen::Vector3f euler_angles;
+        Eigen::Vector3f angular_velocity;
+        Eigen::Vector3f angular_acceleration;
         
         units::current::ampere_t total_current_draw;
         units::voltage::volt_t battery_voltage;
@@ -44,9 +44,9 @@ private:
     
     // Internal state for motors (simulating spin-up dynamics)
     std::vector<units::angular_velocity::revolutions_per_minute_t> current_motor_rpms_;
-    std::vector<units::torque::newton_meter_t> target_motor_torques_;
+    std::vector<units::angular_velocity::revolutions_per_minute_t> target_motor_rpms_;
     
     void calculate_forces_and_torques(
-        Eigen::Matrix<units::force::newton_t, 3, 1>& out_force, 
-        Eigen::Matrix<units::torque::newton_meter_t, 3, 1>& out_torque);
+        Eigen::Vector3f& out_force, 
+        Eigen::Vector3f& out_torque);
 };

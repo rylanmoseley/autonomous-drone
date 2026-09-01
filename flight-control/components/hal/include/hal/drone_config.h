@@ -7,7 +7,7 @@ namespace Config {
 
 struct RotorConfig {
     // Position of the rotor relative to the Center of Mass
-    Eigen::Matrix<units::length::meter_t, 3, 1> position;
+    Eigen::Vector3f position;
     
     // Direction the thrust is applied (usually [0, 0, -1] for NED)
     Eigen::Vector3f thrust_axis;

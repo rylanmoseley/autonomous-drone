@@ -5,7 +5,7 @@ PhysicsEngine::PhysicsEngine(const Config::DroneHardwareConfig& initial_config)
     : config_(initial_config) 
 {
     current_motor_rpms_.resize(config_.rotors.size(), units::angular_velocity::revolutions_per_minute_t(0));
-    target_motor_torques_.resize(config_.rotors.size(), units::torque::newton_meter_t(0));
+    target_motor_rpms_.resize(config_.rotors.size(), units::angular_velocity::revolutions_per_minute_t(0));
     
     // Initialize true state to zero
     state_.position.setZero();
@@ -24,7 +24,7 @@ void PhysicsEngine::update_config(const Config::DroneHardwareConfig& new_config)
     config_ = new_config;
     // Resize vectors if rotor count changed
     current_motor_rpms_.resize(config_.rotors.size(), units::angular_velocity::revolutions_per_minute_t(0));
-    target_motor_torques_.resize(config_.rotors.size(), units::torque::newton_meter_t(0));
+    target_motor_rpms_.resize(config_.rotors.size(), units::angular_velocity::revolutions_per_minute_t(0));
 }
 
 Config::DroneHardwareConfig PhysicsEngine::get_config() {
@@ -34,10 +34,8 @@ Config::DroneHardwareConfig PhysicsEngine::get_config() {
 
 void PhysicsEngine::set_motor_output(int motor_index, units::torque::newton_meter_t torque, units::angular_velocity::revolutions_per_minute_t rpm) {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    if (motor_index >= 0 && motor_index < target_motor_torques_.size()) {
-        target_motor_torques_[motor_index] = torque;
-        // In a real simulation, we would either drive RPM directly or integrate torque.
-        // If the ESC is in torque control mode, we use torque.
+    if (motor_index >= 0 && motor_index < target_motor_rpms_.size()) {
+        target_motor_rpms_[motor_index] = rpm;
     }
 }
 
@@ -98,30 +96,16 @@ void PhysicsEngine::step(units::time::second_t dt) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     
     float dt_sec = dt.to<float>();
-    
-    // 1. Update motor dynamics (first order lag from target to actual)
+    float electrical_power = 0.0f;
     float mechanical_power = 0.0f;
+    
     for (size_t i = 0; i < config_.rotors.size(); ++i) {
-        // If the ESC receives a torque command, we would calculate RPM based on load.
-        // For a simplified simulator, assume we are directly commanding target RPM via the ESC,
-        // and the ESC has a first-order response.
-        // We'll treat `target_motor_torques_` as a generic command for now and map it to an RPM.
-        // A more advanced sim would simulate the BLDC stator physics.
-        // For now, let's assume `target_motor_torques_` maps linearly to a target RPM for demonstration.
-        // Ideally, we'd add `target_motor_rpms_` to the PhysicsEngine interface.
-        float target_rpm = target_motor_torques_[i].to<float>() * 1000.0f; // Hacky mapping for now
+        float target_rpm_val = target_motor_rpms_[i].to<float>();
+        auto current_rpm = current_motor_rpms_[i];
         
-        // Clamp to max RPM
-        if (target_rpm > config_.motor_params.max_rpm.to<float>()) {
-            target_rpm = config_.motor_params.max_rpm.to<float>();
-        } else if (target_rpm < 0.0f) {
-            target_rpm = 0.0f;
-        }
-        
-        // First order low pass filter
+        // Simple first order response for motor RPM
         float alpha = dt_sec / (config_.motor_params.time_constant.to<float>() + dt_sec);
-        float current = current_motor_rpms_[i].to<float>();
-        float next_rpm = current + alpha * (target_rpm - current);
+        float next_rpm = current_rpm.to<float>() + alpha * (target_rpm_val - current_rpm.to<float>());
         
         current_motor_rpms_[i] = units::angular_velocity::revolutions_per_minute_t(next_rpm);
         
@@ -184,7 +168,7 @@ void PhysicsEngine::step(units::time::second_t dt) {
     // 4. Update Battery Simulation
     // Assume electrical power = mechanical power / efficiency (e.g. 80%)
     float efficiency = 0.8f;
-    float electrical_power = mechanical_power / efficiency;
+    electrical_power = mechanical_power / efficiency;
     float nominal_voltage = config_.battery_params.nominal_voltage.to<float>();
     float current_draw = nominal_voltage > 0.0f ? electrical_power / nominal_voltage : 0.0f;
     
