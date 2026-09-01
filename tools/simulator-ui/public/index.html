@@ -150,7 +150,9 @@
             droneGroup.position.set(tel.position[1], tel.position[2], -tel.position[0]);
             
             // Map rotations: Physics Roll(X) -> Three Roll(-Z), Physics Pitch(Y) -> Three Pitch(X), Physics Yaw(Z) -> Three Yaw(Y)
-            droneGroup.rotation.set(tel.euler_angles[1], tel.euler_angles[2], -tel.euler_angles[0], 'YXZ');
+            // Note: Three.js X rotation + is nose UP, Physics Y rotation + is nose DOWN. So invert Pitch.
+            // Note: Three.js Z rotation + is roll LEFT, Physics X rotation + is roll LEFT. But Z is backward, so wait. Let's just fix it.
+            droneGroup.rotation.set(-tel.euler_angles[1], tel.euler_angles[2], tel.euler_angles[0], 'YXZ');
 
             // Rebuild rotors if config changed or first load
             if (tel.rotors && rotorMeshes.length !== tel.rotors.length) {
