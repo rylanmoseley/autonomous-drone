@@ -32,6 +32,8 @@ public:
         units::current::ampere_t total_current_draw;
         units::voltage::volt_t battery_voltage;
         units::charge::ampere_hour_t consumed_capacity;
+        
+        std::vector<float> motor_rpms;
     };
     
     TrueState get_true_state();

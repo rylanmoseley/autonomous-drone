@@ -111,6 +111,10 @@
         droneGroup.add(bodyMesh);
 
         let rotorMeshes = [];
+        
+        // Overall velocity arrow (Green)
+        const velocityArrow = new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,0), 0, 0x00ff00);
+        scene.add(velocityArrow);
 
         // Resize handler
         window.addEventListener('resize', () => {
@@ -153,6 +157,23 @@
             // Note: Three.js X rotation + is nose UP, Physics Y rotation + is nose DOWN. So invert Pitch.
             // Note: Three.js Z rotation + is roll LEFT, Physics X rotation + is roll LEFT. But Z is backward, so wait. Let's just fix it.
             droneGroup.rotation.set(-tel.euler_angles[1], tel.euler_angles[2], tel.euler_angles[0], 'YXZ');
+            
+            // Update Velocity Arrow
+            if (tel.velocity) {
+                const vx = tel.velocity[1];
+                const vy = tel.velocity[2];
+                const vz = -tel.velocity[0];
+                const vel = new THREE.Vector3(vx, vy, vz);
+                const speed = vel.length();
+                if (speed > 0.05) {
+                    velocityArrow.setLength(speed * 0.5); // scale length visually
+                    velocityArrow.setDirection(vel.normalize());
+                    velocityArrow.position.copy(droneGroup.position);
+                    velocityArrow.visible = true;
+                } else {
+                    velocityArrow.visible = false;
+                }
+            }
 
             // Rebuild rotors if config changed or first load
             if (tel.rotors && rotorMeshes.length !== tel.rotors.length) {
@@ -198,6 +219,11 @@
                     prop.userData.spinSpeed = (Math.random() * 0.2 + 0.3) * (r.position[0] * r.position[1] > 0 ? 1 : -1); 
                     group.add(prop);
 
+                    // Thrust Arrow (Yellow) pointing Up (+Y) relative to motor
+                    const thrustArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 0, 0xffff00);
+                    thrustArrow.userData.isThrustArrow = true;
+                    group.add(thrustArrow);
+
                     // Arm (Line from center to motor)
                     const distance = Math.sqrt(px*px + py*py + pz*pz);
                     const armGeo = new THREE.BoxGeometry(0.02, 0.02, distance);
@@ -211,6 +237,30 @@
                     droneGroup.add(group);
                     rotorMeshes.push(group);
                 });
+            }
+
+            // Update thrust arrows based on motor RPM telemetry
+            if (tel.motor_rpms && tel.motor_rpms.length === rotorMeshes.length) {
+                for (let i = 0; i < rotorMeshes.length; i++) {
+                    const rpm = tel.motor_rpms[i];
+                    // scale RPM (0-10000) to a visible arrow length (e.g. max 1.0)
+                    const length = (rpm / 10000.0) * 1.5;
+                    
+                    rotorMeshes[i].children.forEach(child => {
+                        if (child.userData.isThrustArrow) {
+                            if (length > 0.01) {
+                                child.setLength(length);
+                                child.visible = true;
+                            } else {
+                                child.visible = false;
+                            }
+                        }
+                        // We could also dynamically update prop spin speed here based on real RPM!
+                        if (child.userData.isProp) {
+                            child.rotation.y += (rpm / 10000.0) * 0.5 * (Math.sign(child.userData.spinSpeed));
+                        }
+                    });
+                }
             }
         }
 

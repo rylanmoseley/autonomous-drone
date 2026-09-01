@@ -128,6 +128,11 @@ void PhysicsEngine::step(units::time::second_t dt) {
         mechanical_power += (load_torque * omega);
     }
     
+    state_.motor_rpms.clear();
+    for(size_t i = 0; i < current_motor_rpms_.size(); i++) {
+        state_.motor_rpms.push_back(current_motor_rpms_[i].to<float>());
+    }
+    
     // 2. Calculate sum of forces and torques
     Eigen::Vector3f total_force;
     Eigen::Vector3f total_torque;

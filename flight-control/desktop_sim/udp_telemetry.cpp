@@ -45,6 +45,7 @@ void UdpTelemetry::broadcast_state(const PhysicsEngine::TrueState& state, const 
     j["battery_voltage"] = state.battery_voltage.to<float>();
     j["current_draw"] = state.total_current_draw.to<float>();
     j["consumed_capacity"] = state.consumed_capacity.to<float>();
+    j["motor_rpms"] = state.motor_rpms;
     
     // Include minimal config info if needed for dynamic rendering
     json rotors = json::array();
