@@ -74,9 +74,43 @@ bool UdpTelemetry::poll_commands(Config::DroneHardwareConfig& out_config) {
         try {
             json j = json::parse(buffer);
             if (j["type"] == "config") {
-                // TODO: Parse out_config from JSON
-                // For example: out_config.mass = units::mass::kilogram_t(j["data"]["mass"].get<float>());
-                std::cout << "[UdpTelemetry] Received config update!" << std::endl;
+                if (j["data"].contains("mass")) {
+                    out_config.mass = units::mass::kilogram_t(j["data"]["mass"].get<float>());
+                }
+                if (j["data"].contains("linear_drag_coefficient")) {
+                    out_config.linear_drag_coefficient = j["data"]["linear_drag_coefficient"].get<float>();
+                }
+                if (j["data"].contains("nominal_voltage")) {
+                    out_config.battery_params.nominal_voltage = units::voltage::volt_t(j["data"]["nominal_voltage"].get<float>());
+                }
+                if (j["data"].contains("rotors") && j["data"]["rotors"].is_array()) {
+                    out_config.rotors.clear();
+                    for (const auto& r : j["data"]["rotors"]) {
+                        Config::RotorConfig rc;
+                        
+                        // Default thrust axis
+                        rc.thrust_axis = Eigen::Vector3f(0, 0, -1);
+                        
+                        if (r.contains("position") && r["position"].is_array() && r["position"].size() == 3) {
+                            rc.position(0) = units::length::meter_t(r["position"][0].get<float>());
+                            rc.position(1) = units::length::meter_t(r["position"][1].get<float>());
+                            rc.position(2) = units::length::meter_t(r["position"][2].get<float>());
+                        }
+                        
+                        if (r.contains("thrust_coefficient")) rc.thrust_coefficient = r["thrust_coefficient"].get<float>();
+                        else rc.thrust_coefficient = 0.0f; // Default
+
+                        if (r.contains("torque_coefficient")) rc.torque_coefficient = r["torque_coefficient"].get<float>();
+                        else rc.torque_coefficient = 0.0f; // Default
+
+                        if (r.contains("spins_clockwise")) rc.spins_clockwise = r["spins_clockwise"].get<bool>();
+                        else rc.spins_clockwise = true;
+
+                        out_config.rotors.push_back(rc);
+                    }
+                }
+                
+                std::cout << "[UdpTelemetry] Received config update! Mass: " << out_config.mass.to<float>() << "kg, Rotors: " << out_config.rotors.size() << std::endl;
                 config_updated = true;
             } else if (j["type"] == "command") {
                 // TODO: Inject into HAL
