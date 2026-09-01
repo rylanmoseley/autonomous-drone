@@ -13,7 +13,14 @@ int main() {
     // 1. Setup Drone Hardware Configuration (Runtime Configurable)
     Config::DroneHardwareConfig config;
     config.mass = units::mass::kilogram_t(1.2); // 1.2kg drone
-    // TODO: Populate realistic inertia tensor, rotor positions, ESC rates, etc.
+    
+    // Setup a default diagonal inertia tensor (approximate for a quadcopter)
+    config.moment_of_inertia = Eigen::Matrix3f::Identity() * 0.05f; 
+    
+    config.linear_drag_coefficient = 0.5f;
+    config.battery_params.nominal_voltage = units::voltage::volt_t(14.8);
+    config.motor_params.time_constant = units::time::second_t(0.05);
+    config.motor_params.max_rpm = units::angular_velocity::revolutions_per_minute_t(10000);
 
     // 2. Instantiate the Physics Engine (Below HAL)
     PhysicsEngine sim_engine(config);
