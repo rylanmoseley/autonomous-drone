@@ -202,19 +202,35 @@
             }
         }
 
-        socket.on('telemetry', (data) => {
-            updateDroneVisuals(data);
-            
-            telemetryDiv.innerHTML = `
-                <div><b>Pos:</b> ${data.position.map(v => v.toFixed(2)).join(', ')}</div>
-                <div><b>Vel:</b> ${data.velocity.map(v => v.toFixed(2)).join(', ')}</div>
-                <div><b>Ang:</b> ${data.euler_angles.map(v => v.toFixed(2)).join(', ')}</div>
-                <hr/>
-                <div><b>Voltage:</b> ${data.battery_voltage.toFixed(2)}V</div>
-                <div><b>Current:</b> ${data.current_draw.toFixed(2)}A</div>
-                <div><b>Consumed:</b> ${data.consumed_capacity.toFixed(2)}mAh</div>
-            `;
-        });
+        async function fetchTelemetry() {
+            try {
+                const res = await fetch('/telemetry');
+                if (!res.ok) return;
+                const data = await res.json();
+                if (Object.keys(data).length === 0) return;
+
+                updateDroneVisuals(data);
+                
+                telemetryDiv.innerHTML = `
+                    <div><b>Pos:</b> ${data.position.map(v => v.toFixed(2)).join(', ')}</div>
+                    <div><b>Vel:</b> ${data.velocity.map(v => v.toFixed(2)).join(', ')}</div>
+                    <div><b>Ang:</b> ${data.euler_angles.map(v => v.toFixed(2)).join(', ')}</div>
+                    <hr/>
+                    <div><b>Voltage:</b> ${data.battery_voltage.toFixed(2)}V</div>
+                    <div><b>Current:</b> ${data.current_draw.toFixed(2)}A</div>
+                    <div><b>Consumed:</b> ${data.consumed_capacity.toFixed(2)}mAh</div>
+                `;
+            } catch (e) {}
+        }
+        setInterval(fetchTelemetry, 33);
+
+        const sendCommand = () => {
+            fetch('/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(cmdState)
+            }).catch(e => {});
+        };
 
         // Build Sliders
         const sliderContainer = document.getElementById('command-sliders');
@@ -239,7 +255,7 @@
                 const val = parseFloat(e.target.value);
                 valSpan.textContent = val.toFixed(2);
                 cmdState[key] = val;
-                socket.emit('command', cmdState);
+                sendCommand();
             });
             
             row.appendChild(lbl);
@@ -252,7 +268,7 @@
             Object.keys(cmdState).forEach(k => cmdState[k] = 0);
             sliderContainer.querySelectorAll('input[type="range"]').forEach(inp => { inp.value = 0; });
             sliderContainer.querySelectorAll('span').forEach(sp => { sp.textContent = '0.00'; });
-            socket.emit('command', cmdState);
+            sendCommand();
         });
 
         // --- Rotor Configuration GUI Logic ---
@@ -323,12 +339,16 @@
                 spins_clockwise: r.cw
             }));
 
-            socket.emit('config', { 
-                mass: mass,
-                linear_drag_coefficient: drag,
-                nominal_voltage: volts,
-                rotors: formattedRotors
-            });
+            fetch('/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    mass: mass,
+                    linear_drag_coefficient: drag,
+                    nominal_voltage: volts,
+                    rotors: formattedRotors
+                })
+            }).catch(e => {});
         });
     </script>
 </body>

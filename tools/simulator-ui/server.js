@@ -33,14 +33,39 @@ udpServer.on("error", (err) => {
 });
 
 // Forward Telemetry (C++ -> Web)
+let latestTelemetry = {};
+let packetCount = 0;
 udpServer.on("message", (msg, rinfo) => {
   try {
-    const data = JSON.parse(msg.toString());
-    // Broadcast to all connected web clients
-    io.emit("telemetry", data);
+    latestTelemetry = JSON.parse(msg.toString());
+    packetCount++;
+    if (packetCount % 60 === 0) {
+       console.log("Telemetry packet received: " + packetCount);
+    }
+    // Broadcast to all connected web clients via Socket.IO
+    io.emit("telemetry", latestTelemetry);
   } catch (e) {
     console.error("Failed to parse UDP telemetry:", e);
   }
+});
+
+// HTTP fallback for strict proxies (like VS Code server)
+app.get('/telemetry', (req, res) => {
+    res.json(latestTelemetry);
+});
+
+// Command fallback
+app.use(express.json());
+app.post('/command', (req, res) => {
+    const msg = Buffer.from(JSON.stringify({ type: "command", data: req.body }));
+    udpClient.send(msg, UDP_SEND_PORT, C_PLUS_PLUS_IP);
+    res.sendStatus(200);
+});
+
+app.post('/config', (req, res) => {
+    const msg = Buffer.from(JSON.stringify({ type: "config", data: req.body }));
+    udpClient.send(msg, UDP_SEND_PORT, C_PLUS_PLUS_IP);
+    res.sendStatus(200);
 });
 
 udpServer.bind(UDP_LISTEN_PORT, () => {
