@@ -8,6 +8,6 @@ add_subdirectory(../components/units_lib units_lib_build)
 add_subdirectory(../components/eigen_lib eigen_lib_build)
 add_subdirectory(../components/control_system control_system_build)
 
-add_executable(sim_main main.cpp mock_hardware.cpp physics_engine.cpp)
-target_include_directories(sim_main PRIVATE ../components/hal/include)
+add_executable(sim_main main.cpp mock_hardware.cpp physics_engine.cpp udp_telemetry.cpp)
+target_include_directories(sim_main PRIVATE ../components/hal/include third_party)
 target_link_libraries(sim_main PRIVATE control_system)

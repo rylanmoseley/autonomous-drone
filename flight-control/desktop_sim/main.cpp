@@ -5,6 +5,8 @@
 #include "mock_hardware.h"
 #include "physics_engine.h"
 
+#include "udp_telemetry.h"
+
 int main() {
     std::cout << "Starting Software-In-The-Loop Simulation..." << std::endl;
 
@@ -25,23 +27,33 @@ int main() {
     ControlSystem flight_controller(&imu_sensor, &motor_driver);
     flight_controller.init();
 
+    // Setup Telemetry to Node.js proxy (Listening on 9001, Sending to 9000)
+    UdpTelemetry telemetry("127.0.0.1", 9000, 9001);
+
     // 5. Main Simulation Loop
     units::time::second_t dt(0.001); // 1000Hz internal simulation step
+    int tick_count = 0;
     
     while(true) {
+        // Allow external runtime configurations
+        if (telemetry.poll_commands(config)) {
+            sim_engine.update_config(config);
+        }
+
         // Step the physics engine
         sim_engine.step(dt);
         
         // Step the flight controller (which polls the HAL)
-        // TODO: In a real environment, the flight loop might run at a different rate than the physics engine.
-        // We should manage time/scheduling here to respect Config::ProtocolConfig rates.
         flight_controller.tick();
         
-        // Allow external runtime configurations
-        // TODO: Poll a UDP socket for configuration changes and call sim_engine.update_config()
-
-        // Sleep to maintain real-time factor (or run as fast as possible for offline ML training)
+        // Broadcast telemetry at ~60Hz (every ~16 ticks at 1000Hz)
+        if (tick_count % 16 == 0) {
+            telemetry.broadcast_state(sim_engine.get_true_state(), sim_engine.get_config());
+        }
+        
+        // Sleep to maintain real-time factor
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        tick_count++;
     }
 
     return 0;
