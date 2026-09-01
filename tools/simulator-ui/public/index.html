@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulator UI</title>
+    <style>
+        body { margin: 0; background: #1a1a1a; color: white; font-family: sans-serif; overflow: hidden; display: flex; }
+        #canvas-container { flex: 1; position: relative; height: 100vh; }
+        #sidebar { width: 350px; background: #222; padding: 20px; overflow-y: auto; height: 100vh; box-sizing: border-box; }
+        .panel { margin-bottom: 20px; padding: 10px; background: #333; border-radius: 8px; }
+        .row { display: flex; align-items: center; margin-bottom: 8px; }
+        .row label { width: 30px; }
+        .row input { flex: 1; margin: 0 10px; }
+        .row span { width: 40px; font-size: 12px; }
+        button { width: 100%; padding: 10px; margin-top: 10px; cursor: pointer; }
+    </style>
+    <!-- Import Map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.168.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.168.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="sidebar">
+        <h2>Simulation UI</h2>
+        
+        <div class="panel">
+            <h3>Telemetry Readout</h3>
+            <div id="telemetry-data" style="font-size: 14px; font-family: monospace;">Waiting for telemetry...</div>
+        </div>
+
+        <div class="panel">
+            <h3>Command Setpoint (6D)</h3>
+            <div id="command-sliders">
+                <!-- Sliders injected via JS -->
+            </div>
+            <button id="btn-zero">Zero Setpoints</button>
+        </div>
+
+        <div class="panel">
+            <h3>Hardware Config</h3>
+            <button id="btn-config">Test Config Update</button>
+        </div>
+    </div>
+
+    <!-- Socket.IO via CDN -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // 1. Setup Three.js Scene
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a);
+        
+        const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.set(2, 2, 2);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+        const pointLight = new THREE.PointLight(0xffffff, 1);
+        pointLight.position.set(10, 10, 10);
+        scene.add(pointLight);
+
+        // Grid
+        const gridHelper = new THREE.GridHelper(20, 20, 0x888888, 0x444444);
+        scene.add(gridHelper);
+
+        // Drone Group
+        const droneGroup = new THREE.Group();
+        scene.add(droneGroup);
+
+        // Body Mesh
+        const bodyGeo = new THREE.BoxGeometry(0.2, 0.1, 0.2); // Swap Y and Z for visual (Three uses Y-up)
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0xffa500 });
+        const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+        droneGroup.add(bodyMesh);
+
+        let rotorMeshes = [];
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        // Render loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // 2. Setup UI Logic & Socket.IO
+        const socket = io(); // Connects to the host serving this file
+        const cmdState = { lx: 0, ly: 0, lz: 0, ax: 0, ay: 0, az: 0 };
+        const telemetryDiv = document.getElementById('telemetry-data');
+
+        function updateDroneVisuals(tel) {
+            // Convert NED (North-East-Down) to Three.js (X-Right, Y-Up, Z-Forward)
+            droneGroup.position.set(tel.position[0], -tel.position[2], tel.position[1]);
+            // Extremely simplified rotation mapping for visualization
+            droneGroup.rotation.set(tel.euler_angles[0], -tel.euler_angles[2], tel.euler_angles[1]);
+
+            // Rebuild rotors if config changed or first load
+            if (tel.rotors && rotorMeshes.length !== tel.rotors.length) {
+                rotorMeshes.forEach(m => droneGroup.remove(m));
+                rotorMeshes = [];
+                const rotorGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.02, 16);
+                const rotorMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, transparent: true, opacity: 0.7 });
+                
+                tel.rotors.forEach(r => {
+                    const mesh = new THREE.Mesh(rotorGeo, rotorMat);
+                    // Map NED offsets to ThreeJS coordinates
+                    mesh.position.set(r.position[0], -r.position[2], r.position[1]);
+                    droneGroup.add(mesh);
+                    rotorMeshes.push(mesh);
+                });
+            }
+        }
+
+        socket.on('telemetry', (data) => {
+            updateDroneVisuals(data);
+            
+            telemetryDiv.innerHTML = `
+                <div><b>Pos:</b> ${data.position.map(v => v.toFixed(2)).join(', ')}</div>
+                <div><b>Vel:</b> ${data.velocity.map(v => v.toFixed(2)).join(', ')}</div>
+                <div><b>Ang:</b> ${data.euler_angles.map(v => v.toFixed(2)).join(', ')}</div>
+                <hr/>
+                <div><b>Voltage:</b> ${data.battery_voltage.toFixed(2)}V</div>
+                <div><b>Current:</b> ${data.current_draw.toFixed(2)}A</div>
+                <div><b>Consumed:</b> ${data.consumed_capacity.toFixed(2)}mAh</div>
+            `;
+        });
+
+        // Build Sliders
+        const sliderContainer = document.getElementById('command-sliders');
+        ['lx', 'ly', 'lz', 'ax', 'ay', 'az'].forEach(key => {
+            const row = document.createElement('div');
+            row.className = 'row';
+            
+            const lbl = document.createElement('label');
+            lbl.textContent = key;
+            
+            const input = document.createElement('input');
+            input.type = 'range';
+            input.min = -1;
+            input.max = 1;
+            input.step = 0.01;
+            input.value = 0;
+            
+            const valSpan = document.createElement('span');
+            valSpan.textContent = '0.00';
+            
+            input.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                valSpan.textContent = val.toFixed(2);
+                cmdState[key] = val;
+                socket.emit('command', cmdState);
+            });
+            
+            row.appendChild(lbl);
+            row.appendChild(input);
+            row.appendChild(valSpan);
+            sliderContainer.appendChild(row);
+        });
+
+        document.getElementById('btn-zero').addEventListener('click', () => {
+            Object.keys(cmdState).forEach(k => cmdState[k] = 0);
+            sliderContainer.querySelectorAll('input').forEach(inp => { inp.value = 0; });
+            sliderContainer.querySelectorAll('span').forEach(sp => { sp.textContent = '0.00'; });
+            socket.emit('command', cmdState);
+        });
+
+        document.getElementById('btn-config').addEventListener('click', () => {
+            socket.emit('config', { mass: 1.5 });
+        });
+    </script>
+</body>
+</html>

@@ -1,28 +1,13 @@
 {
   "name": "simulator-ui",
   "private": true,
-  "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "node server.js & vite --host",
-    "dev": "vite --host",
-    "build": "tsc -b && vite build"
+    "start": "node server.js"
   },
   "dependencies": {
-    "@react-three/drei": "^9.112.0",
-    "@react-three/fiber": "^8.17.7",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "socket.io": "^4.7.5",
-    "socket.io-client": "^4.7.5",
-    "three": "^0.168.0"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@types/three": "^0.168.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "typescript": "^5.5.3",
-    "vite": "^5.4.1"
+    "compression": "^1.7.4",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
   }
 }
