@@ -5,8 +5,9 @@
 class MockIMU : public HAL::IMUInterface {
 public:
     void init() override;
-    void read_accel(float& x, float& y, float& z) override;
-    void read_gyro(float& x, float& y, float& z) override;
+    bool update(HAL::IMUData& data) override;
+    void calibrate_gyro() override;
+    void calibrate_accel() override;
 };
 
 class MockMotors : public HAL::MotorInterface {

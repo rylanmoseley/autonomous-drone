@@ -12,20 +12,18 @@ void ControlSystem::init() {
 }
 
 void ControlSystem::tick() {
-    float ax, ay, az;
-    float gx, gy, gz;
+    HAL::IMUData imu_data;
 
     if (imu_) {
-        imu_->read_accel(ax, ay, az);
-        imu_->read_gyro(gx, gy, gz);
+        imu_->update(imu_data);
     }
     
     // Dummy PID logic
-    float desired_throttle = 0.5f;
+    units::torque::newton_meter_t desired_torque(0.5);
 
     if (motors_) {
         for(int i = 0; i < 4; ++i) {
-            motors_->set_throttle(i, desired_throttle);
+            motors_->set_torque(i, desired_torque);
         }
     }
 }

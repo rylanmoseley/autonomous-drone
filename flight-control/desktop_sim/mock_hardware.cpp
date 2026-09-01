@@ -5,12 +5,32 @@ void MockIMU::init() {
     std::cout << "[MockIMU] Initialized." << std::endl;
 }
 
-void MockIMU::read_accel(float& x, float& y, float& z) {
-    x = 0.0f; y = 0.0f; z = 9.81f; // Simulated gravity
+bool MockIMU::update(HAL::IMUData& data) {
+    data.timestamp = units::time::millisecond_t(0.0); // Would be actual sim time
+    
+    data.accel(0) = units::acceleration::meters_per_second_squared_t(0.0);
+    data.accel(1) = units::acceleration::meters_per_second_squared_t(0.0);
+    data.accel(2) = units::acceleration::meters_per_second_squared_t(-9.81);
+    
+    data.gyro(0) = units::angular_velocity::radians_per_second_t(0.0);
+    data.gyro(1) = units::angular_velocity::radians_per_second_t(0.0);
+    data.gyro(2) = units::angular_velocity::radians_per_second_t(0.0);
+    
+    data.mag(0) = units::magnetic_field::gauss_t(0.0);
+    data.mag(1) = units::magnetic_field::gauss_t(0.0);
+    data.mag(2) = units::magnetic_field::gauss_t(0.0);
+    
+    data.temperature = units::temperature::celsius_t(25.0);
+    
+    return true;
 }
 
-void MockIMU::read_gyro(float& x, float& y, float& z) {
-    x = 0.0f; y = 0.0f; z = 0.0f;
+void MockIMU::calibrate_gyro() {
+    std::cout << "[MockIMU] Calibrating Gyro..." << std::endl;
+}
+
+void MockIMU::calibrate_accel() {
+    std::cout << "[MockIMU] Calibrating Accel..." << std::endl;
 }
 
 void MockMotors::init() {
