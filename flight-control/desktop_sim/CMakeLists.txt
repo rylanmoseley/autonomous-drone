@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.16...4.5)
 project(desktop_sim)
 
 set(CMAKE_CXX_STANDARD 17)
