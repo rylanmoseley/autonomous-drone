@@ -59,6 +59,8 @@ void PhysicsEngine::calculate_forces_and_torques(
     out_force(1) -= config_.linear_drag_coefficient * state_.velocity(1);
     out_force(2) -= config_.linear_drag_coefficient * state_.velocity(2);
     
+    Eigen::Vector3f body_thrust_force(0.0f, 0.0f, 0.0f);
+    
     // 3. Rotor forces and torques
     for (size_t i = 0; i < config_.rotors.size(); ++i) {
         auto rpm = current_motor_rpms_[i].to<float>();
@@ -69,10 +71,8 @@ void PhysicsEngine::calculate_forces_and_torques(
         float thrust_mag = config_.rotors[i].thrust_coefficient * (omega * omega);
         Eigen::Vector3f thrust_vec = config_.rotors[i].thrust_axis * thrust_mag;
         
-        // Add to total force
-        out_force(0) += thrust_vec(0);
-        out_force(1) += thrust_vec(1);
-        out_force(2) += thrust_vec(2);
+        // Accumulate in body frame
+        body_thrust_force += thrust_vec;
         
         // Structural Torque = r x F
         Eigen::Vector3f position_vec = config_.rotors[i].position;
@@ -90,6 +90,15 @@ void PhysicsEngine::calculate_forces_and_torques(
         out_torque(1) += structural_torque(1) + drag_torque(1);
         out_torque(2) += structural_torque(2) + drag_torque(2);
     }
+    
+    // Convert body frame thrust to global frame
+    Eigen::Matrix3f R;
+    R = Eigen::AngleAxisf(state_.euler_angles(2), Eigen::Vector3f::UnitZ())
+      * Eigen::AngleAxisf(state_.euler_angles(1), Eigen::Vector3f::UnitY())
+      * Eigen::AngleAxisf(state_.euler_angles(0), Eigen::Vector3f::UnitX());
+      
+    Eigen::Vector3f global_thrust = R * body_thrust_force;
+    out_force += global_thrust;
 }
 
 void PhysicsEngine::step(units::time::second_t dt) {
