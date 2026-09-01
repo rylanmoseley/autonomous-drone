@@ -45,7 +45,21 @@
 
         <div class="panel">
             <h3>Hardware Config</h3>
-            <button id="btn-config">Test Config Update</button>
+            <div id="config-form">
+                <div class="row">
+                    <label style="width: 120px;">Mass (kg)</label>
+                    <input type="number" id="cfg-mass" value="1.2" step="0.1">
+                </div>
+                <div class="row">
+                    <label style="width: 120px;">Linear Drag</label>
+                    <input type="number" id="cfg-drag" value="0.5" step="0.1">
+                </div>
+                <div class="row">
+                    <label style="width: 120px;">Battery Volts</label>
+                    <input type="number" id="cfg-volts" value="14.8" step="0.1">
+                </div>
+                <button id="btn-config">Update Config</button>
+            </div>
         </div>
     </div>
 
@@ -109,7 +123,9 @@
         animate();
 
         // 2. Setup UI Logic & Socket.IO
-        const socket = io(); // Connects to the host serving this file
+        // Force websocket transport to avoid HTTP polling 404s on strict reverse proxies
+        const socket = io({ transports: ['websocket'] }); 
+        
         const cmdState = { lx: 0, ly: 0, lz: 0, ax: 0, ay: 0, az: 0 };
         const telemetryDiv = document.getElementById('telemetry-data');
 
@@ -184,13 +200,21 @@
 
         document.getElementById('btn-zero').addEventListener('click', () => {
             Object.keys(cmdState).forEach(k => cmdState[k] = 0);
-            sliderContainer.querySelectorAll('input').forEach(inp => { inp.value = 0; });
+            sliderContainer.querySelectorAll('input[type="range"]').forEach(inp => { inp.value = 0; });
             sliderContainer.querySelectorAll('span').forEach(sp => { sp.textContent = '0.00'; });
             socket.emit('command', cmdState);
         });
 
         document.getElementById('btn-config').addEventListener('click', () => {
-            socket.emit('config', { mass: 1.5 });
+            const mass = parseFloat(document.getElementById('cfg-mass').value);
+            const drag = parseFloat(document.getElementById('cfg-drag').value);
+            const volts = parseFloat(document.getElementById('cfg-volts').value);
+            
+            socket.emit('config', { 
+                mass: mass,
+                linear_drag_coefficient: drag,
+                nominal_voltage: volts
+            });
         });
     </script>
 </body>
