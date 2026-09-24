@@ -14,6 +14,7 @@
 #include "goal_estimator.h"
 #include "path_planner.h"
 #include "mavlink_daemon.h"
+#include "telemetry_logger_impl.h"
 
 enum class MissionState {
     IDLE,
@@ -91,7 +92,7 @@ void vision_receiver_thread(GoalEstimator* estimator) {
     close(sock);
 }
 
-int main() {
+int AutopilotNode::run_once() {
     PlannerConfig config;
     config.max_velocity = 0.6; // ER 3 requires >= 0.6 m/s, reduced for 2x2x2 space
     config.max_vertical_velocity = 0.25; 
@@ -104,6 +105,7 @@ int main() {
     PathPlanner planner(config);
     GoalEstimator estimator(0.5, 5.0);
     MavlinkDaemon fcu(14550, "127.0.0.1", 14551);
+    UdpTelemetryLogger logger("127.0.0.1", 14554);
     
     fcu.start();
     
@@ -298,6 +300,12 @@ int main() {
         }
         
         fcu.sendFlightCommand(cmd);
+        logger.log("state", (int)state);
+        logger.log("cmd_tx", cmd.target_x);
+        logger.log("cmd_ty", cmd.target_y);
+        logger.log("cmd_tz", cmd.target_z);
+        logger.log("telem_x", telem.current_pose.x);
+        logger.flush();
         std::cout << "State: " << (int)state << " current_z: " << telem.current_pose.z << std::endl; std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     
