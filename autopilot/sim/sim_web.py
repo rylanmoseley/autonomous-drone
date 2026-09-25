@@ -20,6 +20,7 @@ class Telemetry(ctypes.Structure):
     _fields_ = [("p", Pose), ("bat", ctypes.c_int), ("err", ctypes.c_bool)]
 
 class UIGoalSequence(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [("g", Pose * 16), ("n", ctypes.c_size_t), ("start", ctypes.c_bool), ("stop", ctypes.c_bool), ("estop", ctypes.c_bool)]
 
 class UIAckPacket(ctypes.Structure):
