@@ -16,6 +16,7 @@ public:
     PathPlanner(const PlannerConfig& config);
     FlightCommand plan(const Pose& current_pose, const Pose& target_pose, double dt);
     bool has_arrived(const Pose& current_pose, const Pose& target_pose) const;
+    PlannerConfig& getConfig() { return config_; }
 
 private:
     PlannerConfig config_;

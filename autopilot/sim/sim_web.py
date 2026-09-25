@@ -26,6 +26,12 @@ class UIGoalSequence(ctypes.Structure):
 class UIAckPacket(ctypes.Structure):
     _fields_ = [("received", ctypes.c_bool)]
 
+class UIConfigPacket(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [("max_velocity", ctypes.c_double), 
+                ("max_vertical_velocity", ctypes.c_double),
+                ("max_yaw_rate", ctypes.c_double)]
+
 class VisionGoalEstimate(ctypes.Structure):
     _fields_ = [("p", Pose), ("id", ctypes.c_int), ("det", ctypes.c_bool)]
 
@@ -36,6 +42,7 @@ vision_goals = [
     {"id": 2, "x": 1.0, "y": 1.0, "z": 1.0, "yaw": 0.0}
 ]
 vision_enabled = True
+global_fixed_speed = 2.0
 
 import math
 
@@ -69,7 +76,8 @@ def _fcu_thread():
 
         dt = 0.05
         if last_cmd and last_cmd.en:
-            fixed_speed = 2.0
+            with state_lock:
+                fixed_speed = global_fixed_speed
             
             dx = last_cmd.tx - p.x
             dy = last_cmd.ty - p.y
@@ -157,7 +165,7 @@ async def process_request(path, request_headers):
     return None
 
 async def handler(websocket):
-    global vision_enabled, vision_goals, global_detections
+    global vision_enabled, vision_goals, global_detections, global_fixed_speed
     
     async def send_state():
         while True:
@@ -193,6 +201,16 @@ async def handler(websocket):
             elif data["type"] == "update_goals":
                 with state_lock:
                     vision_goals = data["goals"]
+            elif data["type"] == "config":
+                cfg = UIConfigPacket()
+                cfg.max_velocity = data["max_velocity"]
+                cfg.max_vertical_velocity = data["max_vertical_velocity"]
+                cfg.max_yaw_rate = data["max_yaw_rate"]
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.sendto(bytes(cfg), ("127.0.0.1", 14552))
+                sock.close()
+                with state_lock:
+                    global_fixed_speed = data["max_velocity"]
     except Exception:
         pass
     finally:

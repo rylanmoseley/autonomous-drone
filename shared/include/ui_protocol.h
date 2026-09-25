@@ -19,3 +19,9 @@ struct __attribute__((packed)) UIGoalSequence {
 struct UIAckPacket {
     bool received;
 };
+
+struct __attribute__((packed)) UIConfigPacket {
+    double max_velocity;
+    double max_vertical_velocity;
+    double max_yaw_rate;
+};

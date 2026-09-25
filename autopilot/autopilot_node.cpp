@@ -61,13 +61,19 @@ void AutopilotNode::stop() {
 }
 
 void AutopilotNode::ui_loop() {
-    UIGoalSequence packet;
+    char buffer[4096];
     while (running) {
         struct sockaddr_in from; socklen_t from_len = sizeof(from);
-        int n = recvfrom(ui_sock, &packet, sizeof(packet), 0, (struct sockaddr *)&from, &from_len);
+        int n = recvfrom(ui_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
         if (n == sizeof(UIGoalSequence)) {
+            UIGoalSequence* packet = reinterpret_cast<UIGoalSequence*>(buffer);
             std::lock_guard<std::mutex> lock(seq_mutex);
-            seq = packet;
+            seq = *packet;
+        } else if (n == sizeof(UIConfigPacket)) {
+            UIConfigPacket* cfg = reinterpret_cast<UIConfigPacket*>(buffer);
+            planner.getConfig().max_velocity = cfg->max_velocity;
+            planner.getConfig().max_vertical_velocity = cfg->max_vertical_velocity;
+            planner.getConfig().max_yaw_rate = cfg->max_yaw_rate;
         }
     }
 }
