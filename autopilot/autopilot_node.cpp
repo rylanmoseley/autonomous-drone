@@ -180,13 +180,13 @@ FlightCommand AutopilotNode::testTick(const Pose& current_pose, double dt) {
             break;
         case MissionState::RETURN_TO_HOME:
             cmd.enable = true;
-            cmd.target_x = 0.0; cmd.target_y = 0.0; cmd.target_z = 2.5; cmd.target_yaw = current_pose.yaw;
+            cmd.target_x = 0.0; cmd.target_y = 0.0; cmd.target_z = 0.4; cmd.target_yaw = current_pose.yaw;
             {
                 double rth_dx = 0.0 - current_pose.x; double rth_dy = 0.0 - current_pose.y;
                 if (std::sqrt(rth_dx*rth_dx + rth_dy*rth_dy) > 0.5) cmd.target_yaw = std::atan2(rth_dy, rth_dx);
             }
             cmd = planner.plan(current_pose, {cmd.target_x, cmd.target_y, cmd.target_z, 0,0,cmd.target_yaw,0,1.0}, dt);
-            if (planner.has_arrived(current_pose, {0,0,2.5,0,0,0,0,1})) state = MissionState::LANDING;
+            if (planner.has_arrived(current_pose, {0,0,0.4,0,0,0,0,1})) state = MissionState::LANDING;
             break;
         case MissionState::LANDING:
             cmd.enable = true;
