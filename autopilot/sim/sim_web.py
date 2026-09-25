@@ -69,7 +69,7 @@ def _fcu_thread():
 
         dt = 0.05
         if last_cmd and last_cmd.en:
-            print(f"FCU cmd: tx={last_cmd.tx:.3f} ty={last_cmd.ty:.3f} tz={last_cmd.tz:.3f} tyaw={last_cmd.tyaw:.3f} en={last_cmd.en} est={last_cmd.est}"); target_vx = (last_cmd.tx - p.x) / dt
+            target_vx = (last_cmd.tx - p.x) / dt
             target_vy = (last_cmd.ty - p.y) / dt
             target_vz = (last_cmd.tz - p.z) / dt
             
@@ -144,7 +144,7 @@ def vision_thread():
             if not dets:
                 est = VisionGoalEstimate()
                 est.id = -1
-                print("Vision heartbeat sent"); est.det = False
+                est.det = False
                 sock.sendto(bytes(est), ("127.0.0.1", 14553))
             else:
                 for det in dets:
