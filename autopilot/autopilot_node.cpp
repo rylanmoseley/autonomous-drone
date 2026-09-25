@@ -197,26 +197,32 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
         case MissionState::LANDING:
             cmd.enable = true;
             cmd.target_x = current_pose.x; cmd.target_y = current_pose.y; cmd.target_z = 0.0;
-            
-            // Repel from goals horizontally to avoid landing on them
-            for (size_t i = 0; i < current_seq.num_goals; ++i) {
-                double gx = current_seq.goals[i].x; double gy = current_seq.goals[i].y;
-                double dx = cmd.target_x - gx; double dy = cmd.target_y - gy;
-                double dist = std::sqrt(dx*dx + dy*dy);
-                if (dist < 1.2) { // 1.2m keepout radius
-                    if (dist < 0.001) { dx = 1.0; dy = 0.0; dist = 1.0; } // random direction if exactly on top
-                    double push = 1.2 - dist;
-                    cmd.target_x += (dx / dist) * push;
-                    cmd.target_y += (dy / dist) * push;
-                }
-            }
-            
             cmd = planner.plan(current_pose, {cmd.target_x, cmd.target_y, cmd.target_z, 0,0,current_pose.yaw,0,1.0}, dt);
             if (current_pose.z <= 0.05) state = MissionState::IDLE;
             break;
         case MissionState::IDLE:
         default: break;
     }
+
+    // Global Artificial Potential Field to repel from inactive goals
+    if (cmd.enable && state != MissionState::IDLE && state != MissionState::TAKEOFF) {
+        for (size_t i = 0; i < current_seq.num_goals; ++i) {
+            if (state == MissionState::NAVIGATING && i == current_goal_index) continue; // Allow flying through the active goal
+            
+            double gx = current_seq.goals[i].x; double gy = current_seq.goals[i].y;
+            double dx = cmd.target_x - gx; double dy = cmd.target_y - gy;
+            double dist = std::sqrt(dx*dx + dy*dy);
+            
+            if (dist < 1.2) {
+                if (dist < 0.001) { dx = 1.0; dy = 0.0; dist = 1.0; }
+                // Push proportional to penetration
+                double push = (1.2 - dist) * 0.5; // Strong push (up to 0.6m per tick = 12m/s) to ensure strict collision avoidance
+                cmd.target_x += (dx / dist) * push;
+                cmd.target_y += (dy / dist) * push;
+            }
+        }
+    }
+
     return cmd;
 }
 
