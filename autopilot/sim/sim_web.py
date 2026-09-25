@@ -69,9 +69,21 @@ def _fcu_thread():
 
         dt = 0.05
         if last_cmd and last_cmd.en:
-            p.x = last_cmd.tx
-            p.y = last_cmd.ty
-            p.z = last_cmd.tz
+            fixed_speed = 2.0
+            
+            dx = last_cmd.tx - p.x
+            dy = last_cmd.ty - p.y
+            dz = last_cmd.tz - p.z
+            dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+            
+            if dist > fixed_speed * dt:
+                p.x += (dx / dist) * fixed_speed * dt
+                p.y += (dy / dist) * fixed_speed * dt
+                p.z += (dz / dist) * fixed_speed * dt
+            else:
+                p.x = last_cmd.tx
+                p.y = last_cmd.ty
+                p.z = last_cmd.tz
             
             dyaw = last_cmd.tyaw - p.yaw
             while dyaw > math.pi: dyaw -= 2*math.pi

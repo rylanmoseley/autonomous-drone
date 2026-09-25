@@ -33,11 +33,8 @@ FlightCommand PathPlanner::plan(const Pose& current_pose, const Pose& target_pos
     double dist = std::sqrt(dx*dx + dy*dy + dz*dz);
     
     if (dist <= config_.arrival_tolerance) {
-        cmd.target_x = target_pose.x;
-        cmd.target_y = target_pose.y;
-        cmd.target_z = target_pose.z;
-        cmd.target_yaw = target_pose.yaw;
-        return cmd;
+        // We have arrived, but do not snap the coordinates to avoid teleporting the setpoint!
+        // We just let the proportional controller naturally bring vx to 0.
     }
 
     double vx = dx * config_.position_p_gain;
