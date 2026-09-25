@@ -64,7 +64,7 @@ void MavlinkDaemon::receiveLoop() {
         int n = recvfrom(socket_fd_, buffer, sizeof(buffer), 0, (struct sockaddr *)&remote_addr, &addr_len);
         if (n > 0) {
             // Simplified parsing for tests: expect directly serialized Telemetry struct
-            std::cout << "Mavlink recv: " << n << std::endl; if (n == sizeof(Telemetry)) {
+            if (n == sizeof(Telemetry)) {
                 std::lock_guard<std::mutex> lock(telem_mutex_);
                 memcpy(&current_telemetry_, buffer, sizeof(Telemetry));
             }
