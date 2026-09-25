@@ -8,7 +8,16 @@ import urllib.parse
 
 class Pose(ctypes.Structure):
     _pack_ = 1
+    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double), ("z", ctypes.c_double), ("roll", ctypes.c_double), ("pitch", ctypes.c_double), ("yaw", ctypes.c_double), ("timestamp", ctypes.c_double), ("confidence", ctypes.c_double)]
+
+class UIGoalPose(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [("id", ctypes.c_uint32), ("x", ctypes.c_double), ("y", ctypes.c_double), ("z", ctypes.c_double), ("roll", ctypes.c_double), ("pitch", ctypes.c_double), ("yaw", ctypes.c_double), ("timestamp", ctypes.c_double), ("confidence", ctypes.c_double)]
+
+class VisionPose(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double), ("z", ctypes.c_double), ("roll", ctypes.c_double), ("pitch", ctypes.c_double), ("yaw", ctypes.c_double), ("timestamp", ctypes.c_double), ("confidence", ctypes.c_double)]
+
 
 class FlightCommand(ctypes.Structure):
     _pack_ = 1
@@ -21,7 +30,7 @@ class Telemetry(ctypes.Structure):
 
 class UIGoalSequence(ctypes.Structure):
     _pack_ = 1
-    _fields_ = [("g", Pose * 16), ("n", ctypes.c_size_t), ("start", ctypes.c_bool), ("stop", ctypes.c_bool), ("estop", ctypes.c_bool)]
+    _fields_ = [("g", UIGoalPose * 16), ("n", ctypes.c_size_t), ("start", ctypes.c_bool), ("stop", ctypes.c_bool), ("estop", ctypes.c_bool)]
 
 class UIAckPacket(ctypes.Structure):
     _fields_ = [("received", ctypes.c_bool)]
@@ -33,7 +42,7 @@ class UIConfigPacket(ctypes.Structure):
                 ("max_yaw_rate", ctypes.c_double)]
 
 class VisionGoalEstimate(ctypes.Structure):
-    _fields_ = [("p", Pose), ("id", ctypes.c_int), ("det", ctypes.c_bool)]
+    _fields_ = [("p", VisionPose), ("id", ctypes.c_int), ("det", ctypes.c_bool)]
 
 state_lock = threading.Lock()
 drone_pos = {"x": 0, "y": 0, "z": 1, "yaw": 0}
@@ -139,7 +148,7 @@ def vision_thread():
             else:
                 for det in dets:
                     est = VisionGoalEstimate()
-                    est.p = Pose(det["x"], det["y"], det["z"], 0, 0, det["yaw"], time.time(), 1.0)
+                    est.p = VisionPose(det["x"], det["y"], det["z"], 0, 0, det["yaw"], time.time(), 1.0)
                     est.id = det["id"]
                     est.det = True
                     sock.sendto(bytes(est), ("127.0.0.1", 14553))
@@ -187,7 +196,7 @@ async def handler(websocket):
                 seq.start = True
                 seq.n = len(data["goals"])
                 for i, g in enumerate(data["goals"]):
-                    seq.g[i] = Pose(g["id"], g["x"], g["y"], g["z"], 0, 0, g["yaw"], 0, 1.0)
+                    seq.g[i] = UIGoalPose(g["id"], g["x"], g["y"], g["z"], 0, 0, g["yaw"], 0, 1.0)
                 
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 sock.sendto(bytes(seq), ("127.0.0.1", 14552))
