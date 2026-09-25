@@ -160,7 +160,10 @@
             const points = [];
             points.push(new THREE.Vector3(drone.position.x, drone.position.y, drone.position.z));
             sequenceGoals.forEach(g => {
-                points.push(new THREE.Vector3(g.x, g.z, -g.y));
+                const dx = Math.cos(g.yaw);
+                const dy = Math.sin(g.yaw);
+                points.push(new THREE.Vector3(g.x - dx * 0.5, g.z, -(g.y - dy * 0.5)));
+                points.push(new THREE.Vector3(g.x + dx * 0.5, g.z, -(g.y + dy * 0.5)));
             });
             points.push(new THREE.Vector3(0, 0.4, 0));
             points.push(new THREE.Vector3(0, 0, 0));
