@@ -88,6 +88,7 @@
             list.innerHTML = "";
             Object.keys(shapes).forEach(key => {
                 const s = shapes[key];
+                const yawDeg = (s.yaw * 180 / Math.PI).toFixed(1);
                 list.innerHTML += `
                     <div class="shape-row">
                         <strong>${s.name} (ID: ${s.id})</strong>
@@ -95,7 +96,7 @@
                             X:<input type="number" step="0.1" value="${s.x}" onchange="shapes['${key}'].x=parseFloat(this.value)">
                             Y:<input type="number" step="0.1" value="${s.y}" onchange="shapes['${key}'].y=parseFloat(this.value)">
                             Z:<input type="number" step="0.1" value="${s.z}" onchange="shapes['${key}'].z=parseFloat(this.value)">
-                            Yaw:<input type="number" step="0.1" value="${s.yaw}" onchange="shapes['${key}'].yaw=parseFloat(this.value)">
+                            Yaw(°):<input type="number" step="1" value="${yawDeg}" onchange="shapes['${key}'].yaw=parseFloat(this.value) * Math.PI / 180">
                         </div>
                     </div>
                 `;

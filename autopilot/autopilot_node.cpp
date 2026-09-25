@@ -214,12 +214,16 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
             double dx = cmd.target_x - gx; double dy = cmd.target_y - gy;
             double dist = std::sqrt(dx*dx + dy*dy);
             
-            if (dist < 1.2) {
+            if (dist < 0.4) {
                 if (dist < 0.001) { dx = 1.0; dy = 0.0; dist = 1.0; }
                 // Push proportional to penetration
-                double push = (1.2 - dist) * 0.5; // Strong push (up to 0.6m per tick = 12m/s) to ensure strict collision avoidance
+                double push = (0.4 - dist) * 0.5; // Strong push (up to 0.2m per tick = 4m/s)
                 cmd.target_x += (dx / dist) * push;
                 cmd.target_y += (dy / dist) * push;
+                
+                // Vortex force to escape local minima
+                cmd.target_x += -(dy / dist) * push * 0.5;
+                cmd.target_y += (dx / dist) * push * 0.5;
             }
         }
     }
