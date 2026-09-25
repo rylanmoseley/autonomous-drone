@@ -107,6 +107,9 @@
         const wsUrl = `${protocol}//${window.location.host}${window.location.pathname.replace(/\/$/, '')}/ws`;
         const ws = new WebSocket(wsUrl);
 
+        let trailPoints = [];
+        let trailLine = null;
+
         ws.onmessage = (event) => {
             const state = JSON.parse(event.data);
             drone.position.set(state.drone.x, state.drone.z, -state.drone.y);
@@ -114,6 +117,21 @@
             drone.rotation.y = state.drone.yaw || 0;
             drone.rotation.z = state.drone.pitch || 0;
             drone.rotation.x = -(state.drone.roll || 0);
+            
+            if (state.drone.z > 0.05) {
+                trailPoints.push(new THREE.Vector3(state.drone.x, state.drone.z, -state.drone.y));
+                if (trailPoints.length > 500) trailPoints.shift();
+            } else if (trailPoints.length > 0) {
+                trailPoints = [];
+            }
+            
+            if (trailLine) scene.remove(trailLine);
+            if (trailPoints.length > 1) {
+                const geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
+                const material = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8 });
+                trailLine = new THREE.Line(geometry, material);
+                scene.add(trailLine);
+            }
         };
 
         function toggleVision() {
@@ -159,14 +177,84 @@
             
             if (pathLine) scene.remove(pathLine);
             const points = [];
-            points.push(new THREE.Vector3(drone.position.x, drone.position.y, drone.position.z));
-            sequenceGoals.forEach(g => {
-                const dx = Math.cos(g.yaw);
-                const dy = Math.sin(g.yaw);
-                points.push(new THREE.Vector3(g.x - dx * 0.5, g.z, -(g.y - dy * 0.5)));
-                points.push(new THREE.Vector3(g.x + dx * 0.5, g.z, -(g.y + dy * 0.5)));
+            
+            let px = drone.position.x;
+            let pz = drone.position.y; // Drone z is y in THREE
+            let py = -drone.position.z; // Drone y is -z in THREE
+            
+            // Takeoff
+            pz = 1.0;
+            points.push(new THREE.Vector3(px, pz, -py));
+            
+            sequenceGoals.forEach((g, idx) => {
+                let target_x = g.x - Math.cos(g.yaw) * 0.5;
+                let target_y = g.y - Math.sin(g.yaw) * 0.5;
+                
+                // Simulate APF path to approach point
+                for (let iter = 0; iter < 1000; ++iter) {
+                    let dx = target_x - px;
+                    let dy = target_y - py;
+                    let dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < 0.05) break;
+                    
+                    let step_x = (dx / dist) * 0.05;
+                    let step_y = (dy / dist) * 0.05;
+                    
+                    sequenceGoals.forEach((og, oidx) => {
+                        if (oidx === idx) return;
+                        let odx = px - og.x;
+                        let ody = py - og.y;
+                        let odist = Math.sqrt(odx*odx + ody*ody);
+                        if (odist < 0.4) {
+                            let push = (0.4 - odist) * 0.5;
+                            step_x += (odx / odist) * push;
+                            step_y += (ody / odist) * push;
+                            step_x += -(ody / odist) * push * 0.5;
+                            step_y += (odx / odist) * push * 0.5;
+                        }
+                    });
+                    
+                    px += step_x;
+                    py += step_y;
+                    points.push(new THREE.Vector3(px, pz, -py));
+                }
+                
+                // Fly through hoop
+                px = g.x + Math.cos(g.yaw) * 0.5;
+                py = g.y + Math.sin(g.yaw) * 0.5;
+                points.push(new THREE.Vector3(px, pz, -py));
             });
-            points.push(new THREE.Vector3(0, 0.4, 0));
+            
+            // RTH
+            pz = 0.4;
+            points.push(new THREE.Vector3(px, pz, -py));
+            for (let iter = 0; iter < 1000; ++iter) {
+                let dx = 0.0 - px;
+                let dy = 0.0 - py;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < 0.05) break;
+                
+                let step_x = (dx / dist) * 0.05;
+                let step_y = (dy / dist) * 0.05;
+                
+                sequenceGoals.forEach(og => {
+                    let odx = px - og.x;
+                    let ody = py - og.y;
+                    let odist = Math.sqrt(odx*odx + ody*ody);
+                    if (odist < 0.4) {
+                        let push = (0.4 - odist) * 0.5;
+                        step_x += (odx / odist) * push;
+                        step_y += (ody / odist) * push;
+                        step_x += -(ody / odist) * push * 0.5;
+                        step_y += (odx / odist) * push * 0.5;
+                    }
+                });
+                
+                px += step_x;
+                py += step_y;
+                points.push(new THREE.Vector3(px, pz, -py));
+            }
+            
             points.push(new THREE.Vector3(0, 0, 0));
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
             const material = new THREE.LineDashedMaterial({ color: 0xffa500, dashSize: 0.2, gapSize: 0.1 });
