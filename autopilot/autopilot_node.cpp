@@ -126,7 +126,8 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
             cmd.target_y = current_pose.y;
             cmd.target_z = 1.0;
             cmd.target_yaw = current_pose.yaw;
-            if (planner.has_arrived(current_pose, {cmd.target_x, cmd.target_y, cmd.target_z, 0,0,0,0,1.0})) {
+            cmd = planner.plan(current_pose, {cmd.target_x, cmd.target_y, cmd.target_z, 0,0,cmd.target_yaw,0,1.0}, dt);
+            if (planner.has_arrived(current_pose, {current_pose.x, current_pose.y, 1.0, 0,0,current_pose.yaw,0,1.0})) {
                 state = MissionState::NAVIGATING;
                 new_goal = true;
             }
