@@ -25,7 +25,7 @@ public:
     std::thread vision_thread;
 
     MissionState state = MissionState::IDLE;
-    UIGoalSequence seq;
+    UIGoalSequence seq = {};
     std::mutex seq_mutex;
 
     int ui_sock;

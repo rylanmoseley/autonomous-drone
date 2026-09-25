@@ -95,8 +95,10 @@ FlightCommand AutopilotNode::testTick(const Pose& current_pose, double dt) {
         // state = MissionState::ERROR; // disable safety for mock test
     }
 
+    UIGoalSequence current_seq;
     {
         std::lock_guard<std::mutex> lock(seq_mutex);
+        current_seq = seq;
         if (seq.estop) state = MissionState::ESTOP;
         else if (seq.start && state == MissionState::IDLE) {
             seq.start = false;
@@ -124,16 +126,16 @@ FlightCommand AutopilotNode::testTick(const Pose& current_pose, double dt) {
             }
             break;
         case MissionState::NAVIGATING:
-            if (current_goal_index < seq.num_goals) {
+            if (current_goal_index < current_seq.num_goals) {
                 Pose raw_target = {
-                    seq.goals[current_goal_index].x,
-                    seq.goals[current_goal_index].y,
-                    seq.goals[current_goal_index].z,
-                    seq.goals[current_goal_index].roll,
-                    seq.goals[current_goal_index].pitch,
-                    seq.goals[current_goal_index].yaw,
-                    seq.goals[current_goal_index].timestamp,
-                    seq.goals[current_goal_index].confidence
+                    current_seq.goals[current_goal_index].x,
+                    current_seq.goals[current_goal_index].y,
+                    current_seq.goals[current_goal_index].z,
+                    current_seq.goals[current_goal_index].roll,
+                    current_seq.goals[current_goal_index].pitch,
+                    current_seq.goals[current_goal_index].yaw,
+                    current_seq.goals[current_goal_index].timestamp,
+                    current_seq.goals[current_goal_index].confidence
                 };
                 
                 double hoop_nx = cos(raw_target.yaw);
@@ -191,8 +193,8 @@ FlightCommand AutopilotNode::testTick(const Pose& current_pose, double dt) {
             cmd.target_x = current_pose.x; cmd.target_y = current_pose.y; cmd.target_z = 0.0;
             
             // Repel from goals horizontally to avoid landing on them
-            for (size_t i = 0; i < seq.num_goals; ++i) {
-                double gx = seq.goals[i].x; double gy = seq.goals[i].y;
+            for (size_t i = 0; i < current_seq.num_goals; ++i) {
+                double gx = current_seq.goals[i].x; double gy = current_seq.goals[i].y;
                 double dx = cmd.target_x - gx; double dy = cmd.target_y - gy;
                 double dist = std::sqrt(dx*dx + dy*dy);
                 if (dist < 1.2) { // 1.2m keepout radius
