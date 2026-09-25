@@ -150,9 +150,9 @@
             const seq3 = document.getElementById("seq-3").value;
             
             const sequenceGoals = [
-                { x: shapes[seq1].x, y: shapes[seq1].y, z: shapes[seq1].z, yaw: shapes[seq1].yaw },
-                { x: shapes[seq2].x, y: shapes[seq2].y, z: shapes[seq2].z, yaw: shapes[seq2].yaw },
-                { x: shapes[seq3].x, y: shapes[seq3].y, z: shapes[seq3].z, yaw: shapes[seq3].yaw }
+                { id: shapes[seq1].id, x: shapes[seq1].x, y: shapes[seq1].y, z: shapes[seq1].z, yaw: shapes[seq1].yaw },
+                { id: shapes[seq2].id, x: shapes[seq2].x, y: shapes[seq2].y, z: shapes[seq2].z, yaw: shapes[seq2].yaw },
+                { id: shapes[seq3].id, x: shapes[seq3].x, y: shapes[seq3].y, z: shapes[seq3].z, yaw: shapes[seq3].yaw }
             ];
 
             if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ui", goals: sequenceGoals }));

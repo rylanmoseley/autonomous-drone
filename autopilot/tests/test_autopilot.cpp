@@ -11,7 +11,7 @@ TEST(AutopilotTest, UninitializedFlightCommand) {
     UIGoalSequence seq = {};
     seq.start = true;
     seq.num_goals = 1;
-    seq.goals[0] = {1.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
+    seq.goals[0] = {1, 1.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
     node.setUISequence(seq);
     
     Pose current = {0.0, 0.0, 0.0, 0, 0, 0, 0, 1.0};
@@ -37,7 +37,7 @@ TEST(AutopilotTest, ZGoalPropagation) {
     seq.start = true;
     seq.num_goals = 1;
     // Goal Z is 1.0
-    seq.goals[0] = {1.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
+    seq.goals[0] = {1, 1.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
     node.setUISequence(seq);
     
     Pose current = {0.0, 0.0, 0.0, 0, 0, 0, 0, 1.0};
@@ -50,10 +50,10 @@ TEST(AutopilotTest, ZGoalPropagation) {
     EXPECT_EQ(node.getState(), MissionState::NAVIGATING);
     
     // Now in NAVIGATING, phase 0
+    // Wait, the estimator will NOT have goal 1!
+    // So the drone will SPIN to search for it!
+    // The target z should be current.z (1.0).
     FlightCommand cmd = node.tick(current, 0.05);
-    
-    // Z should be 1.0! Wait, planner.plan outputs SETPOINT based on velocity.
-    // If current.z is 1.0, and goal is 1.0, vz = 0, target_z = 1.0.
     EXPECT_DOUBLE_EQ(cmd.target_z, 1.0);
 }
 
@@ -62,9 +62,9 @@ TEST(AutopilotTest, FullMissionSimulation) {
     UIGoalSequence seq = {};
     seq.start = true;
     seq.num_goals = 3;
-    seq.goals[0] = {1.0, -0.5, 1.0, 0, 0, 0, 0, 1.0};
-    seq.goals[1] = {1.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
-    seq.goals[2] = {1.0, 0.5, 1.0, 0, 0, 0, 0, 1.0};
+    seq.goals[0] = {1, 1.0, -0.5, 1.0, 0, 0, 0, 0, 1.0};
+    seq.goals[1] = {2, 1.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
+    seq.goals[2] = {3, 1.0, 0.5, 1.0, 0, 0, 0, 0, 1.0};
     node.setUISequence(seq);
     
     Pose current = {0.0, 0.0, 0.0, 0, 0, 0, 0, 1.0};
@@ -76,6 +76,18 @@ TEST(AutopilotTest, FullMissionSimulation) {
     int max_ticks = 2000;
     int ticks = 0;
     while (node.getState() != MissionState::IDLE && ticks < max_ticks) {
+        // Inject perfect vision estimates for all goals
+        std::vector<VisionGoalEstimate> estimates;
+        for (int i = 0; i < 3; ++i) {
+            VisionGoalEstimate est;
+            est.goal_id = i + 1;
+            est.pose = {seq.goals[i].x, seq.goals[i].y, seq.goals[i].z, 0, 0, seq.goals[i].yaw, 0, 1.0};
+            est.determinate = true;
+            estimates.push_back(est);
+        }
+        double current_time = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        node.getEstimator().updateEstimates(estimates, current_time);
+        
         FlightCommand cmd = node.tick(current, dt);
         
         // Simple kinematic mock simulator (ignores yaw dynamics for simplicity)

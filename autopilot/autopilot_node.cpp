@@ -83,7 +83,11 @@ void AutopilotNode::vision_loop() {
     while (running) {
         struct sockaddr_in from; socklen_t from_len = sizeof(from);
         int n = recvfrom(vision_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
-        if (n > 0) {
+        if (n == sizeof(VisionGoalEstimate)) {
+            VisionGoalEstimate* est = reinterpret_cast<VisionGoalEstimate*>(buffer);
+            std::vector<VisionGoalEstimate> vec = {*est};
+            double current_time = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            estimator.updateEstimates(vec, current_time);
             last_vision_time = std::chrono::steady_clock::now();
         }
     }
@@ -144,6 +148,36 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     current_seq.goals[current_goal_index].timestamp,
                     current_seq.goals[current_goal_index].confidence
                 };
+                
+                double current_time = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+                std::vector<TrackedGoal> ests = estimator.getCurrentEstimates(current_time);
+                bool found = false;
+                VisionPose estimated_pose;
+                for (const auto& tg : ests) {
+                    if (tg.goal_id == current_seq.goals[current_goal_index].id) {
+                        estimated_pose = tg.pose;
+                        found = true;
+                        break;
+                    }
+                }
+                
+                if (found) {
+                    raw_target.x = estimated_pose.x;
+                    raw_target.y = estimated_pose.y;
+                    raw_target.z = estimated_pose.z;
+                    raw_target.yaw = estimated_pose.yaw;
+                } else {
+                    // Search behavior: hover and spin to find the goal
+                    cmd.enable = true;
+                    cmd.target_x = current_pose.x;
+                    cmd.target_y = current_pose.y;
+                    cmd.target_z = current_pose.z;
+                    cmd.target_yaw = current_pose.yaw + 1.0 * dt; // Spin at 1.0 rad/s
+                    cmd = planner.plan(current_pose, {cmd.target_x, cmd.target_y, cmd.target_z, 0,0,cmd.target_yaw,0,1.0}, dt);
+                    
+                    // Return early so we don't run regular navigation or APF
+                    return cmd;
+                }
                 
                 double hoop_nx = cos(raw_target.yaw);
                 double hoop_ny = sin(raw_target.yaw);

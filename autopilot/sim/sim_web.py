@@ -8,7 +8,7 @@ import urllib.parse
 
 class Pose(ctypes.Structure):
     _pack_ = 1
-    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double), ("z", ctypes.c_double), ("roll", ctypes.c_double), ("pitch", ctypes.c_double), ("yaw", ctypes.c_double), ("timestamp", ctypes.c_double), ("confidence", ctypes.c_double)]
+    _fields_ = [("id", ctypes.c_uint32), ("x", ctypes.c_double), ("y", ctypes.c_double), ("z", ctypes.c_double), ("roll", ctypes.c_double), ("pitch", ctypes.c_double), ("yaw", ctypes.c_double), ("timestamp", ctypes.c_double), ("confidence", ctypes.c_double)]
 
 class FlightCommand(ctypes.Structure):
     _pack_ = 1
@@ -187,7 +187,7 @@ async def handler(websocket):
                 seq.start = True
                 seq.n = len(data["goals"])
                 for i, g in enumerate(data["goals"]):
-                    seq.g[i] = Pose(g["x"], g["y"], g["z"], 0, 0, g["yaw"], 0, 1.0)
+                    seq.g[i] = Pose(g["id"], g["x"], g["y"], g["z"], 0, 0, g["yaw"], 0, 1.0)
                 
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 sock.sendto(bytes(seq), ("127.0.0.1", 14552))

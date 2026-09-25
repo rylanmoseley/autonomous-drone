@@ -30,8 +30,8 @@ void mock_ui() {
     seq.start = true;
     seq.stop = false;
     seq.estop = false;
-    seq.goals[0] = {1.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
-    seq.goals[1] = {1.0, 1.0, 1.0, 0, 0, 0, 0, 1.0};
+    seq.goals[0] = {1, 1.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
+    seq.goals[1] = {2, 1.0, 1.0, 1.0, 0, 0, 0, 0, 1.0};
     seq.num_goals = 2;
 
     sendto(sock, &seq, sizeof(UIGoalSequence), 0, (struct sockaddr*)&addr, sizeof(addr));
