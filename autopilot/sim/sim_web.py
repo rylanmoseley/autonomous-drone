@@ -69,47 +69,17 @@ def _fcu_thread():
 
         dt = 0.05
         if last_cmd and last_cmd.en:
-            target_vx = (last_cmd.tx - p.x) / dt
-            target_vy = (last_cmd.ty - p.y) / dt
-            target_vz = (last_cmd.tz - p.z) / dt
-            
-            max_accel = 2.0
-            
-            def clamp_accel(current, target, max_change):
-                if target > current + max_change: return current + max_change
-                if target < current - max_change: return current - max_change
-                return target
-                
-            new_vx = clamp_accel(vx, target_vx, max_accel * dt)
-            new_vy = clamp_accel(vy, target_vy, max_accel * dt)
-            new_vz = clamp_accel(vz, target_vz, max_accel * dt)
-            
-            accel_x = (new_vx - vx) / dt
-            accel_y = (new_vy - vy) / dt
-            
-            vx, vy, vz = new_vx, new_vy, new_vz
-            p.x += vx * dt
-            p.y += vy * dt
-            p.z += vz * dt
+            p.x = last_cmd.tx
+            p.y = last_cmd.ty
+            p.z = last_cmd.tz
             
             dyaw = last_cmd.tyaw - p.yaw
             while dyaw > math.pi: dyaw -= 2*math.pi
             while dyaw < -math.pi: dyaw += 2*math.pi
+            p.yaw += dyaw
             
-            max_yaw_rate = 2.5
-            yaw_step = dyaw
-            if yaw_step > max_yaw_rate * dt: yaw_step = max_yaw_rate * dt
-            if yaw_step < -max_yaw_rate * dt: yaw_step = -max_yaw_rate * dt
-            
-            p.yaw += yaw_step
-            while p.yaw > math.pi: p.yaw -= 2*math.pi
-            while p.yaw < -math.pi: p.yaw += 2*math.pi
-            
-            local_accel_x = accel_x * math.cos(-p.yaw) - accel_y * math.sin(-p.yaw)
-            local_accel_y = accel_x * math.sin(-p.yaw) + accel_y * math.cos(-p.yaw)
-            
-            p.pitch = -math.atan2(local_accel_x, 9.81) * 2.0
-            p.roll = -math.atan2(local_accel_y, 9.81) * 2.0
+            p.pitch = 0.0
+            p.roll = 0.0
             
             with state_lock:
                 drone_pos["x"] = p.x
