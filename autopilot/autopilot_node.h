@@ -53,5 +53,5 @@ public:
     // For testing
     MissionState getState() const { return state; }
     void setUISequence(const UIGoalSequence& s) { std::lock_guard<std::mutex> lock(seq_mutex); seq = s; }
-    FlightCommand testTick(const Pose& current_pose, double dt);
+    FlightCommand tick(const Pose& current_pose, double dt);
 };

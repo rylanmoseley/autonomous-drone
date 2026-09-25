@@ -83,7 +83,7 @@ void AutopilotNode::vision_loop() {
     }
 }
 
-FlightCommand AutopilotNode::testTick(const Pose& current_pose, double dt) {
+FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
     FlightCommand cmd = {0};
     cmd.enable = false;
     cmd.estop = false;
@@ -225,7 +225,7 @@ void AutopilotNode::run() {
         if (dt > 0.1) dt = 0.1;
 
         Telemetry telem = fcu.getTelemetry();
-        FlightCommand cmd = testTick(telem.current_pose, dt);
+        FlightCommand cmd = tick(telem.current_pose, dt);
         
         fcu.sendFlightCommand(cmd);
         logger.log("state", (int)state);
