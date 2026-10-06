@@ -1,4 +1,10 @@
 #include "goal_estimator.h"
+#include <cmath>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 
 GoalEstimator::GoalEstimator(double alpha, double timeout_sec) 
     : alpha_(alpha), timeout_sec_(timeout_sec) {}
@@ -11,7 +17,13 @@ void GoalEstimator::updateEstimates(const std::vector<VisionGoalEstimate>& new_e
             it->second.pose.x = alpha_ * est.pose.x + (1.0 - alpha_) * it->second.pose.x;
             it->second.pose.y = alpha_ * est.pose.y + (1.0 - alpha_) * it->second.pose.y;
             it->second.pose.z = alpha_ * est.pose.z + (1.0 - alpha_) * it->second.pose.z;
-            it->second.pose.yaw = alpha_ * est.pose.yaw + (1.0 - alpha_) * it->second.pose.yaw;
+            double dyaw = est.pose.yaw - it->second.pose.yaw;
+            while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
+            while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
+            it->second.pose.yaw = it->second.pose.yaw + alpha_ * dyaw;
+            
+            while (it->second.pose.yaw > M_PI) it->second.pose.yaw -= 2.0 * M_PI;
+            while (it->second.pose.yaw < -M_PI) it->second.pose.yaw += 2.0 * M_PI;
             it->second.last_update_time = current_time;
             it->second.determinate = est.determinate;
         } else {

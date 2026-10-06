@@ -19,8 +19,7 @@ enable_testing()
 include(GoogleTest)
 
 
-add_library(shared_contracts INTERFACE)
-target_include_directories(shared_contracts INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/../shared/include)
+
 
 add_subdirectory(mavlink-daemon)
 add_subdirectory(goal-estimator)
@@ -37,18 +36,6 @@ target_link_libraries(autopilot_node PRIVATE
     m
 )
 
-# Simulator Executable
-option(BUILD_SIMULATOR "Build the mock autopilot testbed" ON)
-if(BUILD_SIMULATOR)
-    add_executable(autopilot_sim sim/mock_runner.cpp)
-    target_link_libraries(autopilot_sim PRIVATE
-        goal_estimator
-        path_planner
-        shared_contracts
-        Threads::Threads
-        m
-    )
-endif()
 
 
 # Autopilot State Machine Tests

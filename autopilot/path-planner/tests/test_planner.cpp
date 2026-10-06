@@ -16,9 +16,10 @@ TEST(PathPlannerTest, HasArrived) {
 }
 
 TEST(PathPlannerTest, VelocityLimiting) {
-    PlannerConfig config;
+    PlannerConfig config = {};
     config.max_velocity = 1.0;
     config.max_vertical_velocity = 0.25;
+    config.max_acceleration = 100.0; // Instantly reach target velocity for the test
     config.position_p_gain = 2.0;
     config.max_yaw_rate = 1.0;
     config.yaw_p_gain = 1.0;

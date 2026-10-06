@@ -1,7 +1,9 @@
 #pragma once
 #include <cstddef>
+#include <cstdint>
 
 struct __attribute__((packed)) UIGoalPose {
+    uint32_t id;
     double x, y, z;
     double roll, pitch, yaw;
     double timestamp;

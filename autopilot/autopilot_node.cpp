@@ -6,9 +6,10 @@
 AutopilotNode::AutopilotNode()
     : fcu(14550, "127.0.0.1", 14551),
       planner([](){
-          PlannerConfig cfg;
+          PlannerConfig cfg = {};
           cfg.max_velocity = 2.0;
           cfg.max_vertical_velocity = 1.0;
+          cfg.max_acceleration = 100.0; // High for test/sim
           cfg.position_p_gain = 1.0;
           cfg.max_yaw_rate = 1.0;
           cfg.yaw_p_gain = 1.0;
@@ -69,11 +70,17 @@ void AutopilotNode::ui_loop() {
             UIGoalSequence* packet = reinterpret_cast<UIGoalSequence*>(buffer);
             std::lock_guard<std::mutex> lock(seq_mutex);
             seq = *packet;
+            
+            UIAckPacket ack;
+            ack.received = true;
+            sendto(ui_sock, &ack, sizeof(ack), 0, (struct sockaddr *)&from, from_len);
         } else if (n == sizeof(UIConfigPacket)) {
             UIConfigPacket* cfg = reinterpret_cast<UIConfigPacket*>(buffer);
-            planner.getConfig().max_velocity = cfg->max_velocity;
-            planner.getConfig().max_vertical_velocity = cfg->max_vertical_velocity;
-            planner.getConfig().max_yaw_rate = cfg->max_yaw_rate;
+            PlannerConfig pcfg = planner.getConfig();
+            pcfg.max_velocity = cfg->max_velocity;
+            pcfg.max_vertical_velocity = cfg->max_vertical_velocity;
+            pcfg.max_yaw_rate = cfg->max_yaw_rate;
+            planner.updateConfig(pcfg);
         }
     }
 }
@@ -88,7 +95,10 @@ void AutopilotNode::vision_loop() {
             std::vector<VisionGoalEstimate> vec = {*est};
             double current_time = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
             estimator.updateEstimates(vec, current_time);
-            last_vision_time = std::chrono::steady_clock::now();
+            {
+                std::lock_guard<std::mutex> lock(vision_mutex);
+                last_vision_time = std::chrono::steady_clock::now();
+            }
         }
     }
 }
@@ -100,9 +110,13 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
     
     // Safety
     auto now = std::chrono::steady_clock::now();
-    double time_since_vision = std::chrono::duration<double>(now - last_vision_time).count();
+    double time_since_vision = 0;
+    {
+        std::lock_guard<std::mutex> lock(vision_mutex);
+        time_since_vision = std::chrono::duration<double>(now - last_vision_time).count();
+    }
     if (time_since_vision > 0.2 && state != MissionState::ESTOP) {
-        // state = MissionState::ERROR; // disable safety for mock test
+        state = MissionState::ERROR;
     }
 
     UIGoalSequence current_seq;
@@ -172,7 +186,7 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     cmd.target_x = current_pose.x;
                     cmd.target_y = current_pose.y;
                     cmd.target_z = current_pose.z;
-                    cmd.target_yaw = current_pose.yaw + 1.0 * dt; // Spin at 1.0 rad/s
+                    cmd.target_yaw = current_pose.yaw + 1.0; // Pass a large yaw delta so planner spins
                     cmd = planner.plan(current_pose, {cmd.target_x, cmd.target_y, cmd.target_z, 0,0,cmd.target_yaw,0,1.0}, dt);
                     
                     // Return early so we don't run regular navigation or APF
@@ -192,17 +206,35 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     new_goal = false; goal_phase = 0;
                 }
                 Pose adjusted_target = raw_target;
+                
+                double apf_vx = 0.0, apf_vy = 0.0;
+                for (size_t i = 0; i < current_seq.num_goals; ++i) {
+                    if (i == current_goal_index) continue;
+                    double gx = current_seq.goals[i].x; double gy = current_seq.goals[i].y; double gz = current_seq.goals[i].z;
+                    double dx = current_pose.x - gx; double dy = current_pose.y - gy; double dz = current_pose.z - gz;
+                    double dist_3d = std::sqrt(dx*dx + dy*dy + dz*dz);
+                    double dist_2d = std::sqrt(dx*dx + dy*dy);
+                    if (dist_3d < 0.4) {
+                        if (dist_2d < 0.001) { dx = 1.0; dy = 0.0; dist_2d = 1.0; }
+                        double force = (0.4 - dist_3d) * 5.0; // P_gain for APF
+                        apf_vx += (dx / dist_2d) * force;
+                        apf_vy += (dy / dist_2d) * force;
+                        apf_vx += -(dy / dist_2d) * force * 0.5; // vortex
+                        apf_vy += (dx / dist_2d) * force * 0.5;
+                    }
+                }
+
                 if (goal_phase == 0) {
                     adjusted_target.x = raw_target.x - approach_dx * 0.5;
                     adjusted_target.y = raw_target.y - approach_dy * 0.5;
                     adjusted_target.yaw = transit_yaw;
-                    cmd = planner.plan(current_pose, adjusted_target, dt);
+                    cmd = planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
                     if (planner.has_arrived(current_pose, adjusted_target)) goal_phase = 1;
                 } else if (goal_phase == 1) {
                     adjusted_target.x = raw_target.x - approach_dx * 0.5;
                     adjusted_target.y = raw_target.y - approach_dy * 0.5;
                     adjusted_target.yaw = atan2(approach_dy, approach_dx);
-                    cmd = planner.plan(current_pose, adjusted_target, dt);
+                    cmd = planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
                     double dyaw = adjusted_target.yaw - current_pose.yaw;
                     while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
                     while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
@@ -211,7 +243,7 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     adjusted_target.x = raw_target.x + approach_dx * 0.5;
                     adjusted_target.y = raw_target.y + approach_dy * 0.5;
                     adjusted_target.yaw = atan2(approach_dy, approach_dx);
-                    cmd = planner.plan(current_pose, adjusted_target, dt);
+                    cmd = planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
                     if (planner.has_arrived(current_pose, adjusted_target)) {
                         current_goal_index++;
                         new_goal = true;
@@ -239,28 +271,6 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
         default: break;
     }
 
-    // Global Artificial Potential Field to repel from inactive goals
-    if (cmd.enable && state != MissionState::IDLE && state != MissionState::TAKEOFF) {
-        for (size_t i = 0; i < current_seq.num_goals; ++i) {
-            if (state == MissionState::NAVIGATING && i == current_goal_index) continue; // Allow flying through the active goal
-            
-            double gx = current_seq.goals[i].x; double gy = current_seq.goals[i].y;
-            double dx = cmd.target_x - gx; double dy = cmd.target_y - gy;
-            double dist = std::sqrt(dx*dx + dy*dy);
-            
-            if (dist < 0.4) {
-                if (dist < 0.001) { dx = 1.0; dy = 0.0; dist = 1.0; }
-                // Push proportional to penetration
-                double push = (0.4 - dist) * 0.5; // Strong push (up to 0.2m per tick = 4m/s)
-                cmd.target_x += (dx / dist) * push;
-                cmd.target_y += (dy / dist) * push;
-                
-                // Vortex force to escape local minima
-                cmd.target_x += -(dy / dist) * push * 0.5;
-                cmd.target_y += (dx / dist) * push * 0.5;
-            }
-        }
-    }
 
     return cmd;
 }

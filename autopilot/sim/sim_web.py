@@ -42,6 +42,7 @@ class UIConfigPacket(ctypes.Structure):
                 ("max_yaw_rate", ctypes.c_double)]
 
 class VisionGoalEstimate(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [("p", VisionPose), ("id", ctypes.c_int), ("det", ctypes.c_bool)]
 
 state_lock = threading.Lock()
@@ -199,7 +200,12 @@ async def handler(websocket):
                     seq.g[i] = UIGoalPose(g["id"], g["x"], g["y"], g["z"], 0, 0, g["yaw"], 0, 1.0)
                 
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.settimeout(0.5)
                 sock.sendto(bytes(seq), ("127.0.0.1", 14552))
+                try:
+                    sock.recvfrom(1024)
+                except socket.timeout:
+                    pass
                 sock.close()
             elif data["type"] == "vision":
                 with state_lock:

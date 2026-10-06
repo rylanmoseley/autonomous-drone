@@ -40,6 +40,7 @@ public:
     double transit_yaw = 0.0;
     
     std::chrono::steady_clock::time_point last_vision_time;
+    std::mutex vision_mutex;
 
     AutopilotNode();
     ~AutopilotNode();
