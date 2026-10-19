@@ -1,0 +1,13 @@
+(kicad_sch
+  (version 20211014)
+  (generator eeschema)
+  (uuid "d0a5196f-f982-4f01-9a72-7bc068800001")
+  (paper "A4")
+  (title_block
+    (title "Autonomous Drone Electrical Architecture")
+    (date "2026-10-19")
+    (company "Autonomous Drone Project")
+  )
+  (lib_symbols
+  )
+)
