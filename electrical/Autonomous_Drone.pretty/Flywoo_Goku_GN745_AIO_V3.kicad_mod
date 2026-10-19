@@ -1,0 +1,96 @@
+(footprint "Flywoo_Goku_GN745_AIO_V3"
+  (version 20240108)
+  (generator "kicad_pcb_editor")
+  (generator_version "8.0")
+  (layer "F.Cu")
+  (descr "Flywoo Goku GN745 45A AIO BL_32 MPU6000 V3 Flight Controller + 4-in-1 ESC (33.5x33.5mm, 25.5x25.5mm mounting)")
+  (tags "Flight Controller ESC AIO Flywoo Goku GN745 F745")
+  (property "Reference" "REF**" (at 0 -18 0) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))
+  (property "Value" "Flywoo_Goku_GN745_AIO_V3" (at 0 18 0) (layer "F.Fab") (effects (font (size 1 1) (thickness 0.15))))
+  (property "Footprint" "" (at 0 0 0) (layer "F.Fab") (effects (font (size 1.27 1.27)) hide))
+  
+  ; Outline: 33.5 x 33.5 mm
+  (fp_rect (start -16.75 -16.75) (end 16.75 16.75) (stroke (width 0.15) (type default)) (fill none) (layer "F.SilkS"))
+  (fp_rect (start -17.5 -17.5) (end 17.5 17.5) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd"))
+
+  ; 4x Mounting Holes: 25.5 x 25.5 mm (drill 3.0mm, pad 4.5mm)
+  (pad "" thru_hole circle (at -12.75 -12.75) (size 4.5 4.5) (drill 3.0) (layers "*.Cu" "*.Mask"))
+  (pad "" thru_hole circle (at 12.75 -12.75) (size 4.5 4.5) (drill 3.0) (layers "*.Cu" "*.Mask"))
+  (pad "" thru_hole circle (at -12.75 12.75) (size 4.5 4.5) (drill 3.0) (layers "*.Cu" "*.Mask"))
+  (pad "" thru_hole circle (at 12.75 12.75) (size 4.5 4.5) (drill 3.0) (layers "*.Cu" "*.Mask"))
+
+  ; Battery Pads (Bottom edge)
+  (pad "1" smd rect (at -2.5 15.2) (size 3.0 2.2) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "2" smd rect (at 2.5 15.2) (size 3.0 2.2) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (fp_text user "BAT+" (at -2.5 13.2 0) (layer "F.SilkS") (effects (font (size 0.7 0.7) (thickness 0.1))))
+  (fp_text user "BAT-" (at 2.5 13.2 0) (layer "F.SilkS") (effects (font (size 0.7 0.7) (thickness 0.1))))
+
+  ; Motor 1 Pads (Bottom right edge)
+  (pad "M1A" smd rect (at 7.0 15.2) (size 1.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "M1B" smd rect (at 9.2 15.2) (size 1.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "M1C" smd rect (at 11.4 15.2) (size 1.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (fp_text user "M1" (at 9.2 13.5 0) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))
+
+  ; Motor 2 Pads (Right edge bottom)
+  (pad "M2A" smd rect (at 15.2 7.0) (size 1.4 1.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "M2B" smd rect (at 15.2 9.2) (size 1.4 1.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "M2C" smd rect (at 15.2 11.4) (size 1.4 1.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (fp_text user "M2" (at 13.5 9.2 90) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))
+
+  ; Motor 3 Pads (Left edge top)
+  (pad "M3A" smd rect (at -15.2 -11.4) (size 1.4 1.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "M3B" smd rect (at -15.2 -9.2) (size 1.4 1.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "M3C" smd rect (at -15.2 -7.0) (size 1.4 1.6) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (fp_text user "M3" (at -13.5 -9.2 90) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))
+
+  ; Motor 4 Pads (Top edge left)
+  (pad "M4A" smd rect (at -11.4 -15.2) (size 1.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "M4B" smd rect (at -9.2 -15.2) (size 1.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "M4C" smd rect (at -7.0 -15.2) (size 1.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (fp_text user "M4" (at -9.2 -13.5 0) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))
+
+  ; Buzzer & LED (Bottom left edge)
+  (pad "7" smd rect (at -11.4 15.2) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask")) ; BZ-
+  (pad "8" smd rect (at -9.2 15.2) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))  ; LED
+  (pad "3" smd rect (at -7.0 15.2) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))  ; 5V
+  (pad "6" smd rect (at -5.0 15.2) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))  ; GND
+  (fp_text user "BZ/LED" (at -8.5 13.5 0) (layer "F.SilkS") (effects (font (size 0.7 0.7) (thickness 0.1))))
+
+  ; Receiver Pads (Right edge middle: TX2, RX2, 4.5V, GND)
+  (pad "15" smd rect (at 15.2 -1.0) (size 1.4 1.2) (layers "F.Cu" "F.Paste" "F.Mask")) ; TX2
+  (pad "16" smd rect (at 15.2 1.0) (size 1.4 1.2) (layers "F.Cu" "F.Paste" "F.Mask"))  ; RX2
+  (pad "4" smd rect (at 15.2 3.0) (size 1.4 1.2) (layers "F.Cu" "F.Paste" "F.Mask"))   ; 4.5V
+  (pad "5" smd rect (at 15.2 -5.0) (size 1.4 1.2) (layers "F.Cu" "F.Paste" "F.Mask"))  ; 3.3V
+  (pad "6" smd rect (at 15.2 -3.0) (size 1.4 1.2) (layers "F.Cu" "F.Paste" "F.Mask"))  ; GND
+  (fp_text user "RC (U2)" (at 13.2 0 90) (layer "F.SilkS") (effects (font (size 0.7 0.7) (thickness 0.1))))
+
+  ; Analog Video & UART3 (Top edge middle)
+  (pad "9" smd rect (at 11.4 -15.2) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))  ; CAM
+  (pad "3" smd rect (at 9.2 -15.2) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))   ; 5V
+  (pad "6" smd rect (at 7.0 -15.2) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))   ; GND
+  (pad "17" smd rect (at 4.8 -15.2) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))  ; TX3
+  (pad "10" smd rect (at 2.6 -15.2) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))  ; VTX
+  (pad "1" smd rect (at 0.4 -15.2) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))   ; VBAT
+  (pad "6" smd rect (at -1.8 -15.2) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))  ; GND
+  (fp_text user "CAM / VTX" (at 5.0 -13.5 0) (layer "F.SilkS") (effects (font (size 0.7 0.7) (thickness 0.1))))
+
+  ; GPS & I2C Pads (Top edge, Bottom side pads represented on Top for layout access)
+  (pad "25" smd rect (at -4.0 -12.5) (size 1.2 1.2) (layers "F.Cu" "F.Paste" "F.Mask")) ; SCL
+  (pad "26" smd rect (at -2.0 -12.5) (size 1.2 1.2) (layers "F.Cu" "F.Paste" "F.Mask")) ; SDA
+  (pad "23" smd rect (at 0.0 -12.5) (size 1.2 1.2) (layers "F.Cu" "F.Paste" "F.Mask"))  ; TX6
+  (pad "24" smd rect (at 2.0 -12.5) (size 1.2 1.2) (layers "F.Cu" "F.Paste" "F.Mask"))  ; RX6
+  (fp_text user "GPS/I2C" (at -1.0 -10.8 0) (layer "F.SilkS") (effects (font (size 0.7 0.7) (thickness 0.1))))
+
+  ; DJI HD Port (Top right corner, 6-pin SH1.0)
+  (pad "6" smd rect (at 8.5 -8.5) (size 0.6 1.2) (layers "F.Cu" "F.Paste" "F.Mask"))  ; GND
+  (pad "3" smd rect (at 9.5 -8.5) (size 0.6 1.2) (layers "F.Cu" "F.Paste" "F.Mask"))  ; 5V
+  (pad "19" smd rect (at 10.5 -8.5) (size 0.6 1.2) (layers "F.Cu" "F.Paste" "F.Mask")) ; TX4
+  (pad "20" smd rect (at 11.5 -8.5) (size 0.6 1.2) (layers "F.Cu" "F.Paste" "F.Mask")) ; RX4
+  (pad "21" smd rect (at 12.5 -8.5) (size 0.6 1.2) (layers "F.Cu" "F.Paste" "F.Mask")) ; TX5
+  (pad "22" smd rect (at 13.5 -8.5) (size 0.6 1.2) (layers "F.Cu" "F.Paste" "F.Mask")) ; RX5
+  (fp_text user "DJI HD" (at 11.0 -7.0 0) (layer "F.SilkS") (effects (font (size 0.7 0.7) (thickness 0.1))))
+
+  ; USB Type-C outline (Left edge)
+  (fp_rect (start -17.5 -4.5) (end -14.0 4.5) (stroke (width 0.12) (type default)) (fill none) (layer "F.Fab"))
+  (fp_text user "USB-C" (at -12.5 0 90) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))
+)

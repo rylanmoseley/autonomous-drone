@@ -1,0 +1,31 @@
+(footprint "Sensor_VL53L0X_Breakout_Header"
+  (version 20240108)
+  (generator "kicad_pcb_editor")
+  (generator_version "8.0")
+  (layer "F.Cu")
+  (descr "VL53L0X Time-of-Flight (ToF) Distance Sensor Breakout (25.4x10.7mm, 1x6 2.54mm Header)")
+  (tags "VL53L0X ToF Distance Ranging Sensor Breakout")
+  (property "Reference" "REF**" (at 0 -6.5 0) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))
+  (property "Value" "Sensor_VL53L0X" (at 0 6.5 0) (layer "F.Fab") (effects (font (size 1 1) (thickness 0.15))))
+  (property "Footprint" "" (at 0 0 0) (layer "F.Fab") (effects (font (size 1.27 1.27)) hide))
+  
+  ; Outline: 25.4 x 10.7 mm
+  (fp_rect (start -12.7 -5.35) (end 12.7 5.35) (stroke (width 0.15) (type default)) (fill none) (layer "F.SilkS"))
+  (fp_rect (start -13.5 -6.0) (end 13.5 6.0) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd"))
+
+  ; 1x6 2.54mm pitch Header
+  (pad "1" thru_hole rect (at -6.35 3.5) (size 1.7 1.7) (drill 1.0) (layers "*.Cu" "*.Mask"))   ; VIN
+  (pad "2" thru_hole circle (at -3.81 3.5) (size 1.7 1.7) (drill 1.0) (layers "*.Cu" "*.Mask")) ; GND
+  (pad "3" thru_hole circle (at -1.27 3.5) (size 1.7 1.7) (drill 1.0) (layers "*.Cu" "*.Mask")) ; SCL
+  (pad "4" thru_hole circle (at 1.27 3.5) (size 1.7 1.7) (drill 1.0) (layers "*.Cu" "*.Mask"))  ; SDA
+  (pad "5" thru_hole circle (at 3.81 3.5) (size 1.7 1.7) (drill 1.0) (layers "*.Cu" "*.Mask"))  ; GPIO1
+  (pad "6" thru_hole circle (at 6.35 3.5) (size 1.7 1.7) (drill 1.0) (layers "*.Cu" "*.Mask"))  ; XSHUT
+
+  ; Mounting Hole (M2)
+  (pad "" thru_hole circle (at -10.0 0) (size 3.6 3.6) (drill 2.2) (layers "*.Cu" "*.Mask"))
+
+  ; Sensor IC Aperture outline
+  (fp_rect (start 1.0 -3.0) (end 5.5 0.5) (stroke (width 0.12) (type default)) (fill none) (layer "F.SilkS"))
+  (fp_text user "VL53L0X" (at 3.25 -1.25 0) (layer "F.SilkS") (effects (font (size 0.7 0.7) (thickness 0.1))))
+  (fp_text user "VIN GND SCL SDA GP1 XSH" (at 0 1.5 0) (layer "F.SilkS") (effects (font (size 0.6 0.6) (thickness 0.08))))
+)

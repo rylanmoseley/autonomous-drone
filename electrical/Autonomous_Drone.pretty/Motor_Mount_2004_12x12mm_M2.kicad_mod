@@ -1,0 +1,31 @@
+(footprint "Motor_Mount_2004_12x12mm_M2"
+  (version 20240108)
+  (generator "kicad_pcb_editor")
+  (generator_version "8.0")
+  (layer "F.Cu")
+  (descr "2004 Brushless Motor Mounting Pattern (12x12mm M2, Center Shaft Hole Ø5.0mm, Motor Bell Ø24.5mm)")
+  (tags "Motor Brushless 2004 Emax GEPRC 12x12mm M2")
+  (property "Reference" "REF**" (at 0 -14 0) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))
+  (property "Value" "Motor_Mount_2004_12x12mm_M2" (at 0 14 0) (layer "F.Fab") (effects (font (size 1 1) (thickness 0.15))))
+  (property "Footprint" "" (at 0 0 0) (layer "F.Fab") (effects (font (size 1.27 1.27)) hide))
+  
+  ; Motor Bell Outline (Ø24.5 mm)
+  (fp_circle (center 0 0) (end 12.25 0) (stroke (width 0.15) (type default)) (fill none) (layer "F.SilkS"))
+  (fp_circle (center 0 0) (end 13.0 0) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd"))
+
+  ; Center Shaft Clearance Hole (Ø5.0 mm NPTH)
+  (pad "" np_thru_hole circle (at 0 0) (size 5.0 5.0) (drill 5.0) (layers "*.Cu" "*.Mask"))
+
+  ; 4x M2 Mounting Holes (12.0 x 12.0 mm, (±6.0, ±6.0), drill 2.2mm, pad 3.8mm)
+  (pad "" thru_hole circle (at -6.0 -6.0) (size 3.8 3.8) (drill 2.2) (layers "*.Cu" "*.Mask"))
+  (pad "" thru_hole circle (at 6.0 -6.0) (size 3.8 3.8) (drill 2.2) (layers "*.Cu" "*.Mask"))
+  (pad "" thru_hole circle (at -6.0 6.0) (size 3.8 3.8) (drill 2.2) (layers "*.Cu" "*.Mask"))
+  (pad "" thru_hole circle (at 6.0 6.0) (size 3.8 3.8) (drill 2.2) (layers "*.Cu" "*.Mask"))
+
+  ; Solder Pads for Motor Phase Leads (Phase A, B, C)
+  (pad "1" smd rect (at -9.0 8.5) (size 2.2 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "2" smd rect (at -9.0 10.5) (size 2.2 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "3" smd rect (at -9.0 12.5) (size 2.2 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "4" thru_hole circle (at 0 6.0) (size 2.5 2.5) (drill 1.2) (layers "*.Cu" "*.Mask")) ; Case ground optional
+  (fp_text user "MOTOR WIRES" (at -5.0 10.5 0) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))
+)
