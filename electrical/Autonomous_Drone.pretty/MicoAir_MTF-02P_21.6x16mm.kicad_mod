@@ -8,24 +8,20 @@
   (property "Reference" "REF**" (at 0 -9.5 0) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))
   (property "Value" "MicoAir_MTF-02P" (at 0 9.5 0) (layer "F.Fab") (effects (font (size 1 1) (thickness 0.15))))
   (property "Footprint" "" (at 0 0 0) (layer "F.Fab") (effects (font (size 1.27 1.27)) hide))
-  
-  ; Outline: 21.6 x 16.0 mm
+
   (fp_rect (start -10.8 -8.0) (end 10.8 8.0) (stroke (width 0.15) (type default)) (fill none) (layer "F.SilkS"))
   (fp_rect (start -11.8 -9.0) (end 11.8 9.0) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd"))
 
-  ; Optical flow camera lens aperture (Ø5.0mm at -4.5mm)
   (fp_circle (center -4.5 0) (end -2.0 0) (stroke (width 0.15) (type default)) (fill none) (layer "F.SilkS"))
   (fp_text user "FLOW" (at -4.5 0 0) (layer "F.SilkS") (effects (font (size 0.7 0.7) (thickness 0.1))))
 
-  ; LiDAR apertures (2x Ø3.5mm at +4.5mm)
   (fp_circle (center 4.5 -2.5) (end 6.25 -2.5) (stroke (width 0.15) (type default)) (fill none) (layer "F.SilkS"))
   (fp_circle (center 4.5 2.5) (end 6.25 2.5) (stroke (width 0.15) (type default)) (fill none) (layer "F.SilkS"))
   (fp_text user "LiDAR" (at 4.5 0 0) (layer "F.SilkS") (effects (font (size 0.7 0.7) (thickness 0.1))))
 
-  ; JST-SH 4-Pin 1.0mm Pitch Connector (Top edge)
-  (pad "1" smd rect (at -1.5 -7.0) (size 0.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask")) ; GND
-  (pad "2" smd rect (at -0.5 -7.0) (size 0.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask")) ; 5V
-  (pad "3" smd rect (at 0.5 -7.0) (size 0.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))  ; RX
-  (pad "4" smd rect (at 1.5 -7.0) (size 0.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))  ; TX
+  (pad "1" smd rect (at -1.5 -7.0) (size 0.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "2" smd rect (at -0.5 -7.0) (size 0.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "3" smd rect (at 0.5 -7.0) (size 0.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
+  (pad "4" smd rect (at 1.5 -7.0) (size 0.6 1.4) (layers "F.Cu" "F.Paste" "F.Mask"))
   (fp_text user "G 5 R T" (at 0 -5.2 0) (layer "F.SilkS") (effects (font (size 0.6 0.6) (thickness 0.08))))
 )

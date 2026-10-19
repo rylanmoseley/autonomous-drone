@@ -15,7 +15,6 @@
       )
     )
     (symbol "Radxa_ZERO_3W_1_1"
-      ; --- Left side: 40-Pin GPIO Header (Odd Pins 1-39) ---
       (pin power_out line (at -40.64 53.34 0) (length 2.54) (name "+3.3V" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
       (pin bidirectional line (at -40.64 48.26 0) (length 2.54) (name "GPIO1_A0/I2C3_SDA/UART3_RX" (effects (font (size 1.27 1.27)))) (number "3" (effects (font (size 1.27 1.27)))))
       (pin bidirectional line (at -40.64 43.18 0) (length 2.54) (name "GPIO1_A1/I2C3_SCL/UART3_TX" (effects (font (size 1.27 1.27)))) (number "5" (effects (font (size 1.27 1.27)))))
@@ -37,7 +36,6 @@
       (pin bidirectional line (at -40.64 -38.1 0) (length 2.54) (name "GPIO1_A4/I2S1_SCLK_RX" (effects (font (size 1.27 1.27)))) (number "37" (effects (font (size 1.27 1.27)))))
       (pin power_in line (at -40.64 -43.18 0) (length 2.54) (name "GND" (effects (font (size 1.27 1.27)))) (number "39" (effects (font (size 1.27 1.27)))))
 
-      ; --- Right side: 40-Pin GPIO Header (Even Pins 2-40) ---
       (pin power_in line (at 40.64 53.34 180) (length 2.54) (name "+5.0V_IN" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))
       (pin power_in line (at 40.64 48.26 180) (length 2.54) (name "+5.0V_IN" (effects (font (size 1.27 1.27)))) (number "4" (effects (font (size 1.27 1.27)))))
       (pin power_in line (at 40.64 43.18 180) (length 2.54) (name "GND" (effects (font (size 1.27 1.27)))) (number "6" (effects (font (size 1.27 1.27)))))
@@ -59,7 +57,6 @@
       (pin bidirectional line (at 40.64 -38.1 180) (length 2.54) (name "GPIO3_A6/I2S3_SDI" (effects (font (size 1.27 1.27)))) (number "38" (effects (font (size 1.27 1.27)))))
       (pin bidirectional line (at 40.64 -43.18 180) (length 2.54) (name "GPIO3_A5/I2S3_SDO" (effects (font (size 1.27 1.27)))) (number "40" (effects (font (size 1.27 1.27)))))
 
-      ; --- Bottom Edge: 22-Pin MIPI CSI Camera Interface ---
       (pin power_in line (at -26.67 -60.96 90) (length 2.54) (name "CSI_GND" (effects (font (size 1.27 1.27)))) (number "C1" (effects (font (size 1.27 1.27)))))
       (pin input line (at -24.13 -60.96 90) (length 2.54) (name "CSI_D0_N" (effects (font (size 1.27 1.27)))) (number "C2" (effects (font (size 1.27 1.27)))))
       (pin input line (at -21.59 -60.96 90) (length 2.54) (name "CSI_D0_P" (effects (font (size 1.27 1.27)))) (number "C3" (effects (font (size 1.27 1.27)))))
@@ -83,7 +80,6 @@
       (pin bidirectional line (at 24.13 -60.96 90) (length 2.54) (name "I2C2_SDA_M1" (effects (font (size 1.27 1.27)))) (number "C21" (effects (font (size 1.27 1.27)))))
       (pin power_out line (at 26.67 -60.96 90) (length 2.54) (name "VCC_3V3_CAM" (effects (font (size 1.27 1.27)))) (number "C22" (effects (font (size 1.27 1.27)))))
 
-      ; --- Top Edge: USB-C Ports, Power & System ---
       (pin power_in line (at -25.4 60.96 270) (length 2.54) (name "USBC1_VBUS_5VIN" (effects (font (size 1.27 1.27)))) (number "U1_1" (effects (font (size 1.27 1.27)))))
       (pin bidirectional line (at -22.86 60.96 270) (length 2.54) (name "USBC1_DM" (effects (font (size 1.27 1.27)))) (number "U1_2" (effects (font (size 1.27 1.27)))))
       (pin bidirectional line (at -20.32 60.96 270) (length 2.54) (name "USBC1_DP" (effects (font (size 1.27 1.27)))) (number "U1_3" (effects (font (size 1.27 1.27)))))
@@ -109,8 +105,7 @@
     (property "Footprint" "Autonomous_Drone:Radxa_ZERO_3W" (at 0 -30.48 0) (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "https://docs.radxa.com/en/zero/zero3" (at 0 -33.02 0) (effects (font (size 1.27 1.27)) hide))
     (property "Description" "Radxa ZERO 3W Multi-Unit Symbol (Unit A: 40-Pin GPIO, Unit B: MIPI CSI Camera, Unit C: Power & USB-C)" (at 0 -35.56 0) (effects (font (size 1.27 1.27)) hide))
-    
-    ; === Unit 1: 40-Pin GPIO Expansion ===
+
     (symbol "Radxa_ZERO_3W_Modular_1_1"
       (rectangle (start -33.02 27.94) (end 33.02 -27.94) (stroke (width 0.254) (type default)) (fill (type background)))
       (pin power_out line (at -35.56 25.4 0) (length 2.54) (name "+3.3V" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
@@ -155,7 +150,6 @@
       (pin bidirectional line (at 35.56 -22.86 180) (length 2.54) (name "GPIO3_A5/I2S3_SDO" (effects (font (size 1.27 1.27)))) (number "40" (effects (font (size 1.27 1.27)))))
     )
 
-    ; === Unit 2: 22-Pin MIPI CSI Camera Interface ===
     (symbol "Radxa_ZERO_3W_Modular_2_1"
       (rectangle (start -22.86 27.94) (end 22.86 -27.94) (stroke (width 0.254) (type default)) (fill (type background)))
       (pin power_in line (at -25.4 25.4 0) (length 2.54) (name "GND" (effects (font (size 1.27 1.27)))) (number "C1" (effects (font (size 1.27 1.27)))))
@@ -182,7 +176,6 @@
       (pin power_out line (at 25.4 0 180) (length 2.54) (name "VCC_3V3_CAM" (effects (font (size 1.27 1.27)))) (number "C22" (effects (font (size 1.27 1.27)))))
     )
 
-    ; === Unit 3: Dual USB-C & Power Interface ===
     (symbol "Radxa_ZERO_3W_Modular_3_1"
       (rectangle (start -25.4 17.78) (end 25.4 -17.78) (stroke (width 0.254) (type default)) (fill (type background)))
       (pin power_in line (at -27.94 15.24 0) (length 2.54) (name "USBC1_VBUS_5VIN" (effects (font (size 1.27 1.27)))) (number "U1_1" (effects (font (size 1.27 1.27)))))
@@ -214,7 +207,6 @@
       (rectangle (start -33.02 40.64) (end 33.02 -40.64) (stroke (width 0.254) (type default)) (fill (type background)))
     )
     (symbol "Flywoo_Goku_GN745_45A_AIO_V3_1_1"
-      ; --- Left: Power & Battery ---
       (pin power_in line (at -35.56 35.56 0) (length 2.54) (name "BAT+" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
       (pin power_in line (at -35.56 30.48 0) (length 2.54) (name "BAT-" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))
       (pin power_out line (at -35.56 22.86 0) (length 2.54) (name "+5V_2A" (effects (font (size 1.27 1.27)))) (number "3" (effects (font (size 1.27 1.27)))))
@@ -229,7 +221,6 @@
       (pin bidirectional line (at -35.56 -27.94 0) (length 2.54) (name "USB_D-" (effects (font (size 1.27 1.27)))) (number "12" (effects (font (size 1.27 1.27)))))
       (pin bidirectional line (at -35.56 -33.02 0) (length 2.54) (name "USB_D+" (effects (font (size 1.27 1.27)))) (number "13" (effects (font (size 1.27 1.27)))))
 
-      ; --- Right: Communication UARTs & I2C ---
       (pin input line (at 35.56 35.56 180) (length 2.54) (name "RX1_INVERT" (effects (font (size 1.27 1.27)))) (number "14" (effects (font (size 1.27 1.27)))))
       (pin output line (at 35.56 30.48 180) (length 2.54) (name "TX2_RC" (effects (font (size 1.27 1.27)))) (number "15" (effects (font (size 1.27 1.27)))))
       (pin input line (at 35.56 25.4 180) (length 2.54) (name "RX2_RC" (effects (font (size 1.27 1.27)))) (number "16" (effects (font (size 1.27 1.27)))))
@@ -244,7 +235,6 @@
       (pin open_collector line (at 35.56 -22.86 180) (length 2.54) (name "I2C_SCL" (effects (font (size 1.27 1.27)))) (number "25" (effects (font (size 1.27 1.27)))))
       (pin bidirectional line (at 35.56 -27.94 180) (length 2.54) (name "I2C_SDA" (effects (font (size 1.27 1.27)))) (number "26" (effects (font (size 1.27 1.27)))))
 
-      ; --- Bottom: 4-in-1 Motor Outputs (M1, M2, M3, M4 3-Phase Leads) ---
       (pin power_out line (at -22.86 -43.18 90) (length 2.54) (name "M1_A" (effects (font (size 1.27 1.27)))) (number "M1A" (effects (font (size 1.27 1.27)))))
       (pin power_out line (at -20.32 -43.18 90) (length 2.54) (name "M1_B" (effects (font (size 1.27 1.27)))) (number "M1B" (effects (font (size 1.27 1.27)))))
       (pin power_out line (at -17.78 -43.18 90) (length 2.54) (name "M1_C" (effects (font (size 1.27 1.27)))) (number "M1C" (effects (font (size 1.27 1.27)))))
