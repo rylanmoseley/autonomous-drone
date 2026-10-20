@@ -1,13 +1,5290 @@
 (kicad_sch
-  (version 20211014)
-  (generator eeschema)
-  (uuid "d0a5196f-f982-4f01-9a72-7bc068800001")
-  (paper "A4")
-  (title_block
-    (title "Autonomous Drone Electrical Architecture")
-    (date "2026-10-19")
-    (company "Autonomous Drone Project")
-  )
-  (lib_symbols
-  )
+	(version 20260306)
+	(generator "eeschema")
+	(generator_version "10.0")
+	(uuid "d0a5196f-f982-4f01-9a72-7bc068800001")
+	(paper "A4")
+	(title_block
+		(title "Autonomous Drone Electrical Architecture")
+		(date "2026-10-19")
+		(company "Autonomous Drone Project")
+	)
+	(lib_symbols
+		(symbol "Autonomous_Drone:Battery_4S_LiPo_XT30"
+			(pin_names
+				(offset 1.016)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "BT"
+				(at 0 15.24 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "Battery_4S_LiPo_XT30"
+				(at 0 12.7 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" "Autonomous_Drone:AMASS_XT30PW_Horizontal_PTH"
+				(at 0 -15.24 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" "https://genstattu.com"
+				(at 0 -17.78 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Tattu R-line 850mAh 4S 15.2V HV 95C LiPo Battery Long Pack with XT30 & JST-XH 5P Balance Lead"
+				(at 0 -20.32 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "Battery_4S_LiPo_XT30_0_1"
+				(rectangle
+					(start -15.24 10.16)
+					(end 15.24 -10.16)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+			)
+			(symbol "Battery_4S_LiPo_XT30_1_1"
+				(pin power_out line
+					(at 17.78 5.08 180)
+					(length 2.54)
+					(name "VBAT+"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -17.78 5.08 0)
+					(length 2.54)
+					(name "BAL_GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -17.78 2.54 0)
+					(length 2.54)
+					(name "BAL_C1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -17.78 0 0)
+					(length 2.54)
+					(name "BAL_C2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "5"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -17.78 -2.54 0)
+					(length 2.54)
+					(name "BAL_C3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "6"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -17.78 -5.08 0)
+					(length 2.54)
+					(name "BAL_C4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "7"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Autonomous_Drone:Brushless_Motor_2004"
+			(pin_names
+				(offset 1.016)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "M"
+				(at 0 10.16 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "Brushless_Motor_2004"
+				(at 0 7.62 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" "Autonomous_Drone:Motor_Mount_2004_12x12mm_M2"
+				(at 0 -10.16 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" "https://geprc.com/product/geprc-gr2004-motors/"
+				(at 0 -12.7 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "2004 3-Phase Brushless Motor (Emax ECO II 2004 2400KV / GEPRC GR2004 2550KV)"
+				(at 0 -15.24 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "Brushless_Motor_2004_0_1"
+				(circle
+					(center 0 0)
+					(radius 6.35)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+			)
+			(symbol "Brushless_Motor_2004_1_1"
+				(pin passive line
+					(at -8.89 2.54 0)
+					(length 2.54)
+					(name "PHASE_A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -8.89 0 0)
+					(length 2.54)
+					(name "PHASE_B"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -8.89 -2.54 0)
+					(length 2.54)
+					(name "PHASE_C"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 8.89 0 180)
+					(length 2.54)
+					(name "CASE_GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Autonomous_Drone:Camera_OV9281_MIPI_15Pin"
+			(pin_names
+				(offset 1.016)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "CAM"
+				(at 0 25.4 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "Camera_OV9281_MIPI_15Pin"
+				(at 0 22.86 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" "Autonomous_Drone:Arducam_Mini_OV9281_24x25mm"
+				(at 0 -25.4 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" "https://www.arducam.com"
+				(at 0 -27.94 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Arducam Mini OV9281 1MP Monochrome Global Shutter Camera (24x25mm, 15-Pin MIPI CSI-2 Interface)"
+				(at 0 -30.48 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "Camera_OV9281_MIPI_15Pin_0_1"
+				(rectangle
+					(start -17.78 20.32)
+					(end 17.78 -20.32)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+			)
+			(symbol "Camera_OV9281_MIPI_15Pin_1_1"
+				(pin power_in line
+					(at -20.32 17.78 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at -20.32 15.24 0)
+					(length 2.54)
+					(name "CSI_D0_N"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at -20.32 12.7 0)
+					(length 2.54)
+					(name "CSI_D0_P"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -20.32 10.16 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at -20.32 7.62 0)
+					(length 2.54)
+					(name "CSI_D1_N"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "5"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at -20.32 5.08 0)
+					(length 2.54)
+					(name "CSI_D1_P"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "6"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -20.32 2.54 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "7"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at -20.32 0 0)
+					(length 2.54)
+					(name "CSI_CLK_N"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at -20.32 -2.54 0)
+					(length 2.54)
+					(name "CSI_CLK_P"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "9"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -20.32 -5.08 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "10"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 20.32 12.7 180)
+					(length 2.54)
+					(name "I2C_SDA"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "11"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 20.32 10.16 180)
+					(length 2.54)
+					(name "I2C_SCL"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "12"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 20.32 5.08 180)
+					(length 2.54)
+					(name "PWDN/GPIO"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "13"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 20.32 0 180)
+					(length 2.54)
+					(name "+3.3V"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "14"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 20.32 -5.08 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "15"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 20.32 -12.7 180)
+					(length 2.54)
+					(name "FSIN_TRIG"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "16"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 20.32 -15.24 180)
+					(length 2.54)
+					(name "STROBE"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "17"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Autonomous_Drone:Flywoo_BEC_5V_12V_2A_V2"
+			(pin_names
+				(offset 1.016)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "VR"
+				(at 0 12.7 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "Flywoo_BEC_5V_12V_2A_V2"
+				(at 0 10.16 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" "Autonomous_Drone:Flywoo_BEC_V2.0_17.5x6.5mm"
+				(at 0 -12.7 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" "https://flywoo.net/products/flywoo-5v-12v-2a-bec"
+				(at 0 -15.24 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Flywoo 5V/12V 2A Step-Down Synchronous Switch BEC V2.0 with Remote Switch / PINIO Control (2-6S LiPo 7-26V)"
+				(at 0 -17.78 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "Flywoo_BEC_5V_12V_2A_V2_0_1"
+				(rectangle
+					(start -15.24 8.89)
+					(end 15.24 -8.89)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+			)
+			(symbol "Flywoo_BEC_5V_12V_2A_V2_1_1"
+				(pin power_in line
+					(at -17.78 5.08 0)
+					(length 2.54)
+					(name "VIN_2-6S"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -17.78 0 0)
+					(length 2.54)
+					(name "GND_IN"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -17.78 -5.08 0)
+					(length 2.54)
+					(name "CON_CTRL"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at 17.78 5.08 180)
+					(length 2.54)
+					(name "VOUT_5V_12V"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 17.78 0 180)
+					(length 2.54)
+					(name "GND_OUT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "5"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 0 -11.43 90)
+					(length 2.54)
+					(name "JMP_12V_SEL"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "6"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Autonomous_Drone:Flywoo_Goku_GN745_45A_AIO_V3"
+			(pin_names
+				(offset 1.016)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "FC"
+				(at 0 45.72 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.524 1.524)
+					)
+				)
+			)
+			(property "Value" "Flywoo_Goku_GN745_45A_AIO_V3"
+				(at 0 43.18 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.524 1.524)
+					)
+				)
+			)
+			(property "Footprint" "Autonomous_Drone:Flywoo_Goku_GN745_AIO_V3"
+				(at 0 -45.72 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" "https://flywoo.net/products/goku-gn745-45a-aio-bl_32-mpu6000-v3"
+				(at 0 -48.26 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Flywoo Goku GN745 45A AIO BL_32 MPU6000 V3 Flight Controller + 4-in-1 45A ESC (STM32F745, SPL06 Barometer, 7 UARTs)"
+				(at 0 -50.8 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "Flywoo_Goku_GN745_45A_AIO_V3_0_1"
+				(rectangle
+					(start -33.02 40.64)
+					(end 33.02 -40.64)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+			)
+			(symbol "Flywoo_Goku_GN745_45A_AIO_V3_1_1"
+				(pin power_in line
+					(at -35.56 35.56 0)
+					(length 2.54)
+					(name "BAT+"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -35.56 30.48 0)
+					(length 2.54)
+					(name "BAT-"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -35.56 22.86 0)
+					(length 2.54)
+					(name "+5V_2A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -35.56 17.78 0)
+					(length 2.54)
+					(name "+4.5V_USB"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -35.56 12.7 0)
+					(length 2.54)
+					(name "+3.3V_0.5A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "5"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -35.56 7.62 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "6"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin open_collector line
+					(at -35.56 0 0)
+					(length 2.54)
+					(name "BZ-"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "7"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at -35.56 -5.08 0)
+					(length 2.54)
+					(name "LED_WS2812"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -35.56 -12.7 0)
+					(length 2.54)
+					(name "CAM_VIN"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "9"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at -35.56 -17.78 0)
+					(length 2.54)
+					(name "VTX_VOUT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "10"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -35.56 -22.86 0)
+					(length 2.54)
+					(name "VUSB"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "11"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -35.56 -27.94 0)
+					(length 2.54)
+					(name "USB_D-"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "12"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -35.56 -33.02 0)
+					(length 2.54)
+					(name "USB_D+"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "13"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 35.56 35.56 180)
+					(length 2.54)
+					(name "RX1_INVERT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "14"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 35.56 30.48 180)
+					(length 2.54)
+					(name "TX2_RC"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "15"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 35.56 25.4 180)
+					(length 2.54)
+					(name "RX2_RC"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "16"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 35.56 20.32 180)
+					(length 2.54)
+					(name "TX3_VTX"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "17"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 35.56 15.24 180)
+					(length 2.54)
+					(name "RX3_VTX"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "18"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 35.56 10.16 180)
+					(length 2.54)
+					(name "TX4_DJI"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "19"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 35.56 5.08 180)
+					(length 2.54)
+					(name "RX4_DJI"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "20"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 35.56 0 180)
+					(length 2.54)
+					(name "TX5_AUX"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "21"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 35.56 -5.08 180)
+					(length 2.54)
+					(name "RX5_AUX"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "22"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 35.56 -10.16 180)
+					(length 2.54)
+					(name "TX6_GPS"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "23"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 35.56 -15.24 180)
+					(length 2.54)
+					(name "RX6_GPS"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "24"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin open_collector line
+					(at 35.56 -22.86 180)
+					(length 2.54)
+					(name "I2C_SCL"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "25"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 35.56 -27.94 180)
+					(length 2.54)
+					(name "I2C_SDA"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "26"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -22.86 -43.18 90)
+					(length 2.54)
+					(name "M1_A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M1A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -20.32 -43.18 90)
+					(length 2.54)
+					(name "M1_B"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M1B"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -17.78 -43.18 90)
+					(length 2.54)
+					(name "M1_C"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M1C"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -10.16 -43.18 90)
+					(length 2.54)
+					(name "M2_A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M2A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -7.62 -43.18 90)
+					(length 2.54)
+					(name "M2_B"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M2B"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -5.08 -43.18 90)
+					(length 2.54)
+					(name "M2_C"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M2C"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at 5.08 -43.18 90)
+					(length 2.54)
+					(name "M3_A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M3A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at 7.62 -43.18 90)
+					(length 2.54)
+					(name "M3_B"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M3B"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at 10.16 -43.18 90)
+					(length 2.54)
+					(name "M3_C"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M3C"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at 17.78 -43.18 90)
+					(length 2.54)
+					(name "M4_A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M4A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at 20.32 -43.18 90)
+					(length 2.54)
+					(name "M4_B"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M4B"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at 22.86 -43.18 90)
+					(length 2.54)
+					(name "M4_C"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M4C"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Autonomous_Drone:MicoAir_MTF-02P"
+			(pin_names
+				(offset 1.016)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "S"
+				(at 0 10.16 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "MicoAir_MTF-02P"
+				(at 0 7.62 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" "Autonomous_Drone:MicoAir_MTF-02P_21.6x16mm"
+				(at 0 -10.16 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" "https://store.micoair.com/product/mtf-02p/"
+				(at 0 -12.7 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "MicoAir MTF-02P Integrated Optical Flow Sensor + Laser Distance Sensor (UART 115200 Baud, 4.0-5.5V)"
+				(at 0 -15.24 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "MicoAir_MTF-02P_0_1"
+				(rectangle
+					(start -10.16 6.35)
+					(end 10.16 -6.35)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+			)
+			(symbol "MicoAir_MTF-02P_1_1"
+				(pin power_in line
+					(at -12.7 3.81 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -12.7 -3.81 0)
+					(length 2.54)
+					(name "+5V"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 12.7 3.81 180)
+					(length 2.54)
+					(name "RX"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 12.7 -3.81 180)
+					(length 2.54)
+					(name "TX"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Autonomous_Drone:Radxa_ZERO_3W"
+			(pin_names
+				(offset 1.016)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "U"
+				(at 0 63.5 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.524 1.524)
+					)
+				)
+			)
+			(property "Value" "Radxa_ZERO_3W"
+				(at 0 60.96 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.524 1.524)
+					)
+				)
+			)
+			(property "Footprint" "Autonomous_Drone:Radxa_ZERO_3W"
+				(at 0 -63.5 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" "https://docs.radxa.com/en/zero/zero3"
+				(at 0 -66.04 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Radxa ZERO 3W Single Board Computer (Rockchip RK3566, 40-Pin GPIO, 4-Lane MIPI CSI, Dual USB-C, Micro-HDMI)"
+				(at 0 -68.58 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "Radxa_ZERO_3W_0_1"
+				(rectangle
+					(start -38.1 58.42)
+					(end 38.1 -58.42)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+			)
+			(symbol "Radxa_ZERO_3W_1_1"
+				(pin power_out line
+					(at -40.64 53.34 0)
+					(length 2.54)
+					(name "+3.3V"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 40.64 53.34 180)
+					(length 2.54)
+					(name "+5.0V_IN"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 48.26 0)
+					(length 2.54)
+					(name "GPIO1_A0/I2C3_SDA/UART3_RX"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 40.64 48.26 180)
+					(length 2.54)
+					(name "+5.0V_IN"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 43.18 0)
+					(length 2.54)
+					(name "GPIO1_A1/I2C3_SCL/UART3_TX"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "5"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 40.64 43.18 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "6"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 38.1 0)
+					(length 2.54)
+					(name "GPIO3_C4/PWM14_M0"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "7"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 38.1 180)
+					(length 2.54)
+					(name "GPIO0_D1/UART2_TX_DEBUG"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -40.64 33.02 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "9"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 33.02 180)
+					(length 2.54)
+					(name "GPIO0_D0/UART2_RX_DEBUG"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "10"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 27.94 0)
+					(length 2.54)
+					(name "GPIO3_A1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "11"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 27.94 180)
+					(length 2.54)
+					(name "GPIO3_A3/I2S3_SCLK_M0"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "12"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 22.86 0)
+					(length 2.54)
+					(name "GPIO3_A2/I2S3_MCLK_M0"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "13"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 40.64 22.86 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "14"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 17.78 0)
+					(length 2.54)
+					(name "GPIO3_B0"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "15"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 17.78 180)
+					(length 2.54)
+					(name "GPIO3_B1/UART4_RX/PWM8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "16"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -40.64 12.7 0)
+					(length 2.54)
+					(name "+3.3V"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "17"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 12.7 180)
+					(length 2.54)
+					(name "GPIO3_B2/UART4_TX/PWM9"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "18"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 7.62 0)
+					(length 2.54)
+					(name "GPIO4_C3/SPI3_MOSI/I2S3_SCLK"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "19"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 40.64 7.62 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "20"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 2.54 0)
+					(length 2.54)
+					(name "GPIO4_C5/SPI3_MISO/UART9_TX"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "21"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 2.54 180)
+					(length 2.54)
+					(name "GPIO3_C1/I2S1_SDO2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "22"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 -2.54 0)
+					(length 2.54)
+					(name "GPIO4_C2/SPI3_CLK/PWM14_M1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "23"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 -2.54 180)
+					(length 2.54)
+					(name "GPIO4_C6/SPI3_CS0/UART9_RX"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "24"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -40.64 -7.62 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "25"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 -7.62 180)
+					(length 2.54)
+					(name "GPIO4_D1/SPI3_CS1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "26"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 -12.7 0)
+					(length 2.54)
+					(name "GPIO4_B2/I2C4_SDA/USB2_DP"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "27"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 -12.7 180)
+					(length 2.54)
+					(name "GPIO4_B3/I2C4_SCL/USB2_DM"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "28"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 -17.78 0)
+					(length 2.54)
+					(name "GPIO3_B3/I2C5_SCL"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "29"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 40.64 -17.78 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "30"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 -22.86 0)
+					(length 2.54)
+					(name "GPIO3_B4/I2C5_SDA"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "31"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 -22.86 180)
+					(length 2.54)
+					(name "GPIO3_C2/UART5_TX/I2S1_SDO3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "32"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 -27.94 0)
+					(length 2.54)
+					(name "GPIO3_C3/UART5_RX/I2S1_SCLK"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "33"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 40.64 -27.94 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "34"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 -33.02 0)
+					(length 2.54)
+					(name "GPIO3_A4/I2S3_LRCK"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "35"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 -33.02 180)
+					(length 2.54)
+					(name "GPIO3_A7"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "36"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -40.64 -38.1 0)
+					(length 2.54)
+					(name "GPIO1_A4/I2S1_SCLK_RX"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "37"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 -38.1 180)
+					(length 2.54)
+					(name "GPIO3_A6/I2S3_SDI"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "38"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -40.64 -43.18 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "39"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 40.64 -43.18 180)
+					(length 2.54)
+					(name "GPIO3_A5/I2S3_SDO"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "40"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 25.4 60.96 270)
+					(length 2.54)
+					(name "ANT_UFL"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "A1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -26.67 -60.96 90)
+					(length 2.54)
+					(name "CSI_GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -24.13 -60.96 90)
+					(length 2.54)
+					(name "CSI_D0_N"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -21.59 -60.96 90)
+					(length 2.54)
+					(name "CSI_D0_P"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -19.05 -60.96 90)
+					(length 2.54)
+					(name "CSI_GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -16.51 -60.96 90)
+					(length 2.54)
+					(name "CSI_D1_N"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C5"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -13.97 -60.96 90)
+					(length 2.54)
+					(name "CSI_D1_P"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C6"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -11.43 -60.96 90)
+					(length 2.54)
+					(name "CSI_GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C7"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -8.89 -60.96 90)
+					(length 2.54)
+					(name "CSI_CLK_N"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -6.35 -60.96 90)
+					(length 2.54)
+					(name "CSI_CLK_P"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C9"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -3.81 -60.96 90)
+					(length 2.54)
+					(name "CSI_GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C10"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -1.27 -60.96 90)
+					(length 2.54)
+					(name "CSI_D2_N"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C11"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 1.27 -60.96 90)
+					(length 2.54)
+					(name "CSI_D2_P"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C12"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 3.81 -60.96 90)
+					(length 2.54)
+					(name "CSI_GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C13"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 6.35 -60.96 90)
+					(length 2.54)
+					(name "CSI_D3_N"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C14"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 8.89 -60.96 90)
+					(length 2.54)
+					(name "CSI_D3_P"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C15"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 11.43 -60.96 90)
+					(length 2.54)
+					(name "CSI_GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C16"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 13.97 -60.96 90)
+					(length 2.54)
+					(name "CAM_PDN_L"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C17"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 16.51 -60.96 90)
+					(length 2.54)
+					(name "CIF_CLKOUT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C18"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 19.05 -60.96 90)
+					(length 2.54)
+					(name "CSI_GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C19"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin open_collector line
+					(at 21.59 -60.96 90)
+					(length 2.54)
+					(name "I2C2_SCL_M1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C20"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 24.13 -60.96 90)
+					(length 2.54)
+					(name "I2C2_SDA_M1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C21"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at 26.67 -60.96 90)
+					(length 2.54)
+					(name "VCC_3V3_CAM"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "C22"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 20.32 60.96 270)
+					(length 2.54)
+					(name "MASKROM_BTN"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "S1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -25.4 60.96 270)
+					(length 2.54)
+					(name "USBC1_VBUS_5VIN"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "U1_1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -22.86 60.96 270)
+					(length 2.54)
+					(name "USBC1_DM"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "U1_2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -20.32 60.96 270)
+					(length 2.54)
+					(name "USBC1_DP"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "U1_3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -17.78 60.96 270)
+					(length 2.54)
+					(name "USBC1_GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "U1_4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -7.62 60.96 270)
+					(length 2.54)
+					(name "USBC2_VBUS_5VOUT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "U2_1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -5.08 60.96 270)
+					(length 2.54)
+					(name "USBC2_DM"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "U2_2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -2.54 60.96 270)
+					(length 2.54)
+					(name "USBC2_DP"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "U2_3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 0 60.96 270)
+					(length 2.54)
+					(name "USBC2_SSTXN"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "U2_4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 2.54 60.96 270)
+					(length 2.54)
+					(name "USBC2_SSTXP"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "U2_5"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 5.08 60.96 270)
+					(length 2.54)
+					(name "USBC2_SSRXN"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "U2_6"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 7.62 60.96 270)
+					(length 2.54)
+					(name "USBC2_SSRXP"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "U2_7"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 10.16 60.96 270)
+					(length 2.54)
+					(name "USBC2_GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "U2_8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Autonomous_Drone:Sensor_ToF_VL53L0X"
+			(pin_names
+				(offset 1.016)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "U"
+				(at 0 12.7 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "Sensor_ToF_VL53L0X"
+				(at 0 10.16 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" "Autonomous_Drone:Sensor_VL53L0X_Breakout_Header"
+				(at 0 -12.7 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" "https://www.st.com"
+				(at 0 -15.24 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "ST VL53L0X Time-of-Flight (ToF) Laser Distance Ranging Sensor Module (I2C 2.8V-5V)"
+				(at 0 -17.78 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "Sensor_ToF_VL53L0X_0_1"
+				(rectangle
+					(start -10.16 8.89)
+					(end 10.16 -8.89)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+			)
+			(symbol "Sensor_ToF_VL53L0X_1_1"
+				(pin power_in line
+					(at -12.7 6.35 0)
+					(length 2.54)
+					(name "VIN"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -12.7 1.27 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 12.7 6.35 180)
+					(length 2.54)
+					(name "SCL"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at 12.7 1.27 180)
+					(length 2.54)
+					(name "SDA"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 12.7 -3.81 180)
+					(length 2.54)
+					(name "GPIO1_INT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "5"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -12.7 -6.35 0)
+					(length 2.54)
+					(name "XSHUT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "6"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+	)
+	(junction
+		(at 165.1 105.41)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "70481d7c-bc56-479d-b5b6-b05b8cdb93eb")
+	)
+	(junction
+		(at 63.5 36.83)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "b5cbe0fb-a87a-4304-aac1-8cdbebaa85c0")
+	)
+	(junction
+		(at 66.04 26.67)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "f2cd664c-99d5-4946-ae87-8a28d568ea16")
+	)
+	(wire
+		(pts
+			(xy 101.6 52.07) (xy 102.87 52.07)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "015ed510-e534-43dd-9c5e-72b3f6df8d69")
+	)
+	(wire
+		(pts
+			(xy 139.7 124.46) (xy 248.92 124.46)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0dfdd305-9a28-4e09-8870-6a49d6d5ecaf")
+	)
+	(wire
+		(pts
+			(xy 137.16 127) (xy 248.92 127)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0e395bca-2bc3-436d-bba4-8f1c811be256")
+	)
+	(wire
+		(pts
+			(xy 266.7 137.16) (xy 124.46 137.16)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0f0b93c5-bdbc-4ee3-a9f4-91d735d7f721")
+	)
+	(wire
+		(pts
+			(xy 200.66 101.6) (xy 200.66 107.95)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "13e72459-29f9-4214-9890-7130c62e5f48")
+	)
+	(wire
+		(pts
+			(xy 102.87 52.07) (xy 102.87 77.47)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "20c90746-99ad-4d7c-9121-3ce34e5dfb0d")
+	)
+	(wire
+		(pts
+			(xy 137.16 105.41) (xy 137.16 127)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "22382bdc-ce71-40f0-b4b6-a175b4813448")
+	)
+	(wire
+		(pts
+			(xy 66.04 26.67) (xy 66.04 52.07)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "237c20a8-d6ef-467c-9941-ec0d40bcc4de")
+	)
+	(wire
+		(pts
+			(xy 170.18 105.41) (xy 199.39 105.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "252de4c4-abb1-4d9a-97fa-242fd8509c0e")
+	)
+	(wire
+		(pts
+			(xy 66.04 26.67) (xy 111.76 26.67)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "25f770c6-2ea7-4110-bd44-6477e0e193c9")
+	)
+	(wire
+		(pts
+			(xy 200.66 107.95) (xy 167.64 107.95)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2930001f-4893-4ced-a777-619cb0b136eb")
+	)
+	(wire
+		(pts
+			(xy 63.5 36.83) (xy 86.36 36.83)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "30017fce-c802-4cb2-a740-188713e8fafa")
+	)
+	(wire
+		(pts
+			(xy 101.6 57.15) (xy 105.41 57.15)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "316f87a2-ce9a-4a7b-b23c-1ba2c7b5e15b")
+	)
+	(wire
+		(pts
+			(xy 55.88 36.83) (xy 63.5 36.83)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "33c14475-35fd-4d5c-88d5-0915aefb5f1a")
+	)
+	(wire
+		(pts
+			(xy 105.41 57.15) (xy 105.41 87.63)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "33fd0418-e020-4039-9917-cedce0e6f5ae")
+	)
+	(wire
+		(pts
+			(xy 86.36 31.75) (xy 111.76 31.75)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "44a2fcef-cd7a-4bf2-ae2d-c6c930fd9e6f")
+	)
+	(wire
+		(pts
+			(xy 165.1 102.87) (xy 165.1 105.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4a71d40f-3b14-4e99-8a63-1a6c0482a32b")
+	)
+	(wire
+		(pts
+			(xy 142.24 121.92) (xy 248.92 121.92)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "58193bb2-b7db-49b8-a8d4-4b879bf73134")
+	)
+	(wire
+		(pts
+			(xy 154.94 114.3) (xy 154.94 105.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5e167c2c-d7a0-4dfe-a298-56ae1877bf9c")
+	)
+	(wire
+		(pts
+			(xy 266.7 134.62) (xy 127 134.62)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6498291a-37f1-4e1c-9789-c26622849114")
+	)
+	(wire
+		(pts
+			(xy 229.87 114.3) (xy 154.94 114.3)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6aa1c164-dc14-4722-a3ba-79832b7f02b1")
+	)
+	(wire
+		(pts
+			(xy 152.4 116.84) (xy 229.87 116.84)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6e280124-a44c-49c1-af7e-c5721ef9e7be")
+	)
+	(wire
+		(pts
+			(xy 139.7 105.41) (xy 139.7 124.46)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6e9dd42b-1732-45b1-864b-cf55712075dd")
+	)
+	(wire
+		(pts
+			(xy 201.93 104.14) (xy 201.93 109.22)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "702c8141-ff4a-48d6-93ea-9eed24ccc16e")
+	)
+	(wire
+		(pts
+			(xy 86.36 31.75) (xy 86.36 36.83)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7580d8c0-57bc-424d-b1b8-5b633ad83a35")
+	)
+	(wire
+		(pts
+			(xy 66.04 57.15) (xy 63.5 57.15)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7903ef40-703b-4617-9bbf-a26f27c613c8")
+	)
+	(wire
+		(pts
+			(xy 142.24 105.41) (xy 142.24 121.92)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "856381a7-7771-4f96-b5d5-a4aaf5ce1445")
+	)
+	(wire
+		(pts
+			(xy 199.39 99.06) (xy 210.82 99.06)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "85ce75bb-1302-433e-af05-8ab55c1850dc")
+	)
+	(wire
+		(pts
+			(xy 124.46 137.16) (xy 124.46 105.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8606fd5f-c574-42b6-b68f-7bc9a7e00c86")
+	)
+	(wire
+		(pts
+			(xy 167.64 107.95) (xy 167.64 105.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8b73ae1e-089f-4692-93b6-beadf6194459")
+	)
+	(wire
+		(pts
+			(xy 152.4 105.41) (xy 152.4 116.84)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "938810d7-8d68-4168-85e7-3b2ab4bedeca")
+	)
+	(wire
+		(pts
+			(xy 129.54 132.08) (xy 129.54 105.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "94cb9b6b-29c8-42fe-bec9-da5562a5bc54")
+	)
+	(wire
+		(pts
+			(xy 105.41 87.63) (xy 101.6 87.63)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "97ba7efc-54b4-401d-9518-1c308380037d")
+	)
+	(wire
+		(pts
+			(xy 266.7 132.08) (xy 129.54 132.08)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "accf4c1c-1b11-492f-b84c-f698c0c4698b")
+	)
+	(wire
+		(pts
+			(xy 210.82 104.14) (xy 201.93 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "af395ba5-596c-4bda-83c5-ccd8d0a632c0")
+	)
+	(wire
+		(pts
+			(xy 102.87 77.47) (xy 101.6 77.47)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b608a32c-0392-4949-9e3e-bea82ceafdc9")
+	)
+	(wire
+		(pts
+			(xy 157.48 111.76) (xy 229.87 111.76)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ba93f23b-de53-4f6b-b78c-fcb17de8b78f")
+	)
+	(wire
+		(pts
+			(xy 63.5 57.15) (xy 63.5 36.83)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "dbf9b7a9-d0fc-475b-a604-08e6f10e7b98")
+	)
+	(wire
+		(pts
+			(xy 157.48 105.41) (xy 157.48 111.76)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e3508b37-864f-465f-8dae-6a67b1ad4006")
+	)
+	(wire
+		(pts
+			(xy 165.1 109.22) (xy 165.1 105.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e5a7eca2-afae-4b18-bcba-b3d3667524f3")
+	)
+	(wire
+		(pts
+			(xy 210.82 101.6) (xy 200.66 101.6)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e81a859f-87b1-48df-ad7e-a3477dd05114")
+	)
+	(wire
+		(pts
+			(xy 127 134.62) (xy 127 105.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f37d95e4-db46-46d6-823b-e096a8381704")
+	)
+	(wire
+		(pts
+			(xy 199.39 105.41) (xy 199.39 99.06)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f79cc2c4-97db-4111-8b4d-81bfb440c877")
+	)
+	(wire
+		(pts
+			(xy 55.88 26.67) (xy 66.04 26.67)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "fcb79c4a-3a3d-405c-a1ee-55fc96f13be0")
+	)
+	(wire
+		(pts
+			(xy 201.93 109.22) (xy 165.1 109.22)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "fea5a562-fabb-4e5d-98dc-88ee1a4d285f")
+	)
+	(symbol
+		(lib_id "Autonomous_Drone:Sensor_ToF_VL53L0X")
+		(at 238.76 36.83 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "4de45e46-ed25-41e6-949b-27d1d450bdde")
+		(property "Reference" "U1"
+			(at 238.76 22.86 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Sensor_ToF_VL53L0X"
+			(at 238.76 25.4 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Autonomous_Drone:Sensor_VL53L0X_Breakout_Header"
+			(at 238.76 49.53 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.st.com"
+			(at 238.76 52.07 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "ST VL53L0X Time-of-Flight (ToF) Laser Distance Ranging Sensor Module (I2C 2.8V-5V)"
+			(at 238.76 54.61 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "6"
+			(uuid "f28c5be7-66ef-4d98-9c52-b8583fa383ce")
+		)
+		(pin "3"
+			(uuid "dc62cb77-51b2-4536-b442-487ea27a2c88")
+		)
+		(pin "2"
+			(uuid "31b2a912-f1dd-4029-a4db-d1025fa04cde")
+		)
+		(pin "5"
+			(uuid "791849e7-61c5-454b-a246-e1cc790e31e7")
+		)
+		(pin "1"
+			(uuid "b6a22903-8f81-4d2b-adc0-c26c8bf23690")
+		)
+		(pin "4"
+			(uuid "2c325c8e-f94d-43b9-a586-56bf18c3aa82")
+		)
+		(instances
+			(project "drone_electrical"
+				(path "/d0a5196f-f982-4f01-9a72-7bc068800001"
+					(reference "U1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Autonomous_Drone:MicoAir_MTF-02P")
+		(at 240.03 63.5 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "5dffda3c-9067-478a-8f43-7574afb0ad8c")
+		(property "Reference" "S1"
+			(at 240.03 52.07 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "MicoAir_MTF-02P"
+			(at 240.03 54.61 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Autonomous_Drone:MicoAir_MTF-02P_21.6x16mm"
+			(at 240.03 73.66 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://store.micoair.com/product/mtf-02p/"
+			(at 240.03 76.2 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "MicoAir MTF-02P Integrated Optical Flow Sensor + Laser Distance Sensor (UART 115200 Baud, 4.0-5.5V)"
+			(at 240.03 78.74 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "3"
+			(uuid "2724e4cc-5410-42fb-bd3b-cac47b49bb26")
+		)
+		(pin "1"
+			(uuid "3bcd34ef-3f12-4164-afae-34ccaa227be0")
+		)
+		(pin "4"
+			(uuid "dbebffe8-e0da-45ca-b6b6-7120755b28e7")
+		)
+		(pin "2"
+			(uuid "d64948af-0ec4-46a2-a6bc-afe1241e0029")
+		)
+		(instances
+			(project "drone_electrical"
+				(path "/d0a5196f-f982-4f01-9a72-7bc068800001"
+					(reference "S1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Autonomous_Drone:Camera_OV9281_MIPI_15Pin")
+		(at 138.43 176.53 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "60aed803-88fa-4c63-aa6e-b5420823e9a8")
+		(property "Reference" "CAM1"
+			(at 138.43 151.13 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Camera_OV9281_MIPI_15Pin"
+			(at 138.43 153.67 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Autonomous_Drone:Arducam_Mini_OV9281_24x25mm"
+			(at 138.43 201.93 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.arducam.com"
+			(at 138.43 204.47 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Arducam Mini OV9281 1MP Monochrome Global Shutter Camera (24x25mm, 15-Pin MIPI CSI-2 Interface)"
+			(at 138.43 207.01 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "6"
+			(uuid "42881bf8-6864-432b-bfc7-11bc7b1aa757")
+		)
+		(pin "16"
+			(uuid "ed660037-0e04-46cf-8ede-6eef9571bc44")
+		)
+		(pin "14"
+			(uuid "906d4c8f-eda9-49c2-b0e5-c922baa22587")
+		)
+		(pin "17"
+			(uuid "340f2fcd-d17a-404f-8611-4784bd00358d")
+		)
+		(pin "2"
+			(uuid "16f25eca-fc5c-4c76-9a08-f0b098f6f64e")
+		)
+		(pin "3"
+			(uuid "a6875517-f0e3-491c-b3f9-1d626da53edb")
+		)
+		(pin "10"
+			(uuid "da5c0358-36dc-4052-9ebc-614d58c73730")
+		)
+		(pin "7"
+			(uuid "d59c6820-bc2d-4b59-a512-b872b7512cc4")
+		)
+		(pin "4"
+			(uuid "feeab76f-343c-4e55-8aec-b8550c319d14")
+		)
+		(pin "11"
+			(uuid "e946b859-38ac-43a2-9fb8-abd7b0ccbd5d")
+		)
+		(pin "8"
+			(uuid "f2095cc3-be10-4923-90d9-17233d10a642")
+		)
+		(pin "15"
+			(uuid "24b76fad-f912-4ae1-a69d-7c30fc5bf3ad")
+		)
+		(pin "9"
+			(uuid "96a33935-a841-46d7-8c78-d3c0392d7fed")
+		)
+		(pin "5"
+			(uuid "2fbf586f-c2d4-436a-af98-49566aab979f")
+		)
+		(pin "12"
+			(uuid "79eacec9-cb2d-4b94-9df5-c8c5655145fe")
+		)
+		(pin "1"
+			(uuid "ad382acd-8135-429e-bfdc-176a792f7f4d")
+		)
+		(pin "13"
+			(uuid "58169483-3dd1-48fa-bc12-a67ffe8e7fd7")
+		)
+		(instances
+			(project "drone_electrical"
+				(path "/d0a5196f-f982-4f01-9a72-7bc068800001"
+					(reference "CAM1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Autonomous_Drone:Brushless_Motor_2004")
+		(at 238.76 114.3 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "779761a1-fa4f-47a4-974f-fac3ba55daa1")
+		(property "Reference" "M3"
+			(at 238.76 102.87 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Brushless_Motor_2004"
+			(at 238.76 105.41 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Autonomous_Drone:Motor_Mount_2004_12x12mm_M2"
+			(at 238.76 124.46 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://geprc.com/product/geprc-gr2004-motors/"
+			(at 238.76 127 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "2004 3-Phase Brushless Motor (Emax ECO II 2004 2400KV / GEPRC GR2004 2550KV)"
+			(at 238.76 129.54 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "2"
+			(uuid "8579d5cf-5209-4af7-b02a-2a01d118f5ce")
+		)
+		(pin "3"
+			(uuid "5f47669d-7511-4791-b96a-d2ded9f6d888")
+		)
+		(pin "4"
+			(uuid "9bc724a5-54e5-465a-9a29-d10d693e4737")
+		)
+		(pin "1"
+			(uuid "fe7363e8-219c-4724-b424-7e6a9f50a48a")
+		)
+		(instances
+			(project "drone_electrical"
+				(path "/d0a5196f-f982-4f01-9a72-7bc068800001"
+					(reference "M3")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Autonomous_Drone:Flywoo_BEC_5V_12V_2A_V2")
+		(at 83.82 57.15 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "940b76a2-93ca-4d25-9ab7-8d9e61037b15")
+		(property "Reference" "VR1"
+			(at 83.82 43.18 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Flywoo_BEC_5V_12V_2A_V2"
+			(at 83.82 45.72 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Autonomous_Drone:Flywoo_BEC_V2.0_17.5x6.5mm"
+			(at 83.82 69.85 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://flywoo.net/products/flywoo-5v-12v-2a-bec"
+			(at 83.82 72.39 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Flywoo 5V/12V 2A Step-Down Synchronous Switch BEC V2.0 with Remote Switch / PINIO Control (2-6S LiPo 7-26V)"
+			(at 83.82 74.93 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "a5f017ec-9403-4d90-abf4-51aaed009121")
+		)
+		(pin "5"
+			(uuid "c614117b-3780-4fe5-86d2-f3040aa51a15")
+		)
+		(pin "4"
+			(uuid "f4d8b64a-c2bc-4055-9d3c-eb7b6fe3be6e")
+		)
+		(pin "2"
+			(uuid "202227f1-bbce-4259-9efb-a1cf8993b0f5")
+		)
+		(pin "3"
+			(uuid "86a94b34-8407-44dd-89e9-4bf905332cec")
+		)
+		(pin "6"
+			(uuid "6e335e09-17c8-4c76-8a82-bb0a84872928")
+		)
+		(instances
+			(project "drone_electrical"
+				(path "/d0a5196f-f982-4f01-9a72-7bc068800001"
+					(reference "VR1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Autonomous_Drone:Battery_4S_LiPo_XT30")
+		(at 38.1 31.75 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "9cfd3f08-8d85-42de-b1a6-542ea1d3f005")
+		(property "Reference" "BT1"
+			(at 38.1 16.51 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Battery_4S_LiPo_XT30"
+			(at 38.1 19.05 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Autonomous_Drone:AMASS_XT30PW_Horizontal_PTH"
+			(at 38.1 46.99 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://genstattu.com"
+			(at 38.1 49.53 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Tattu R-line 850mAh 4S 15.2V HV 95C LiPo Battery Long Pack with XT30 & JST-XH 5P Balance Lead"
+			(at 38.1 52.07 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "2"
+			(uuid "640088c6-7930-464d-8e74-9527dd5b2c5d")
+		)
+		(pin "7"
+			(uuid "5bc03e72-91bc-428f-8447-f6150e35add6")
+		)
+		(pin "5"
+			(uuid "01743c36-152b-436f-a52a-f42bf6e3ef5c")
+		)
+		(pin "4"
+			(uuid "1f5c9c7a-cb2b-43ec-ac93-944ee4f5619f")
+		)
+		(pin "1"
+			(uuid "babd7ed7-9bf6-45a5-89df-7c788206df13")
+		)
+		(pin "3"
+			(uuid "2e16279b-4a8d-419e-9a19-afa91cb6d032")
+		)
+		(pin "6"
+			(uuid "725abbe8-38ed-4a03-b83f-7dafc0160f95")
+		)
+		(instances
+			(project "drone_electrical"
+				(path "/d0a5196f-f982-4f01-9a72-7bc068800001"
+					(reference "BT1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Autonomous_Drone:Brushless_Motor_2004")
+		(at 257.81 124.46 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "a462de90-7285-438e-b407-defbeda750c0")
+		(property "Reference" "M2"
+			(at 257.81 113.03 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Brushless_Motor_2004"
+			(at 257.81 115.57 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Autonomous_Drone:Motor_Mount_2004_12x12mm_M2"
+			(at 257.81 134.62 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://geprc.com/product/geprc-gr2004-motors/"
+			(at 257.81 137.16 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "2004 3-Phase Brushless Motor (Emax ECO II 2004 2400KV / GEPRC GR2004 2550KV)"
+			(at 257.81 139.7 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "ffb08279-cb84-4b1d-a8b9-02ddde2ee7cd")
+		)
+		(pin "3"
+			(uuid "46687fd9-a8fc-4f4e-9dcd-a34f74f54bbe")
+		)
+		(pin "2"
+			(uuid "5029a8ce-b5c3-4981-b47d-58a0430e4cb7")
+		)
+		(pin "4"
+			(uuid "2ea83bf5-6a32-472b-a21e-42c5f51bb9ea")
+		)
+		(instances
+			(project "drone_electrical"
+				(path "/d0a5196f-f982-4f01-9a72-7bc068800001"
+					(reference "M2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Autonomous_Drone:Brushless_Motor_2004")
+		(at 219.71 101.6 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "b1308850-3176-4d9c-ae4c-88e51cee63b7")
+		(property "Reference" "M4"
+			(at 219.71 90.17 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Brushless_Motor_2004"
+			(at 219.71 92.71 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Autonomous_Drone:Motor_Mount_2004_12x12mm_M2"
+			(at 219.71 111.76 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://geprc.com/product/geprc-gr2004-motors/"
+			(at 219.71 114.3 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "2004 3-Phase Brushless Motor (Emax ECO II 2004 2400KV / GEPRC GR2004 2550KV)"
+			(at 219.71 116.84 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "2"
+			(uuid "881e93f6-c74b-4cac-81cd-1750e4cbc307")
+		)
+		(pin "3"
+			(uuid "364808d8-c130-414c-aabd-a648a514cd6b")
+		)
+		(pin "4"
+			(uuid "8f92a50c-64e3-42fd-ab3c-1860330ea2c7")
+		)
+		(pin "1"
+			(uuid "0edd07f5-fda1-479a-93f0-8fd90e1dc1f6")
+		)
+		(instances
+			(project "drone_electrical"
+				(path "/d0a5196f-f982-4f01-9a72-7bc068800001"
+					(reference "M4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Autonomous_Drone:Brushless_Motor_2004")
+		(at 275.59 134.62 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "b68f5aff-90ce-4167-8f0a-23bde5267f3e")
+		(property "Reference" "M1"
+			(at 275.59 123.19 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Brushless_Motor_2004"
+			(at 275.59 125.73 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Autonomous_Drone:Motor_Mount_2004_12x12mm_M2"
+			(at 275.59 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://geprc.com/product/geprc-gr2004-motors/"
+			(at 275.59 147.32 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "2004 3-Phase Brushless Motor (Emax ECO II 2004 2400KV / GEPRC GR2004 2550KV)"
+			(at 275.59 149.86 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "3"
+			(uuid "eb51fb07-6177-48ec-a6f8-942e765743b2")
+		)
+		(pin "2"
+			(uuid "05488113-075a-4772-91a5-7a22e98d51e3")
+		)
+		(pin "1"
+			(uuid "504f399c-ac3a-4c2e-b1c8-48b28bb64eb8")
+		)
+		(pin "4"
+			(uuid "261b991a-fd0f-4bd5-870a-c9aed4211efb")
+		)
+		(instances
+			(project "drone_electrical"
+				(path "/d0a5196f-f982-4f01-9a72-7bc068800001"
+					(reference "M1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Autonomous_Drone:Flywoo_Goku_GN745_45A_AIO_V3")
+		(at 147.32 62.23 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "cb282583-7849-4a56-be80-2ac6d291e5b8")
+		(property "Reference" "FC1"
+			(at 147.32 16.51 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.524 1.524)
+				)
+			)
+		)
+		(property "Value" "Flywoo_Goku_GN745_45A_AIO_V3"
+			(at 147.32 19.05 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.524 1.524)
+				)
+			)
+		)
+		(property "Footprint" "Autonomous_Drone:Flywoo_Goku_GN745_AIO_V3"
+			(at 147.32 107.95 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://flywoo.net/products/goku-gn745-45a-aio-bl_32-mpu6000-v3"
+			(at 147.32 110.49 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Flywoo Goku GN745 45A AIO BL_32 MPU6000 V3 Flight Controller + 4-in-1 45A ESC (STM32F745, SPL06 Barometer, 7 UARTs)"
+			(at 147.32 113.03 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "M2B"
+			(uuid "b0cf16d9-d335-48c7-848e-ffc39c3e13ef")
+		)
+		(pin "9"
+			(uuid "5ea271e0-b591-44cb-9d9e-c4d080db0d70")
+		)
+		(pin "14"
+			(uuid "7438a8f4-9f46-425e-b26d-68a71fe8d17d")
+		)
+		(pin "12"
+			(uuid "5a664398-747e-4daf-a832-b02315f115e6")
+		)
+		(pin "23"
+			(uuid "eedf80fc-6882-4e94-bd18-7c97657b2bce")
+		)
+		(pin "M3A"
+			(uuid "a4d1ae0a-25a2-439a-a753-73117acb3a83")
+		)
+		(pin "25"
+			(uuid "8632abcf-7747-49a2-b800-60cad66b72ed")
+		)
+		(pin "10"
+			(uuid "57a046ad-c370-436d-abb1-378a720a7299")
+		)
+		(pin "M2C"
+			(uuid "c975bc70-9ecf-48de-9111-769960dbec21")
+		)
+		(pin "M1C"
+			(uuid "07c3ba02-ec8f-45cc-a16f-9d756d4c299f")
+		)
+		(pin "4"
+			(uuid "25051393-5ef2-4a9a-8647-788f2b3f9041")
+		)
+		(pin "5"
+			(uuid "04bce041-c8d6-426c-ae02-6c5f7bf8f6c7")
+		)
+		(pin "M1B"
+			(uuid "35783556-1f74-4ca2-885e-69c5331f2b49")
+		)
+		(pin "19"
+			(uuid "a9d40e9f-ccb7-4078-92c4-ab446bfd322e")
+		)
+		(pin "18"
+			(uuid "84c10d73-6942-40c4-bf34-2f006e6de37a")
+		)
+		(pin "1"
+			(uuid "4246c406-ebb0-48fb-b204-e21cdd0cde2b")
+		)
+		(pin "M2A"
+			(uuid "3599300e-d5e5-4c14-a8e8-ba585335fb14")
+		)
+		(pin "26"
+			(uuid "fbcee810-a5db-44e4-a42c-7f2ee0d9b794")
+		)
+		(pin "3"
+			(uuid "cd48a093-cb51-474e-b811-ec15f689e9e2")
+		)
+		(pin "2"
+			(uuid "788e933c-3bc2-4d13-a5c0-35cccf1d36bc")
+		)
+		(pin "22"
+			(uuid "3db50ff9-4e29-43ea-a890-21588715ba4e")
+		)
+		(pin "17"
+			(uuid "f96dbf4a-279f-47a6-8906-34fdbb97eca0")
+		)
+		(pin "20"
+			(uuid "e515de3f-34d3-4452-8494-8025c5a237d8")
+		)
+		(pin "16"
+			(uuid "f415ffbb-5f85-4e56-8d50-00404de8e3a3")
+		)
+		(pin "11"
+			(uuid "3ec1b07b-2f1c-4dd1-9bf4-14e17a8a36c4")
+		)
+		(pin "21"
+			(uuid "80cc3ce5-448e-402c-9aeb-5ad7e841e324")
+		)
+		(pin "M1A"
+			(uuid "0eb1c8cf-d341-4fe4-8e25-d4af7906cd7b")
+		)
+		(pin "15"
+			(uuid "4fa06e72-49a4-49a8-af1a-e8cd383c5e92")
+		)
+		(pin "6"
+			(uuid "84564fed-9b31-4224-8e84-ad1ee1967477")
+		)
+		(pin "7"
+			(uuid "58bb3306-9334-4719-98b9-42ee40dfb0df")
+		)
+		(pin "24"
+			(uuid "1eeddc7f-eb4f-4309-ba0e-023fa3c77fd4")
+		)
+		(pin "8"
+			(uuid "c9e1271e-280d-41d1-a463-ae3c28b33847")
+		)
+		(pin "13"
+			(uuid "c356439f-e614-4106-8b7a-fdf080c005fe")
+		)
+		(pin "M3B"
+			(uuid "88c93516-f555-4e5c-9de6-185346e392e0")
+		)
+		(pin "M4C"
+			(uuid "4a47716b-6723-411f-b641-bee0f305f573")
+		)
+		(pin "M4B"
+			(uuid "0021c9fd-c386-467a-a22c-2825c315b9e8")
+		)
+		(pin "M4A"
+			(uuid "99aeee70-8587-44c6-956a-35299b5fd942")
+		)
+		(pin "M3C"
+			(uuid "1611329a-057d-456c-909e-44a80771d8c5")
+		)
+		(instances
+			(project "drone_electrical"
+				(path "/d0a5196f-f982-4f01-9a72-7bc068800001"
+					(reference "FC1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Autonomous_Drone:Radxa_ZERO_3W")
+		(at 60.96 130.81 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "f68d6919-794b-4182-92fc-824dd1f997bd")
+		(property "Reference" "U2"
+			(at 88.5033 67.31 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.524 1.524)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "Radxa_ZERO_3W"
+			(at 88.5033 69.85 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.524 1.524)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Autonomous_Drone:Radxa_ZERO_3W"
+			(at 60.96 194.31 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://docs.radxa.com/en/zero/zero3"
+			(at 60.96 196.85 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Radxa ZERO 3W Single Board Computer (Rockchip RK3566, 40-Pin GPIO, 4-Lane MIPI CSI, Dual USB-C, Micro-HDMI)"
+			(at 60.96 199.39 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "31"
+			(uuid "9ea2dc72-d566-4fbd-8e63-73f2ef1ab69b")
+		)
+		(pin "23"
+			(uuid "1bf15d5a-ac25-4326-85af-76ae6682a3e0")
+		)
+		(pin "C7"
+			(uuid "3628ebda-a449-4683-921b-bb3a0c1dc6fb")
+		)
+		(pin "U1_1"
+			(uuid "fe3b9d4c-b305-46e9-afae-ec5ab969b3e8")
+		)
+		(pin "15"
+			(uuid "ae063c0c-6131-4134-8c98-ef7c2d786709")
+		)
+		(pin "29"
+			(uuid "5c082207-ed84-45a3-b7b7-23bdd125f1d0")
+		)
+		(pin "C20"
+			(uuid "e7ff10b1-2050-4bb2-ad3c-5fb1c80aa74e")
+		)
+		(pin "C2"
+			(uuid "3bbf9d56-914f-4607-9af7-b4c7e2f9c5af")
+		)
+		(pin "40"
+			(uuid "d99bc12e-5f39-4796-97b0-ae0232b7600d")
+		)
+		(pin "C22"
+			(uuid "2d10c411-bbc0-446a-b41f-34c164fe6084")
+		)
+		(pin "8"
+			(uuid "66656513-1e5d-45b7-bb76-7b46a245b910")
+		)
+		(pin "U2_7"
+			(uuid "10e6daad-1981-4120-a5b0-37618a026997")
+		)
+		(pin "U2_4"
+			(uuid "0d58fe56-c102-41bf-8314-d30e1c0486f5")
+		)
+		(pin "C19"
+			(uuid "62c0a2c5-fc7e-4b10-aa40-b171338cd3bc")
+		)
+		(pin "16"
+			(uuid "ff79feb5-dec9-472b-bc6c-3f34e0caf26d")
+		)
+		(pin "17"
+			(uuid "eb80f005-0fec-4179-b8ab-36bebb646024")
+		)
+		(pin "U2_6"
+			(uuid "94bba49b-3515-4ef0-af4b-c3bc85ac8e51")
+		)
+		(pin "C21"
+			(uuid "9b56e4f4-f6a3-484d-bfb1-a6c0eee2d9e7")
+		)
+		(pin "13"
+			(uuid "b82445a9-7c18-4049-ac7f-3820a3a6cf34")
+		)
+		(pin "U2_5"
+			(uuid "f1c80b68-8caa-4b2a-9737-61d13f15ae56")
+		)
+		(pin "39"
+			(uuid "9c5a7031-118c-483e-a14d-07310e706ca4")
+		)
+		(pin "C9"
+			(uuid "19f628e5-b053-494c-bebd-d75033ce367d")
+		)
+		(pin "U2_2"
+			(uuid "98d3aff0-4316-4c77-ab08-cf915277606c")
+		)
+		(pin "U1_4"
+			(uuid "58698dc7-a6c5-4535-b043-8211e4e37b51")
+		)
+		(pin "11"
+			(uuid "1d6e5f21-af1f-4635-b54d-56f48bc2a406")
+		)
+		(pin "18"
+			(uuid "07c5c239-74df-44f1-8ba3-7b1df8546633")
+		)
+		(pin "U1_3"
+			(uuid "67260ac9-adc3-4f0e-a979-90cdd6d58eae")
+		)
+		(pin "1"
+			(uuid "e0b1dc47-8e36-40b4-a797-7df9e215ebe3")
+		)
+		(pin "24"
+			(uuid "7c632bf1-20fa-48d0-a36a-b4d27a9e1234")
+		)
+		(pin "U2_3"
+			(uuid "07bb61a0-dcf9-4222-b2fd-f22ce5d074c7")
+		)
+		(pin "28"
+			(uuid "9d9538e5-736f-426e-836a-bcbe35de4f84")
+		)
+		(pin "34"
+			(uuid "6396f70f-cd33-4851-96c2-f5d0c225170e")
+		)
+		(pin "22"
+			(uuid "eadfaeae-817f-4752-a970-a07e5f47a6f5")
+		)
+		(pin "5"
+			(uuid "b50bf05f-1907-48a8-b9fd-df1d4d50a7c8")
+		)
+		(pin "4"
+			(uuid "d670fd69-13de-4501-80f1-8a12fc53e940")
+		)
+		(pin "U2_1"
+			(uuid "2efd4ad1-5887-43bc-90c9-ca106e23bdcc")
+		)
+		(pin "38"
+			(uuid "663c0873-cdbf-4af8-81dd-000fd3e0f594")
+		)
+		(pin "14"
+			(uuid "648f38dd-f0be-4fc0-989e-337892eda54b")
+		)
+		(pin "10"
+			(uuid "f017a011-e738-474b-b281-0c4127aba687")
+		)
+		(pin "C3"
+			(uuid "9e20d510-05f7-4d34-b920-da730e0f35ab")
+		)
+		(pin "C1"
+			(uuid "3d2d5377-b8f1-44a9-81b4-30ae68d6938a")
+		)
+		(pin "37"
+			(uuid "175b85a0-1c34-4843-bae1-f7c0312453a8")
+		)
+		(pin "9"
+			(uuid "f0fd997e-6279-4493-b1d7-59a57fb3a987")
+		)
+		(pin "C12"
+			(uuid "d5f7d980-e271-471c-a1f1-662d3313f732")
+		)
+		(pin "25"
+			(uuid "df31c957-19fb-4a0b-a29f-9915d84d6828")
+		)
+		(pin "C14"
+			(uuid "d1a1cbc7-9ad2-408e-8679-cf8b5d41e25c")
+		)
+		(pin "U1_2"
+			(uuid "99298c54-423d-455d-8ad1-8df64b092ae4")
+		)
+		(pin "C6"
+			(uuid "3f346225-bc40-44fe-8fff-8253c100ded8")
+		)
+		(pin "12"
+			(uuid "ab321109-1dd7-48ea-875d-8d8d49cebe96")
+		)
+		(pin "C18"
+			(uuid "4b9e594f-c739-4d14-8629-01cdf49737e0")
+		)
+		(pin "7"
+			(uuid "968e0c04-e4e0-4cc6-89f7-e7d12ba722ac")
+		)
+		(pin "35"
+			(uuid "a256a224-bbd0-47f5-8e3f-56a5609714fe")
+		)
+		(pin "C10"
+			(uuid "1dafad5f-051f-4bdf-98be-8e68aa1c740c")
+		)
+		(pin "A1"
+			(uuid "7d729212-2f90-42e6-a28e-fc8081c4312e")
+		)
+		(pin "2"
+			(uuid "3ecfa70a-7ed9-4bc8-aae0-89832dd67b50")
+		)
+		(pin "3"
+			(uuid "6e38eaa8-2239-441e-895b-bf5919c719ee")
+		)
+		(pin "6"
+			(uuid "744e4847-e7ee-4a8a-bc15-e5569bfdeb20")
+		)
+		(pin "27"
+			(uuid "f8b25826-efe4-457f-bc15-1b490ca6fcd4")
+		)
+		(pin "20"
+			(uuid "14248031-dacd-417b-96e6-2d80b54913ad")
+		)
+		(pin "33"
+			(uuid "03021d85-585a-4378-bac8-f683e7bd6406")
+		)
+		(pin "C13"
+			(uuid "ca8fbf99-d48d-4463-a0b4-fcbc4a866080")
+		)
+		(pin "26"
+			(uuid "372b6180-6090-451b-b252-3c5ba305bb89")
+		)
+		(pin "U2_8"
+			(uuid "29a2caad-399d-4d00-b898-c5c09120b8e1")
+		)
+		(pin "36"
+			(uuid "f68ad308-c6fd-42a7-b0c8-d448f9fc4b81")
+		)
+		(pin "30"
+			(uuid "bc59bbf9-6e31-4018-8d71-1e17e9f49cbb")
+		)
+		(pin "C15"
+			(uuid "73549312-4a9c-4a35-98b0-215f81c72c09")
+		)
+		(pin "S1"
+			(uuid "563056f2-b01e-44bc-8603-3f74f6e840af")
+		)
+		(pin "19"
+			(uuid "748421c6-7edf-4aa2-92d1-c601b8a07a0b")
+		)
+		(pin "C16"
+			(uuid "45bc460a-0e78-49cb-acd8-fbb64375884d")
+		)
+		(pin "C8"
+			(uuid "f6f0d694-7703-4ec2-b535-058e228e95b3")
+		)
+		(pin "C17"
+			(uuid "9190dff8-3265-475a-b71d-6161e325c4c5")
+		)
+		(pin "C4"
+			(uuid "317fd5a5-935a-41eb-baff-212189da25bd")
+		)
+		(pin "32"
+			(uuid "0cc0048c-c832-4574-8a71-9c6e73f82c49")
+		)
+		(pin "21"
+			(uuid "e109c669-5b4c-42ef-aeff-8d82e241ee1a")
+		)
+		(pin "C5"
+			(uuid "e4cb49be-80eb-4317-940a-d4e02ad7d751")
+		)
+		(pin "C11"
+			(uuid "80ffb78e-497b-403f-b679-b74938d98e5f")
+		)
+		(instances
+			(project "drone_electrical"
+				(path "/d0a5196f-f982-4f01-9a72-7bc068800001"
+					(reference "U2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
 )
