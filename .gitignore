@@ -1,5 +1,6 @@
 # CMake and Build Artifacts
 build/
+build-*/
 CMakeCache.txt
 CMakeFiles/
 CMakeScripts/

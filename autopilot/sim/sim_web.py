@@ -3,47 +3,118 @@ import socket
 import threading
 import time
 import json
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import math
+import os
+import asyncio
+import websockets
+from websockets.server import serve
+from http import HTTPStatus
 import urllib.parse
 
 class Pose(ctypes.Structure):
     _pack_ = 1
-    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double), ("z", ctypes.c_double), ("roll", ctypes.c_double), ("pitch", ctypes.c_double), ("yaw", ctypes.c_double), ("timestamp", ctypes.c_double), ("confidence", ctypes.c_double)]
-
-class UIGoalPose(ctypes.Structure):
-    _pack_ = 1
-    _fields_ = [("id", ctypes.c_uint32), ("x", ctypes.c_double), ("y", ctypes.c_double), ("z", ctypes.c_double), ("roll", ctypes.c_double), ("pitch", ctypes.c_double), ("yaw", ctypes.c_double), ("timestamp", ctypes.c_double), ("confidence", ctypes.c_double)]
-
-class VisionPose(ctypes.Structure):
-    _pack_ = 1
-    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double), ("z", ctypes.c_double), ("roll", ctypes.c_double), ("pitch", ctypes.c_double), ("yaw", ctypes.c_double), ("timestamp", ctypes.c_double), ("confidence", ctypes.c_double)]
-
+    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double), ("z", ctypes.c_double), 
+                ("roll", ctypes.c_double), ("pitch", ctypes.c_double), ("yaw", ctypes.c_double), 
+                ("timestamp", ctypes.c_double), ("confidence", ctypes.c_double)]
 
 class FlightCommand(ctypes.Structure):
     _pack_ = 1
-    _pack_ = 1
-    _fields_ = [("tx", ctypes.c_double), ("ty", ctypes.c_double), ("tz", ctypes.c_double), ("tyaw", ctypes.c_double), ("en", ctypes.c_bool), ("est", ctypes.c_bool)]
+    _fields_ = [("tx", ctypes.c_double), ("ty", ctypes.c_double), ("tz", ctypes.c_double), 
+                ("tyaw", ctypes.c_double), ("en", ctypes.c_bool), ("est", ctypes.c_bool)]
 
 class Telemetry(ctypes.Structure):
     _pack_ = 1
     _fields_ = [("p", Pose), ("bat", ctypes.c_int), ("err", ctypes.c_bool)]
 
-class UIGoalSequence(ctypes.Structure):
+class Vec3f(ctypes.Structure):
     _pack_ = 1
-    _fields_ = [("g", UIGoalPose * 16), ("n", ctypes.c_size_t), ("start", ctypes.c_bool), ("stop", ctypes.c_bool), ("estop", ctypes.c_bool)]
+    _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float), ("z", ctypes.c_float)]
 
-class UIAckPacket(ctypes.Structure):
-    _fields_ = [("received", ctypes.c_bool)]
-
-class UIConfigPacket(ctypes.Structure):
+class Quatf(ctypes.Structure):
     _pack_ = 1
-    _fields_ = [("max_velocity", ctypes.c_double), 
-                ("max_vertical_velocity", ctypes.c_double),
-                ("max_yaw_rate", ctypes.c_double)]
+    _fields_ = [("w", ctypes.c_float), ("x", ctypes.c_float), ("y", ctypes.c_float), ("z", ctypes.c_float)]
 
-class VisionGoalEstimate(ctypes.Structure):
+class Point2f(ctypes.Structure):
     _pack_ = 1
-    _fields_ = [("p", VisionPose), ("id", ctypes.c_int), ("det", ctypes.c_bool)]
+    _fields_ = [("u", ctypes.c_float), ("v", ctypes.c_float)]
+
+class TagMeasurement(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("tag_id", ctypes.c_uint16),
+        ("is_valid", ctypes.c_uint8),
+        ("camera_pos_world", Vec3f),
+        ("camera_att_world", Quatf),
+        ("confidence", ctypes.c_float),
+    ]
+
+class PoseHypothesis(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("position_cam", Vec3f),
+        ("orientation_cam", Quatf),
+        ("confidence", ctypes.c_float),
+    ]
+
+class GoalMeasurement(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("shape_type", ctypes.c_uint8),
+        ("is_detected", ctypes.c_uint8),
+        ("centroid", Point2f),
+        ("contour_area", ctypes.c_float),
+        ("num_hypotheses", ctypes.c_uint8),
+        ("hypotheses", PoseHypothesis * 4),
+    ]
+
+class VisionPacket(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("msg_type", ctypes.c_uint8),
+        ("sequence_id", ctypes.c_uint32),
+        ("timestamp_ns", ctypes.c_uint64),
+        ("error_state", ctypes.c_uint32),
+        ("num_tags_detected", ctypes.c_uint8),
+        ("tags", TagMeasurement * 4),
+        ("num_goals_reported", ctypes.c_uint8),
+        ("goals", GoalMeasurement * 3),
+    ]
+
+class UICommandPacket(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("msg_type", ctypes.c_uint8),
+        ("command_id", ctypes.c_uint32),
+        ("timestamp_ns", ctypes.c_uint64),
+        ("command", ctypes.c_uint8),
+        ("sequence_length", ctypes.c_uint8),
+        ("goal_sequence", ctypes.c_uint8 * 16),
+        ("end_action", ctypes.c_uint8),
+        ("hover_timeout_s", ctypes.c_float),
+        ("use_tube_constraint", ctypes.c_uint8),
+        ("tube_rail_y", ctypes.c_float),
+        ("tube_rail_z", ctypes.c_float),
+    ]
+
+class UIStatusPacket(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("msg_type", ctypes.c_uint8),
+        ("sequence_id", ctypes.c_uint32),
+        ("timestamp_ns", ctypes.c_uint64),
+        ("flight_state", ctypes.c_uint8),
+        ("is_armed", ctypes.c_uint8),
+        ("estop_active", ctypes.c_uint8),
+        ("active_sequence_len", ctypes.c_uint8),
+        ("current_seq_index", ctypes.c_uint8),
+        ("current_target_shape", ctypes.c_uint8),
+        ("configured_end_action", ctypes.c_uint8),
+        ("battery_voltage", ctypes.c_float),
+        ("battery_remaining", ctypes.c_float),
+        ("active_error_flags", ctypes.c_uint32),
+        ("last_acked_cmd_id", ctypes.c_uint32),
+        ("cmd_ack_result", ctypes.c_uint8),
+    ]
 
 state_lock = threading.Lock()
 drone_pos = {"x": 0, "y": 0, "z": 1, "yaw": 0}
@@ -53,8 +124,7 @@ vision_goals = [
 ]
 vision_enabled = True
 global_fixed_speed = 2.0
-
-import math
+global_detections = []
 
 def fcu_thread():
     try:
@@ -68,8 +138,6 @@ def _fcu_thread():
     sock.setblocking(False)
 
     p = Pose(0,0,1,0,0,0,0,1)
-    
-    vx, vy, vz = 0.0, 0.0, 0.0
     last_cmd = None
     
     while True:
@@ -121,45 +189,37 @@ def _fcu_thread():
 
         telem = Telemetry(p, 90, False)
         sock.sendto(bytes(telem), ("127.0.0.1", 14550))
-        
         time.sleep(dt)
-
-
-
-import os
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(SCRIPT_DIR, "index.html")
 
-global_detections = []
-
 def vision_thread():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    seq_id = 0
     while True:
         with state_lock:
             enabled = vision_enabled
             dets = list(global_detections)
         
         if enabled:
-            if not dets:
-                est = VisionGoalEstimate()
-                est.id = -1
-                est.det = False
-                sock.sendto(bytes(est), ("127.0.0.1", 14553))
-            else:
-                for det in dets:
-                    est = VisionGoalEstimate()
-                    est.p = VisionPose(det["x"], det["y"], det["z"], 0, 0, det["yaw"], time.time(), 1.0)
-                    est.id = det["id"]
-                    est.det = True
-                    sock.sendto(bytes(est), ("127.0.0.1", 14553))
+            pkt = VisionPacket()
+            pkt.msg_type = 1 # MSG_TYPE_VISION
+            pkt.sequence_id = seq_id
+            seq_id += 1
+            pkt.timestamp_ns = int(time.time() * 1e9)
+            pkt.num_goals_reported = min(len(dets), 3)
+            for i, det in enumerate(dets[:3]):
+                gm = pkt.goals[i]
+                gm.shape_type = det.get("shape", det.get("id", i + 1))
+                gm.is_detected = 1
+                gm.num_hypotheses = 1
+                gm.hypotheses[0].position_cam = Vec3f(float(det["x"]), float(det["y"]), float(det["z"]))
+                yaw = float(det.get("yaw", 0.0))
+                gm.hypotheses[0].orientation_cam = Quatf(math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0))
+                gm.hypotheses[0].confidence = 1.0
+            sock.sendto(bytes(pkt), ("127.0.0.1", 14553))
         time.sleep(0.05)
-
-import asyncio
-import websockets
-from websockets.server import serve
-from http import HTTPStatus
-import urllib.parse
 
 async def process_request(path, request_headers):
     parsed_path = urllib.parse.urlparse(path).path
@@ -170,12 +230,12 @@ async def process_request(path, request_headers):
             return HTTPStatus.OK, [("Content-Type", "text/html")], content
         except FileNotFoundError:
             return HTTPStatus.NOT_FOUND, [], b"Not found"
-    
-    # Let normal websocket handshake proceed for other paths (like /ws)
     return None
 
+cmd_counter = 0
+
 async def handler(websocket):
-    global vision_enabled, vision_goals, global_detections, global_fixed_speed
+    global vision_enabled, vision_goals, global_detections, global_fixed_speed, cmd_counter
     
     async def send_state():
         while True:
@@ -193,15 +253,20 @@ async def handler(websocket):
         async for message in websocket:
             data = json.loads(message)
             if data["type"] == "ui":
-                seq = UIGoalSequence()
-                seq.start = True
-                seq.n = len(data["goals"])
-                for i, g in enumerate(data["goals"]):
-                    seq.g[i] = UIGoalPose(g["id"], g["x"], g["y"], g["z"], 0, 0, g["yaw"], 0, 1.0)
+                cmd = UICommandPacket()
+                cmd.msg_type = 2 # MSG_TYPE_UI_CMD
+                cmd_counter += 1
+                cmd.command_id = cmd_counter
+                cmd.timestamp_ns = int(time.time() * 1e9)
+                cmd.command = 3 # UI_CMD_START_MISSION
+                cmd.sequence_length = min(len(data["goals"]), 16)
+                for i, g in enumerate(data["goals"][:16]):
+                    cmd.goal_sequence[i] = g.get("shape", g.get("id", i + 1))
+                cmd.end_action = 0 # MISSION_END_HOVER
                 
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 sock.settimeout(0.5)
-                sock.sendto(bytes(seq), ("127.0.0.1", 14552))
+                sock.sendto(bytes(cmd), ("127.0.0.1", 14552))
                 try:
                     sock.recvfrom(1024)
                 except socket.timeout:
@@ -217,13 +282,6 @@ async def handler(websocket):
                 with state_lock:
                     vision_goals = data["goals"]
             elif data["type"] == "config":
-                cfg = UIConfigPacket()
-                cfg.max_velocity = data["max_velocity"]
-                cfg.max_vertical_velocity = data["max_vertical_velocity"]
-                cfg.max_yaw_rate = data["max_yaw_rate"]
-                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sock.sendto(bytes(cfg), ("127.0.0.1", 14552))
-                sock.close()
                 with state_lock:
                     global_fixed_speed = data["max_velocity"]
     except Exception:

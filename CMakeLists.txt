@@ -12,6 +12,8 @@ add_compile_options(
 
 find_package(Threads REQUIRED)
 
+enable_testing()
+
 # Shared schemas and data contracts
 add_subdirectory(shared)
 
