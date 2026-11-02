@@ -6,6 +6,19 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# 0. Ensure Wi-Fi AP is active
+if command -v nmcli >/dev/null 2>&1; then
+    for i in 1 2 3 4 5; do
+        if nmcli -t -f ACTIVE,NAME con show 2>/dev/null | grep -q "^yes:HEXAGON-flight-drone"; then
+            echo "[MAVLINK-ROUTER] Wi-Fi AP HEXAGON-flight-drone is active."
+            break
+        fi
+        echo "[MAVLINK-ROUTER] Activating Wi-Fi AP HEXAGON-flight-drone (attempt $i)..."
+        nmcli connection up HEXAGON-flight-drone 2>/dev/null || true
+        sleep 1
+    done
+fi
+
 # 1. Check if mavlink-routerd is installed
 if command -v mavlink-routerd >/dev/null 2>&1; then
     CONFIG_FILE="/etc/mavlink-router/main.conf"

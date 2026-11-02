@@ -5,6 +5,7 @@ type=wifi
 interface-name=wlan0
 autoconnect=true
 autoconnect-priority=100
+permissions=
 
 [wifi]
 mode=ap
@@ -15,6 +16,7 @@ channel=6
 [wifi-security]
 key-mgmt=wpa-psk
 psk=rylaniscool
+psk-flags=0
 
 [ipv4]
 method=shared

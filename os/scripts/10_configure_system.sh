@@ -115,6 +115,10 @@ ln -sf /lib/systemd/system/wpa_supplicant.service "$ROOTFS_DIR/etc/systemd/syste
 ln -sf /lib/systemd/system/avahi-daemon.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/avahi-daemon.service" 2>/dev/null || true
 ln -sf /lib/systemd/system/ssh.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/ssh.service" 2>/dev/null || true
 
+# Prevent systemd from ever soft-blocking Wi-Fi across boots
+ln -sf /dev/null "$ROOTFS_DIR/etc/systemd/system/systemd-rfkill.service" 2>/dev/null || true
+ln -sf /dev/null "$ROOTFS_DIR/etc/systemd/system/systemd-rfkill.socket" 2>/dev/null || true
+
 # Generate SSH host keys ahead of time
 if [ -x "$ROOTFS_DIR/usr/bin/ssh-keygen" ]; then
     chroot "$ROOTFS_DIR" ssh-keygen -A 2>/dev/null || true
