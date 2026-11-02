@@ -4,7 +4,7 @@
 [![OpenCV](https://img.shields.io/badge/OpenCV-4.x-green.svg)](https://opencv.org/)
 [![Sensor](https://img.shields.io/badge/Camera-OV9281%20Global%20Shutter-orange.svg)](#optical-hardware--illumination-strategy)
 
-The **Vision Processing Subsystem** provides onboard, real-time computer vision capabilities for the autonomous drone. Running locally on the **Radxa Zero 3W** single-board computer, the pipeline ingests high-frame-rate monochrome video, isolates target gate geometries, classifies polygon shapes, solves for 6-DoF relative poses using perspective-n-point (`solvePnP`), and streams structured [`VisionPacket`](file:///home/sandbox/autonomous-drone/shared/include/vision_packet.h) datagrams to the autopilot over UDP.
+The **Vision Processing Subsystem** provides onboard, real-time computer vision capabilities for the autonomous drone. Running locally on the **Radxa Zero 3W** single-board computer, the pipeline ingests high-frame-rate monochrome video, isolates target gate geometries, classifies polygon shapes, solves for 6-DoF relative poses using perspective-n-point (`solvePnP`), and streams structured [`VisionPacket`](../shared/include/vision_packet.h) datagrams to the autopilot over UDP.
 
 ---
 

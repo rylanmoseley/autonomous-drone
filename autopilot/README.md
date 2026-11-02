@@ -2,7 +2,7 @@
 
 [![Language](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
 [![Loop Rate](https://img.shields.io/badge/Loop%20Rate-20%20Hz%20(50%20ms)-brightgreen.svg)](#core-architecture--loop-lifecycle)
-[![MAVLink](https://img.shields.io/badge/Protocol-MAVLink%20v2-orange.svg)](file:///home/sandbox/autonomous-drone/shared/include/mavlink_protocol.h)
+[![MAVLink](https://img.shields.io/badge/Protocol-MAVLink%20v2-orange.svg)](../shared/include/mavlink_protocol.h)
 
 The **Autopilot Subsystem** serves as the central coordination hub of the HEXAGON Flight autonomous quadcopter. Operating hierarchically on the companion Single-Board Computer (**Radxa Zero 3W**), it manages mission lifecycle state execution, stateful gate position filtering, kinematic trajectory generation with obstacle avoidance, MAVLink bridge execution to the ArduPilot Flight Controller Unit (FCU), and Software-in-the-Loop (SIL) simulation.
 
@@ -28,7 +28,7 @@ The **Autopilot Subsystem** serves as the central coordination hub of the HEXAGO
 
 ## Core Architecture & Loop Lifecycle
 
-The master coordination process [`AutopilotNode`](file:///home/sandbox/autonomous-drone/autopilot/autopilot_node.h) executes a deterministic **20 Hz periodic loop** ($dt = 50\text{ ms}$):
+The master coordination process [`AutopilotNode`](autopilot_node.h) executes a deterministic **20 Hz periodic loop** ($dt = 50\text{ ms}$):
 
 ```mermaid
 flowchart TD
@@ -106,7 +106,7 @@ autopilot/
 ## Algorithmic Formulations
 
 ### 1. Stateful Goal Position Estimator
-Incoming gate observations relative to the camera frame are transformed into World NED coordinates and filtered by [`GoalEstimator`](file:///home/sandbox/autonomous-drone/autopilot/goal-estimator/goal_estimator.h) using a first-order exponential temporal filter:
+Incoming gate observations relative to the camera frame are transformed into World NED coordinates and filtered by [`GoalEstimator`](goal-estimator/goal_estimator.h) using a first-order exponential temporal filter:
 
 $$\hat{p}_k = \alpha p_{\text{meas},k} + (1-\alpha)\hat{p}_{k-1}$$
 
@@ -123,7 +123,7 @@ Goal tracking states transition deterministically:
 ---
 
 ### 2. Artificial Potential Field (APF) Path Planner
-The kinematic solver [`PathPlanner`](file:///home/sandbox/autonomous-drone/autopilot/path-planner/path_planner.h) computes 3D translational velocity vectors to guide the quadcopter cleanly through target gates while avoiding collisions with non-target obstacles.
+The kinematic solver [`PathPlanner`](path-planner/path_planner.h) computes 3D translational velocity vectors to guide the quadcopter cleanly through target gates while avoiding collisions with non-target obstacles.
 
 For each target gate, trajectory generation establishes approach and exit waypoints offset along the gate aperture normal $\hat{n}_{\text{gate}}$:
 $$w_{\text{approach}} = \hat{p}_{\text{gate}} - d_{\text{standoff}} \hat{n}_{\text{gate}}, \quad w_{\text{exit}} = \hat{p}_{\text{gate}} + d_{\text{standoff}} \hat{n}_{\text{gate}}$$
@@ -146,7 +146,7 @@ with $v_{xy,\max} = 2.0\text{ m/s}$ horizontally and $v_{z,\max} = 1.0\text{ m/s
 ### 3. Authoritative Surveyed Tag Map (Compile-Time ROM)
 As established in system requirements, **the Autopilot (not the FCU) is the authoritative owner of the arena survey coordinates**.
 
-1. **Configuration**: Surveyed tags are specified in human-readable JSON ([`config/surveyed_tags.json`](file:///home/sandbox/autonomous-drone/autopilot/config/surveyed_tags.json)):
+1. **Configuration**: Surveyed tags are specified in human-readable JSON ([`config/surveyed_tags.json`](config/surveyed_tags.json)):
    ```json
    {
      "id": 1,
@@ -156,7 +156,7 @@ As established in system requirements, **the Autopilot (not the FCU) is the auth
      "size_m": 0.16
    }
    ```
-2. **Pre-Compile Code Generator**: CMake runs [`scripts/generate_tag_map.py`](file:///home/sandbox/autonomous-drone/autopilot/scripts/generate_tag_map.py) whenever `surveyed_tags.json` is modified. It precomputes unit quaternions $(w, x, y, z)$ at build time, computes a SHA-256 fingerprint, and emits [`include/generated_surveyed_tags.h`](file:///home/sandbox/autonomous-drone/autopilot/include/generated_surveyed_tags.h).
+2. **Pre-Compile Code Generator**: CMake runs [`scripts/generate_tag_map.py`](scripts/generate_tag_map.py) whenever `surveyed_tags.json` is modified. It precomputes unit quaternions $(w, x, y, z)$ at build time, computes a SHA-256 fingerprint, and emits [`include/generated_surveyed_tags.h`](include/generated_surveyed_tags.h).
 3. **Optimized ROM Table**: Emits `constexpr CompiledSurveyedTagEntry COMPILED_SURVEYED_TAGS[]` stored in flash/ROM (zero heap allocation, zero startup parsing overhead).
 4. **Fast Lookup**: `findCompiledSurveyedTag(id)` provides branchless $O(\log N)$ binary search lookup.
 5. **Node Preloading**: `loadCompiledSurveyedTags(*this)` is called directly in the `AutopilotNode` constructor, ensuring the drone is flight-ready upon boot.
@@ -164,7 +164,7 @@ As established in system requirements, **the Autopilot (not the FCU) is the auth
 ---
 
 ### 4. MAVLink v2 Protocol & Drift Correction Bridge
-[`MavlinkDaemon`](file:///home/sandbox/autonomous-drone/autopilot/mavlink-daemon/mavlink_daemon.h) connects the SBC to the ArduPilot FCU over serial UART (`/dev/flightcontroller` at 921,600 baud):
+[`MavlinkDaemon`](mavlink-daemon/mavlink_daemon.h) connects the SBC to the ArduPilot FCU over serial UART (`/dev/flightcontroller` at 921,600 baud):
 
 - **Guidance Setpoints**: Transmits `SET_POSITION_TARGET_LOCAL_NED` (Msg #84) in GUIDED mode at 20 Hz.
 - **Global Drift Handling**: When the vision system detects an AprilTag, `AutopilotNode` resolves its pose and forwards `VISION_POSITION_ESTIMATE` (Msg #102) to the FCU. ArduPilot's EKF3 fuses this measurement to instantly arrest accumulated optical flow dead-reckoning drift without requiring extra hardware wiring.

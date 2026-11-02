@@ -2,7 +2,7 @@
 
 [![Language](https://img.shields.io/badge/C%2B%2B-17%20%2F%20C99-blue.svg)](https://en.cppreference.com/w/cpp/17)
 [![Memory Layout](https://img.shields.io/badge/Layout-Packed%20(Zero--Copy)-orange.svg)](#memory-packing--cross-platform-rules)
-[![MAVLink](https://img.shields.io/badge/Wire%20Protocol-MAVLink%20v2-green.svg)](file:///home/sandbox/autonomous-drone/shared/include/mavlink_protocol.h)
+[![MAVLink](https://img.shields.io/badge/Wire%20Protocol-MAVLink%20v2-green.svg)](include/mavlink_protocol.h)
 
 The **Shared Subproject** defines the single source of truth for all data contracts, Inter-Process Communication (IPC) schemas, coordinate systems, and serialization formats across the autonomous drone system.
 
@@ -86,9 +86,9 @@ To maintain strict modularity, independently executing processes exchange struct
 
 ### 1. `common_types.h` (Vectors, Orientations, Shapes)
 Defines basic mathematical structures in **SI units**:
-- **[`Vec3f`](file:///home/sandbox/autonomous-drone/shared/include/common_types.h#L11-L15)**: 3D vector `(x, y, z)` in meters.
-- **[`Quatf`](file:///home/sandbox/autonomous-drone/shared/include/common_types.h#L17-L22)**: Unit orientation quaternion `(w, x, y, z)`.
-- **[`ShapeType`](file:///home/sandbox/autonomous-drone/shared/include/common_types.h#L24-L31)**: Geometric target classification:
+- **[`Vec3f`](include/common_types.h#L11-L15)**: 3D vector `(x, y, z)` in meters.
+- **[`Quatf`](include/common_types.h#L17-L22)**: Unit orientation quaternion `(w, x, y, z)`.
+- **[`ShapeType`](include/common_types.h#L24-L31)**: Geometric target classification:
   - `SHAPE_UNKNOWN = 0`
   - `SHAPE_CIRCLE = 1`
   - `SHAPE_TRIANGLE = 2`
@@ -99,17 +99,17 @@ Defines basic mathematical structures in **SI units**:
 
 ### 2. `vision_packet.h` (Gates & AprilTags)
 Carries visual detection hypotheses from `vision-processing` to the autopilot:
-- **[`VisionGoalEstimate`](file:///home/sandbox/autonomous-drone/shared/include/vision_packet.h#L10-L16)**:
+- **[`VisionGoalEstimate`](include/vision_packet.h#L10-L16)**:
   - `shape_type`: Geometric polygon shape.
   - `position`: Relative $(x, y, z)$ position from camera in meters.
   - `attitude`: Relative $(w, x, y, z)$ orientation quaternion.
   - `confidence`: $[0.0, 1.0]$ detection quality metric.
-- **[`TagMeasurement`](file:///home/sandbox/autonomous-drone/shared/include/vision_packet.h#L18-L26)**:
+- **[`TagMeasurement`](include/vision_packet.h#L18-L26)**:
   - `tag_id`: AprilTag / ChArUco identifier ($1 \dots 65535$).
   - `camera_pos_world`: Inverted absolute World NED camera position derived via known tag coordinates.
   - `camera_att_world`: Absolute World NED camera attitude quaternion.
   - `confidence`: Metric based on reprojection error and corner sharpness.
-- **[`VisionPacket`](file:///home/sandbox/autonomous-drone/shared/include/vision_packet.h#L28-L34)**:
+- **[`VisionPacket`](include/vision_packet.h#L28-L34)**:
   - `timestamp_us`: Microsecond frame acquisition timestamp.
   - `gate_count`: Number of active gate detections ($\le 4$).
   - `tag_count`: Number of active tag detections ($\le 4$).
@@ -119,13 +119,13 @@ Carries visual detection hypotheses from `vision-processing` to the autopilot:
 
 ### 3. `ui_protocol.h` (Operator Command & Status)
 Defines command and status messages exchanged with the operator interface:
-- **[`UICommandPacket`](file:///home/sandbox/autonomous-drone/shared/include/ui_protocol.h#L24-L48)**:
+- **[`UICommandPacket`](include/ui_protocol.h#L24-L48)**:
   - `command_id`: Monotonic counter for delivery acknowledgments.
   - `command`: `UICommandType` (`ARM`, `DISARM`, `START_MISSION`, `PAUSE_MISSION`, `RESUME_MISSION`, `LAND_NOW`, `ESTOP`, `SET_SEQUENCE`).
   - `sequence_length`: Number of ordered gates ($\le 16$).
   - `goal_sequence[16]`: Array of `ShapeType` enums defining the mission order.
   - `end_action`: Post-mission behavior (0 = Hover, 1 = Auto-Land).
-- **[`UIStatusPacket`](file:///home/sandbox/autonomous-drone/shared/include/ui_protocol.h#L51-L75)**:
+- **[`UIStatusPacket`](include/ui_protocol.h#L51-L75)**:
   - `flight_state`: Master state enum (`STANDBY`, `SEEK`, `PATH`, `HOVER_WAIT`, `LAND`).
   - `is_armed`, `estop_active`: Safety interlock states.
   - `current_goal_idx`, `total_goals`: Mission progress indicators.
@@ -143,13 +143,13 @@ A lightweight, zero-dependency C++17 implementation of the MAVLink v2 framing pr
   - `LOCAL_POSITION_NED` (Msg #32): Vehicle position and velocity decoded from FCU telemetry.
   - `ATTITUDE` (Msg #30): Roll, pitch, yaw, and angular rates decoded from FCU telemetry.
   - `HEARTBEAT` (Msg #0): System status and arming state verification.
-- **Conversion Utility**: `tag_to_mavlink_vision_position()` converts [`TagMeasurement`](file:///home/sandbox/autonomous-drone/shared/include/vision_packet.h#L18) directly into [`MavlinkVisionPositionEstimate`](file:///home/sandbox/autonomous-drone/shared/include/mavlink_protocol.h#L143) with dynamic confidence-weighted covariance.
+- **Conversion Utility**: `tag_to_mavlink_vision_position()` converts [`TagMeasurement`](include/vision_packet.h#L18) directly into [`MavlinkVisionPositionEstimate`](include/mavlink_protocol.h#L143) with dynamic confidence-weighted covariance.
 
 ---
 
 ### 5. `telemetry_packet.h` (State & Telemetry Broadcast)
 Streams real-time drone state over UDP to the diagnostic logger and simulation viewers:
-- **[`FlightTelemetryPacket`](file:///home/sandbox/autonomous-drone/shared/include/telemetry_packet.h#L9-L38)**:
+- **[`FlightTelemetryPacket`](include/telemetry_packet.h#L9-L38)**:
   - `timestamp_us`: Microsecond timestamp.
   - `position_ned`, `velocity_ned`: Estimated drone states.
   - `attitude_rpy`: Roll, pitch, and yaw angles in radians.

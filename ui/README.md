@@ -103,7 +103,7 @@ The UI communicates with the SBC over the drone's dedicated onboard Wi-Fi networ
 - **Drone Static IP**: `192.168.4.1`.
 - **Port**: `14552` (UDP).
 
-### Wire Protocol Integration ([`shared/include/ui_protocol.h`](file:///home/sandbox/autonomous-drone/shared/include/ui_protocol.h))
+### Wire Protocol Integration ([`shared/include/ui_protocol.h`](../shared/include/ui_protocol.h))
 
 The UI packages binary packets matching C structure definitions:
 

@@ -120,7 +120,7 @@ M1 - M4     GR2004 Brushless Motors   DShot600 motor signals
 
 ## Companion Computer Serial Bridge
 
-The Autopilot connects to the FCU through [`MavlinkDaemon`](file:///home/sandbox/autonomous-drone/autopilot/mavlink-daemon/mavlink_daemon.h) running on the Radxa Zero 3W:
+The Autopilot connects to the FCU through [`MavlinkDaemon`](../autopilot/mavlink-daemon/mavlink_daemon.h) running on the Radxa Zero 3W:
 
 - **UART Device**: `/dev/flightcontroller` (created dynamically via udev rule).
 - **Baud Rate**: `921600` baud.
