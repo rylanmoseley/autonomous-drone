@@ -15,9 +15,6 @@ channel=6
 [wifi-security]
 key-mgmt=wpa-psk
 psk=rylaniscool
-proto=rsn
-pairwise=ccmp
-group=ccmp
 
 [ipv4]
 method=shared

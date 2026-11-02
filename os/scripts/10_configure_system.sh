@@ -41,7 +41,7 @@ if [ -d "$BOARD_DIR/boot" ]; then
 fi
 
 # 3. Secure NetworkManager connection file permissions (required by NetworkManager)
-chmod 600 "$ROOTFS_DIR/etc/NetworkManager/system-connections/drone-ap.nmconnection" 2>/dev/null || true
+chmod 600 "$ROOTFS_DIR/etc/NetworkManager/system-connections/"*.nmconnection 2>/dev/null || true
 
 # 4. Hostname & Hosts File
 echo "$HOSTNAME" > "$ROOTFS_DIR/etc/hostname"
@@ -111,7 +111,13 @@ else
 fi
 
 ln -sf /lib/systemd/system/NetworkManager.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/NetworkManager.service" 2>/dev/null || true
+ln -sf /lib/systemd/system/wpa_supplicant.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/wpa_supplicant.service" 2>/dev/null || true
 ln -sf /lib/systemd/system/avahi-daemon.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/avahi-daemon.service" 2>/dev/null || true
 ln -sf /lib/systemd/system/ssh.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/ssh.service" 2>/dev/null || true
+
+# Generate SSH host keys ahead of time
+if [ -x "$ROOTFS_DIR/usr/bin/ssh-keygen" ]; then
+    chroot "$ROOTFS_DIR" ssh-keygen -A 2>/dev/null || true
+fi
 
 echo "=== [STAGE 1] Configuration complete! ==="

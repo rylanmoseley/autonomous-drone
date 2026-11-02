@@ -114,8 +114,17 @@ echo "8. Validating package lists..."
 for pkg_list in "$OS_DIR"/configs/*/packages.list; do
     assert_success "Package list non-empty: $(basename "$(dirname "$pkg_list")")/$(basename "$pkg_list")" test -s "$pkg_list"
     assert_success "Contains network-manager: $(basename "$(dirname "$pkg_list")")" grep -q "^network-manager" "$pkg_list"
+    assert_success "Contains wpasupplicant: $(basename "$(dirname "$pkg_list")")" grep -q "^wpasupplicant" "$pkg_list"
     assert_success "Contains v4l-utils: $(basename "$(dirname "$pkg_list")")" grep -q "^v4l-utils" "$pkg_list"
 done
+
+# 9. Regulatory & Hardware Connectivity Validation
+echo "9. Validating wireless regulatory and USB gadget configs..."
+assert_success "wpa_supplicant.conf has US country code" grep -q "country=US" "$OS_DIR/configs/common/etc/wpa_supplicant/wpa_supplicant.conf"
+assert_success "brcmfmac.conf has US regdomain" grep -q "regdomain=US" "$OS_DIR/configs/common/etc/modprobe.d/brcmfmac.conf"
+assert_success "cmdline.txt includes cfg80211.ieee80211_regdom=US" grep -q "cfg80211.ieee80211_regdom=US" "$OS_DIR/configs/pi-zero-2w/boot/cmdline.txt"
+assert_success "USB gadget nmconnection exists" test -f "$OS_DIR/configs/common/etc/NetworkManager/system-connections/drone-usb-gadget.nmconnection"
+assert_success "USB gadget shared IP 192.168.7.1/24" grep -q "address1=192.168.7.1/24" "$OS_DIR/configs/common/etc/NetworkManager/system-connections/drone-usb-gadget.nmconnection"
 
 echo "============================================="
 echo "Total Tests: $((PASSED + FAILED)) | Passed: $PASSED | Failed: $FAILED"

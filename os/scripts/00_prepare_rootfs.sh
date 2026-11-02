@@ -48,7 +48,7 @@ fi
 mkdir -p "$ROOTFS_DIR"
 
 DEBIAN_MIRROR="${DEBIAN_MIRROR:-http://deb.debian.org/debian}"
-INCLUDED_PACKAGES="systemd,udev,dbus,ca-certificates,sudo,network-manager,python3,avahi-daemon,libpam-systemd,iproute2,iw,wireless-regdb,iptables,dnsmasq-base,procps,kmod"
+INCLUDED_PACKAGES="systemd,udev,dbus,ca-certificates,sudo,network-manager,wpasupplicant,rfkill,openssh-server,python3,avahi-daemon,libpam-systemd,iproute2,iw,wireless-regdb,iptables,dnsmasq-base,procps,kmod"
 COMPONENTS="main"
 
 if [ "$TARGET" = "pi" ] || [ "$TARGET" = "pi-zero-2w" ]; then
