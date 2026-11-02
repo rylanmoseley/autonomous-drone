@@ -1,0 +1,27 @@
+[Unit]
+Description=Autonomous Drone Computer Vision Gate Tracking Daemon
+After=network.target drone-autopilot.service drone-tuning.service
+Wants=drone-autopilot.service drone-tuning.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/drone
+ExecStartPre=-/opt/drone/scripts/init_camera.sh
+ExecStart=/opt/drone/bin/vision_node --headless --camera 0 --port 14553
+Restart=always
+RestartSec=3
+
+# Resource & Scheduling
+LimitRTPRIO=80
+LimitMEMLOCK=infinity
+CPUSchedulingPolicy=other
+Nice=-10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=drone-vision
+
+[Install]
+WantedBy=multi-user.target

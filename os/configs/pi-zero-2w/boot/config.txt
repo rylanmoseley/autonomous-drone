@@ -1,0 +1,22 @@
+# /boot/firmware/config.txt
+# Raspberry Pi Zero 2W Drone Avionics Configuration
+
+# 64-bit Kernel & Architecture
+arm_64bit=1
+
+# Memory allocation for ISP & camera buffers
+gpu_mem=128
+
+# Enable Hardware Buses
+dtparam=i2c_arm=on
+dtparam=spi=on
+
+# Primary Hardware UART on GPIO Pins 8 (TX) & 10 (RX) for Flight Controller
+enable_uart=1
+dtoverlay=miniuart-bt
+
+# Global Shutter Camera (Arducam OV9281) via MIPI-CSI
+dtoverlay=ov9281
+
+# USB OTG Gadget Support (Ethernet / Serial over USB-C)
+dtoverlay=dwc2
