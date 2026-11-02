@@ -109,6 +109,9 @@
         <!-- Mission Sequence -->
         <div class="panel">
             <h3>Autonomous Mission</h3>
+            <div id="mission-status-box" style="font-size: 13px; font-weight: bold; padding: 8px; border-radius: 6px; background: #e9ecef; text-align: center; margin-bottom: 10px; color: #495057;">
+                &#9632; Status: STANDBY (Ready)
+            </div>
             <label style="font-size: 12px;">Waypoint 1:</label>
             <select id="seq-1">
                 <option value="circle" selected>Circle</option>
@@ -127,7 +130,8 @@
                 <option value="triangle">Triangle</option>
                 <option value="square" selected>Square</option>
             </select>
-            <button onclick="sendUISequence()">Start Mission (Port 14552)</button>
+            <button id="btn-start" onclick="sendUISequence()" style="background: #28a745; font-size: 14px;">Start Mission</button>
+            <button onclick="emergencyStop()" style="background: #dc3545; margin-top: 6px;">Emergency Stop (E-Stop)</button>
         </div>
     </div>
     
@@ -193,7 +197,7 @@
                     const data = JSON.parse(event.data);
                     if (data.drone && drone) {
                         drone.position.set(data.drone.x, data.drone.z, -data.drone.y);
-                        drone.rotation.y = data.drone.yaw + Math.PI / 2;
+                        drone.rotation.y = data.drone.yaw;
                         drone.rotation.x = data.drone.pitch || 0;
                         drone.rotation.z = data.drone.roll || 0;
                     }
@@ -212,6 +216,34 @@
                         if (maxErr) maxErr.innerText = data.metrics.max_error.toFixed(3) + " m";
                         const dist = document.getElementById("metric-dist");
                         if (dist) dist.innerText = data.metrics.distance.toFixed(1) + " m";
+                    }
+
+                    // Update Mission Status Badge
+                    const statusBox = document.getElementById("mission-status-box");
+                    const startBtn = document.getElementById("btn-start");
+                    if (statusBox) {
+                        if (data.autopilot_connected) {
+                            statusBox.innerHTML = '<span style="color:#28a745;">&#9679;</span> AUTOPILOT ACTIVE (Port 14551)';
+                            statusBox.style.background = "#d4edda";
+                            statusBox.style.color = "#155724";
+                        } else if (data.mission_active) {
+                            const wpNum = (data.mission_idx || 0) + 1;
+                            statusBox.innerHTML = `<span style="color:#007bff;">&#9654;</span> FLYING (Gate ${wpNum} Approach)`;
+                            statusBox.style.background = "#cce5ff";
+                            statusBox.style.color = "#004085";
+                            if (startBtn) {
+                                startBtn.innerText = `Flying Gate ${wpNum}...`;
+                                startBtn.style.background = "#ff9800";
+                            }
+                        } else {
+                            statusBox.innerHTML = '&#9632; Status: STANDBY (Ready)';
+                            statusBox.style.background = "#e9ecef";
+                            statusBox.style.color = "#495057";
+                            if (startBtn) {
+                                startBtn.innerText = "Start Mission";
+                                startBtn.style.background = "#28a745";
+                            }
+                        }
                     }
                 } catch (e) {
                     console.error("Error processing telemetry:", e);
@@ -286,7 +318,18 @@
             updateThreeJsHoops();
         }
 
+        function emergencyStop() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "ui", command: 7 })); // UI_CMD_ESTOP
+            }
+        }
+
         function sendUISequence() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert("Simulator WebSocket not connected yet. Please wait a moment.");
+                return;
+            }
+
             const seq1 = document.getElementById("seq-1").value;
             const seq2 = document.getElementById("seq-2").value;
             const seq3 = document.getElementById("seq-3").value;
@@ -297,9 +340,10 @@
                 { id: shapes[seq3].id, shape: shapes[seq3].shape, x: shapes[seq3].x, y: shapes[seq3].y, z: shapes[seq3].z, yaw: shapes[seq3].yaw }
             ];
 
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: "ui", command: 3, goals: sequenceGoals, end_action: 0 }));
-            }
+            const btn = document.getElementById("btn-start");
+            if (btn) btn.innerText = "Starting...";
+
+            ws.send(JSON.stringify({ type: "ui", command: 3, goals: sequenceGoals, end_action: 0 }));
         }
 
         // -------------------------------------------------------------------
@@ -333,7 +377,9 @@
         const arm1 = new THREE.Mesh(armGeo, armMat); arm1.rotation.y = Math.PI / 4; drone.add(arm1);
         const arm2 = new THREE.Mesh(armGeo, armMat); arm2.rotation.y = -Math.PI / 4; drone.add(arm2);
 
+        // FPV Camera mounted at the front nose of the drone, facing forward (+X direction)
         const droneCamera = new THREE.PerspectiveCamera(70, 320 / 240, 0.05, 20);
+        droneCamera.position.set(0.18, 0.04, 0);
         droneCamera.rotation.y = -Math.PI / 2;
         drone.add(droneCamera);
         scene.add(drone);
@@ -381,9 +427,45 @@
         updateVisionGoals();
 
         function updateVision() {
+            // Temporarily hide drone body and tracking markers so FPV camera only sees world & gates
+            drone.visible = false;
+            if (feedbackMarker) feedbackMarker.visible = false;
+            if (targetMarker) targetMarker.visible = false;
+
             pipRenderer.render(scene, droneCamera);
+
+            drone.visible = true;
+            if (feedbackMarker) feedbackMarker.visible = true;
+            if (targetMarker) targetMarker.visible = true;
+
+            // Render FPV HUD reticle overlay
+            const canvas = document.getElementById("pip-overlay");
+            if (canvas) {
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, 320, 240);
+                
+                // Crosshairs
+                ctx.strokeStyle = "rgba(0, 255, 120, 0.75)";
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(140, 120); ctx.lineTo(180, 120);
+                ctx.moveTo(160, 100); ctx.lineTo(160, 140);
+                ctx.stroke();
+
+                // Center reticle ring
+                ctx.strokeStyle = "rgba(0, 255, 120, 0.4)";
+                ctx.beginPath();
+                ctx.arc(160, 120, 18, 0, 2 * Math.PI);
+                ctx.stroke();
+
+                // FPV HUD status text
+                ctx.fillStyle = "rgba(0, 255, 120, 0.9)";
+                ctx.font = "11px monospace";
+                ctx.fillText("CAM 0: FPV NOSE FORWARD", 10, 18);
+                ctx.fillText("FOV 70° | 30 FPS", 10, 32);
+            }
         }
-        setInterval(updateVision, 100);
+        setInterval(updateVision, 33);
 
         function animate() {
             requestAnimationFrame(animate);

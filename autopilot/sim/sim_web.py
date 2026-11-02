@@ -271,6 +271,12 @@ vision_tags = [
 vision_enabled = True
 global_detections = []
 
+sim_mission_active = False
+sim_mission_goals = []
+sim_mission_idx = 0
+sim_mission_substep = 0
+last_cmd_time = 0.0
+
 def fcu_thread():
     try:
         _fcu_thread()
@@ -278,6 +284,7 @@ def fcu_thread():
         import traceback; traceback.print_exc()
 
 def _fcu_thread():
+    global last_cmd_time, sim_mission_active, sim_mission_idx, sim_mission_substep
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("0.0.0.0", 14551))
     sock.setblocking(False)
@@ -290,6 +297,7 @@ def _fcu_thread():
             data, addr = sock.recvfrom(2048)
             if len(data) == ctypes.sizeof(FlightCommand):
                 last_cmd = FlightCommand.from_buffer_copy(data)
+                last_cmd_time = time.time()
             elif len(data) >= 12 and data[0] == 0xFD:
                 # MAVLink v2 packet
                 payload_len = data[1]
@@ -303,7 +311,52 @@ def _fcu_thread():
         except Exception as e:
             print(f"FCU error: {e}")
 
-        follower.step(last_cmd, dt)
+        now = time.time()
+        active_cmd = None
+
+        if last_cmd is not None and (now - last_cmd_time) < 1.0 and last_cmd.en:
+            active_cmd = last_cmd
+        elif sim_mission_active and sim_mission_goals:
+            with state_lock:
+                if sim_mission_idx < len(sim_mission_goals):
+                    g = sim_mission_goals[sim_mission_idx]
+                    gx, gy, gz = float(g["x"]), float(g["y"]), float(g["z"])
+                    gyaw = float(g.get("yaw", 0.0))
+
+                    # Orientation vector perpendicular to hoop plane
+                    nx = math.cos(gyaw)
+                    ny = math.sin(gyaw)
+
+                    # Substep 0: Approach waypoint (0.50m in front of gate)
+                    # Substep 1: Traversal exit waypoint (0.50m behind gate)
+                    if sim_mission_substep == 0:
+                        tx = gx - 0.50 * nx
+                        ty = gy - 0.50 * ny
+                        tz = gz
+                        dist_2d = math.hypot(tx - follower.true_x, ty - follower.true_y)
+                        target_yaw = math.atan2(ty - follower.true_y, tx - follower.true_x) if dist_2d > 0.15 else gyaw
+                    else:
+                        tx = gx + 0.50 * nx
+                        ty = gy + 0.50 * ny
+                        tz = gz
+                        target_yaw = gyaw
+
+                    dist = math.sqrt((tx - follower.true_x)**2 + (ty - follower.true_y)**2 + (tz - follower.true_z)**2)
+                    if dist < 0.22:
+                        if sim_mission_substep == 0:
+                            sim_mission_substep = 1
+                        else:
+                            sim_mission_substep = 0
+                            sim_mission_idx += 1
+                            if sim_mission_idx >= len(sim_mission_goals):
+                                sim_mission_active = False
+
+                    active_cmd = FlightCommand(tx, ty, tz, target_yaw, True, False)
+                else:
+                    sim_mission_active = False
+                    active_cmd = FlightCommand(follower.true_x, follower.true_y, follower.true_z, follower.true_yaw, True, False)
+
+        follower.step(active_cmd, dt)
 
         # Transmit feedback pose in Telemetry datagram to Autopilot
         with follower.lock:
@@ -375,14 +428,18 @@ cmd_counter = 0
 
 async def handler(websocket):
     global vision_enabled, vision_goals, global_detections, cmd_counter
+    global sim_mission_active, sim_mission_goals, sim_mission_idx, sim_mission_substep
 
     async def send_state():
         while True:
-            sim_state = follower.get_state()
-            with state_lock:
-                sim_state["goals"] = vision_goals
-                sim_state["vision_enabled"] = vision_enabled
             try:
+                sim_state = follower.get_state()
+                with state_lock:
+                    sim_state["goals"] = vision_goals
+                    sim_state["vision_enabled"] = vision_enabled
+                    sim_state["mission_active"] = sim_mission_active
+                    sim_state["mission_idx"] = sim_mission_idx
+                    sim_state["autopilot_connected"] = (time.time() - last_cmd_time < 1.0)
                 await websocket.send(json.dumps(sim_state))
             except Exception:
                 break
@@ -395,24 +452,38 @@ async def handler(websocket):
             data = json.loads(message)
             msg_type = data.get("type")
             if msg_type == "ui":
+                cmd_val = data.get("command", 3)
+                goals_to_send = data.get("goals", vision_goals)
+                if cmd_val == 3: # START_MISSION
+                    with state_lock:
+                        sim_mission_active = True
+                        sim_mission_goals = list(goals_to_send)
+                        sim_mission_idx = 0
+                        sim_mission_substep = 0
+                elif cmd_val in (2, 7): # DISARM or ESTOP
+                    with state_lock:
+                        sim_mission_active = False
+                    with follower.lock:
+                        follower.vx = 0.0; follower.vy = 0.0; follower.vz = 0.0
+                        if cmd_val == 7: # ESTOP immediately cuts power
+                            follower.true_z = max(0.0, follower.true_z - 0.5)
+
                 cmd = UICommandPacket()
                 cmd.msg_type = 2 # MSG_TYPE_UI_CMD
                 cmd_counter += 1
                 cmd.command_id = cmd_counter
                 cmd.timestamp_ns = int(time.time() * 1e9)
-                cmd.command = data.get("command", 3) # UI_CMD_START_MISSION
-                goals_to_send = data.get("goals", vision_goals)
+                cmd.command = cmd_val
                 cmd.sequence_length = min(len(goals_to_send), 16)
                 for i, g in enumerate(goals_to_send[:16]):
                     cmd.goal_sequence[i] = g.get("shape", g.get("id", i + 1))
                 cmd.end_action = data.get("end_action", 0) # MISSION_END_HOVER
 
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sock.settimeout(0.5)
-                sock.sendto(bytes(cmd), ("127.0.0.1", 14552))
+                sock.settimeout(0.1)
                 try:
-                    sock.recvfrom(1024)
-                except socket.timeout:
+                    sock.sendto(bytes(cmd), ("127.0.0.1", 14552))
+                except Exception:
                     pass
                 sock.close()
             elif msg_type == "follower_config":
@@ -432,6 +503,10 @@ async def handler(websocket):
                     if "noise_enabled" in data:
                         follower.noise_enabled = bool(data["noise_enabled"])
             elif msg_type == "reset_sim":
+                with state_lock:
+                    sim_mission_active = False
+                    sim_mission_idx = 0
+                    sim_mission_substep = 0
                 with follower.lock:
                     follower.true_x = 0.0
                     follower.true_y = 0.0
@@ -443,6 +518,7 @@ async def handler(websocket):
                     follower.max_error = 0.0
                     follower.current_error = 0.0
                     follower.total_dist = 0.0
+                    follower.last_target = None
             elif msg_type == "toggle":
                 with state_lock:
                     vision_enabled = data["enabled"]
