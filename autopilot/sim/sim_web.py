@@ -271,11 +271,180 @@ vision_tags = [
 vision_enabled = True
 global_detections = []
 
+# ---------------------------------------------------------------------------
+# Dynamic Vision Perception, No-Go Zones, & Collision Modeling
+# ---------------------------------------------------------------------------
+perceived_goals = {} # shape -> dict of observed {x, y, z, yaw, dist, conf, last_seen}
+current_detections = [] # Active camera frame detections for HUD
+collision_state = {"collision": False, "object": "", "time": 0.0}
+
 sim_mission_active = False
 sim_mission_goals = []
 sim_mission_idx = 0
-sim_mission_substep = 0
+sim_mission_phase = 0 # 0: SEARCH, 1: TRANSIT_AVOID, 2: ALIGN, 3: TRAVERSE
+sim_detour_wp = None
+search_scan_angle = 0.0
+search_scan_dir = 1.0
+mission_status_text = "STANDBY (Ready)"
 last_cmd_time = 0.0
+
+def evaluate_camera_vision(true_x, true_y, true_z, true_yaw, goals):
+    cam_x = true_x + 0.18 * math.cos(true_yaw)
+    cam_y = true_y + 0.18 * math.sin(true_yaw)
+    cam_z = true_z + 0.04
+
+    cos_yaw = math.cos(true_yaw)
+    sin_yaw = math.sin(true_yaw)
+
+    # 70 deg horiz FOV (+-35 deg), 50 deg vert FOV (+-25 deg)
+    fx = 160.0 / math.tan(math.radians(35.0))
+    fy = 120.0 / math.tan(math.radians(25.0))
+
+    detections = []
+
+    for g in goals:
+        gx, gy, gz = float(g["x"]), float(g["y"]), float(g["z"])
+        gyaw = float(g.get("yaw", 0.0))
+        shape_type = int(g.get("shape", g.get("id", 1)))
+
+        dx = gx - cam_x
+        dy = gy - cam_y
+        dz = gz - cam_z
+        dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+
+        # Range filter [0.20m, 2.90m]
+        if dist < 0.20 or dist > 2.90:
+            continue
+
+        fwd = dx * cos_yaw + dy * sin_yaw
+        lat = -dx * sin_yaw + dy * cos_yaw
+        vert = dz
+
+        # Must be in front of camera
+        if fwd <= 0.15:
+            continue
+
+        h_angle = math.atan2(lat, fwd)
+        v_angle = math.atan2(vert, fwd)
+        if abs(h_angle) > math.radians(35.0) or abs(v_angle) > math.radians(25.0):
+            continue
+
+        # Line of Sight / Occlusion check against closer hoops
+        occluded = False
+        ray_x, ray_y, ray_z = dx / dist, dy / dist, dz / dist
+        for other in goals:
+            if other.get("id") == g.get("id"):
+                continue
+            ox = float(other["x"]) - cam_x
+            oy = float(other["y"]) - cam_y
+            oz = float(other["z"]) - cam_z
+            o_dist = math.sqrt(ox*ox + oy*oy + oz*oz)
+            if o_dist < dist - 0.25:
+                proj = ox * ray_x + oy * ray_y + oz * ray_z
+                if 0 < proj < dist:
+                    perp_sq = (ox - proj * ray_x)**2 + (oy - proj * ray_y)**2 + (oz - proj * ray_z)**2
+                    if perp_sq < (0.28 ** 2):
+                        occluded = True
+                        break
+        if occluded:
+            continue
+
+        u = int(160.0 + fx * (lat / fwd))
+        v = int(120.0 - fy * (vert / fwd))
+        box_size = int(max(18, min(140, fx * 0.40 / fwd)))
+
+        noise_pos = 0.012 * (dist / 1.5)
+        meas_x = gx + random.gauss(0, noise_pos)
+        meas_y = gy + random.gauss(0, noise_pos)
+        meas_z = gz + random.gauss(0, noise_pos * 0.5)
+        meas_yaw = gyaw + random.gauss(0, 0.015)
+        conf = max(0.45, min(0.99, 1.0 - (dist / 2.90) * 0.45))
+
+        detections.append({
+            "id": g.get("id", shape_type),
+            "shape": shape_type,
+            "dist": round(dist, 2),
+            "x": meas_x,
+            "y": meas_y,
+            "z": meas_z,
+            "yaw": meas_yaw,
+            "conf": round(conf, 2),
+            "u": u,
+            "v": v,
+            "box_size": box_size
+        })
+
+    return detections
+
+def plan_avoidance_path(start_x, start_y, target_x, target_y, goals, active_shape):
+    vx = target_x - start_x
+    vy = target_y - start_y
+    seg_len_sq = vx*vx + vy*vy
+    if seg_len_sq < 0.01:
+        return target_x, target_y, False
+
+    seg_len = math.sqrt(seg_len_sq)
+
+    closest_obs = None
+    min_dist_to_line = 999.0
+
+    for g in goals:
+        shape_type = int(g.get("shape", g.get("id", 1)))
+        if shape_type == active_shape:
+            continue
+        gx = float(g["x"])
+        gy = float(g["y"])
+
+        t = ((gx - start_x)*vx + (gy - start_y)*vy) / seg_len_sq
+        if 0.05 < t < 0.95:
+            proj_x = start_x + t * vx
+            proj_y = start_y + t * vy
+            d_line = math.hypot(proj_x - gx, proj_y - gy)
+            # Physical keep-out radius 0.55m around obstacle hoops
+            if d_line < 0.55 and d_line < min_dist_to_line:
+                min_dist_to_line = d_line
+                closest_obs = (gx, gy, t)
+
+    if closest_obs is not None:
+        ox, oy, t = closest_obs
+        perp_x = -vy / seg_len
+        perp_y = vx / seg_len
+        d_cross = (start_y - oy)*vx - (start_x - ox)*vy
+        side = 1.0 if d_cross >= 0 else -1.0
+        detour_x = ox + side * 0.70 * perp_x
+        detour_y = oy + side * 0.70 * perp_y
+        return detour_x, detour_y, True
+
+    return target_x, target_y, False
+
+def check_collision(px, py, pz, pyaw, goals, active_shape, phase):
+    for g in goals:
+        gx, gy, gz = float(g["x"]), float(g["y"]), float(g["z"])
+        gyaw = float(g.get("yaw", 0.0))
+        shape_type = int(g.get("shape", g.get("id", 1)))
+
+        gnx = math.cos(gyaw)
+        gny = math.sin(gyaw)
+
+        rx = px - gx
+        ry = py - gy
+        rz = pz - gz
+
+        h = rx * gnx + ry * gny
+        rho = math.sqrt(max(0.0, rx*rx + ry*ry + rz*rz - h*h))
+
+        # Active goal during Phase 3 axial traversal:
+        if shape_type == active_shape and phase == 3:
+            if abs(h) < 0.10:
+                if rho > 0.16:
+                    return True, f"Clipped Shape {shape_type} hoop rim! (radial offset: {rho:.2f}m)"
+        else:
+            # All non-target goals are solid no-go zones:
+            dist_2d = math.hypot(rx, ry)
+            if dist_2d < 0.38 and abs(rz) < 0.35:
+                return True, f"Collided with No-Go Zone of Shape {shape_type}!"
+
+    return False, ""
 
 def fcu_thread():
     try:
@@ -284,7 +453,8 @@ def fcu_thread():
         import traceback; traceback.print_exc()
 
 def _fcu_thread():
-    global last_cmd_time, sim_mission_active, sim_mission_idx, sim_mission_substep
+    global last_cmd_time, sim_mission_active, sim_mission_idx, sim_mission_phase
+    global search_scan_angle, search_scan_dir, mission_status_text, collision_state
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("0.0.0.0", 14551))
     sock.setblocking(False)
@@ -313,48 +483,133 @@ def _fcu_thread():
 
         now = time.time()
         active_cmd = None
+        target_shape = 0
 
         if last_cmd is not None and (now - last_cmd_time) < 1.0 and last_cmd.en:
             active_cmd = last_cmd
+            mission_status_text = "AUTOPILOT ACTIVE (Port 14551)"
         elif sim_mission_active and sim_mission_goals:
             with state_lock:
                 if sim_mission_idx < len(sim_mission_goals):
-                    g = sim_mission_goals[sim_mission_idx]
-                    gx, gy, gz = float(g["x"]), float(g["y"]), float(g["z"])
-                    gyaw = float(g.get("yaw", 0.0))
+                    target_goal_spec = sim_mission_goals[sim_mission_idx]
+                    target_shape = int(target_goal_spec.get("shape", target_goal_spec.get("id", 1)))
 
-                    # Orientation vector perpendicular to hoop plane
-                    nx = math.cos(gyaw)
-                    ny = math.sin(gyaw)
+                    # Look up dynamically perceived target from vision sensor
+                    p_info = perceived_goals.get(target_shape)
+                    is_locked = (p_info is not None and (now - p_info["last_seen"]) < 2.5)
 
-                    # Substep 0: Approach waypoint (0.50m in front of gate)
-                    # Substep 1: Traversal exit waypoint (0.50m behind gate)
-                    if sim_mission_substep == 0:
-                        tx = gx - 0.50 * nx
-                        ty = gy - 0.50 * ny
-                        tz = gz
-                        dist_2d = math.hypot(tx - follower.true_x, ty - follower.true_y)
-                        target_yaw = math.atan2(ty - follower.true_y, tx - follower.true_x) if dist_2d > 0.15 else gyaw
+                    if not is_locked:
+                        # PHASE 0: SEARCH MODE - Target not yet discovered by camera!
+                        sim_mission_phase = 0
+                        search_scan_angle += search_scan_dir * dt * 0.75
+                        if search_scan_angle > math.radians(38):
+                            search_scan_dir = -1.0
+                        elif search_scan_angle < -math.radians(38):
+                            search_scan_dir = 1.0
+
+                        base_heading = 0.0
+                        search_yaw = base_heading + search_scan_angle
+                        active_cmd = FlightCommand(follower.true_x, follower.true_y, 1.0, search_yaw, True, False)
+                        mission_status_text = f"SEARCHING: Scanning FOV for Goal {target_shape}..."
                     else:
-                        tx = gx + 0.50 * nx
-                        ty = gy + 0.50 * ny
-                        tz = gz
-                        target_yaw = gyaw
+                        # Target IS locked from vision data!
+                        gx = p_info["x"]
+                        gy = p_info["y"]
+                        gz = p_info["z"]
+                        gyaw = p_info["yaw"]
 
-                    dist = math.sqrt((tx - follower.true_x)**2 + (ty - follower.true_y)**2 + (tz - follower.true_z)**2)
-                    if dist < 0.22:
-                        if sim_mission_substep == 0:
-                            sim_mission_substep = 1
-                        else:
-                            sim_mission_substep = 0
-                            sim_mission_idx += 1
-                            if sim_mission_idx >= len(sim_mission_goals):
-                                sim_mission_active = False
+                        nx = math.cos(gyaw)
+                        ny = math.sin(gyaw)
 
-                    active_cmd = FlightCommand(tx, ty, tz, target_yaw, True, False)
+                        # Boresight entry and exit staging points
+                        entry_x = gx - 0.70 * nx
+                        entry_y = gy - 0.70 * ny
+                        entry_z = gz
+
+                        exit_x = gx + 0.70 * nx
+                        exit_y = gy + 0.70 * ny
+                        exit_z = gz
+
+                        if sim_mission_phase in (0, 1):
+                            sim_mission_phase = 1
+                            # Avoid any obstacle no-go zones along the path to entry staging point
+                            dw_x, dw_y, is_detour = plan_avoidance_path(
+                                follower.true_x, follower.true_y, entry_x, entry_y,
+                                vision_goals, target_shape
+                            )
+
+                            if is_detour:
+                                tx, ty, tz = dw_x, dw_y, entry_z
+                                mission_status_text = f"OBSTACLE AVOIDANCE: Routing around No-Go Zone"
+                            else:
+                                tx, ty, tz = entry_x, entry_y, entry_z
+                                mission_status_text = f"LOCKED: Approaching Gate {sim_mission_idx+1} Boresight (d={p_info['dist']:.1f}m)"
+
+                            dist_to_entry = math.hypot(follower.true_x - entry_x, follower.true_y - entry_y)
+                            dist_to_t = math.hypot(follower.true_x - tx, follower.true_y - ty)
+
+                            if dist_to_entry < 0.22:
+                                sim_mission_phase = 2
+                                tyaw = gyaw
+                            elif dist_to_t > 0.15:
+                                tyaw = math.atan2(ty - follower.true_y, tx - follower.true_x)
+                            else:
+                                tyaw = gyaw
+
+                            active_cmd = FlightCommand(tx, ty, tz, tyaw, True, False)
+
+                        elif sim_mission_phase == 2:
+                            # PHASE 2: Axial Alignment at entry staging point
+                            tx, ty, tz = entry_x, entry_y, entry_z
+                            tyaw = gyaw
+                            mission_status_text = f"ALIGNING: Staging on Boreline for Gate {sim_mission_idx+1}"
+
+                            dyaw = gyaw - follower.true_yaw
+                            while dyaw > math.pi: dyaw -= 2 * math.pi
+                            while dyaw < -math.pi: dyaw += 2 * math.pi
+
+                            dist_to_entry = math.hypot(follower.true_x - entry_x, follower.true_y - entry_y)
+                            if dist_to_entry < 0.20 and abs(dyaw) < math.radians(8.0):
+                                sim_mission_phase = 3 # Aligned, proceed through aperture!
+
+                            active_cmd = FlightCommand(tx, ty, tz, tyaw, True, False)
+
+                        elif sim_mission_phase == 3:
+                            # PHASE 3: Axial Traversal through aperture
+                            tx, ty, tz = exit_x, exit_y, exit_z
+                            tyaw = gyaw
+                            mission_status_text = f"TRAVERSING: Flying through Gate {sim_mission_idx+1} Aperture"
+
+                            progress = (follower.true_x - gx) * nx + (follower.true_y - gy) * ny
+                            if progress >= 0.50:
+                                sim_mission_idx += 1
+                                sim_mission_phase = 0
+                                search_scan_angle = 0.0
+                                if sim_mission_idx >= len(sim_mission_goals):
+                                    sim_mission_active = False
+                                    mission_status_text = "MISSION COMPLETE: Holding Hover"
+
+                            active_cmd = FlightCommand(tx, ty, tz, tyaw, True, False)
+
                 else:
                     sim_mission_active = False
+                    mission_status_text = "MISSION COMPLETE: Holding Hover"
                     active_cmd = FlightCommand(follower.true_x, follower.true_y, follower.true_z, follower.true_yaw, True, False)
+
+        # Check for physical collisions against hoop structures and no-go zones
+        with state_lock:
+            active_chk_shape = target_shape if sim_mission_active else 0
+            active_chk_phase = sim_mission_phase if sim_mission_active else 0
+            is_hit, hit_msg = check_collision(follower.true_x, follower.true_y, follower.true_z,
+                                              follower.true_yaw, vision_goals,
+                                              active_chk_shape, active_chk_phase)
+            if is_hit and not collision_state["collision"]:
+                collision_state["collision"] = True
+                collision_state["object"] = hit_msg
+                collision_state["time"] = now
+                sim_mission_active = False
+                mission_status_text = f"CRASH: {hit_msg}"
+                active_cmd = FlightCommand(follower.true_x, follower.true_y, max(0.0, follower.true_z - 0.2), follower.true_yaw, False, True)
 
         follower.step(active_cmd, dt)
 
@@ -370,32 +625,58 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(SCRIPT_DIR, "index.html")
 
 def vision_thread():
+    global current_detections, perceived_goals
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     seq_id = 0
     while True:
         with state_lock:
             enabled = vision_enabled
-            dets = list(global_detections) if global_detections else list(vision_goals)
+            goals = list(vision_goals)
             tags = list(vision_tags)
 
+        now = time.time()
+        dets = []
         if enabled:
+            with follower.lock:
+                tx, ty, tz, tyaw = follower.true_x, follower.true_y, follower.true_z, follower.true_yaw
+
+            # Evaluate realistic camera frustum visibility & perception
+            dets = evaluate_camera_vision(tx, ty, tz, tyaw, goals)
+
+            with state_lock:
+                current_detections = list(dets)
+                for d in dets:
+                    perceived_goals[d["shape"]] = {
+                        "x": d["x"], "y": d["y"], "z": d["z"], "yaw": d["yaw"],
+                        "dist": d["dist"], "conf": d["conf"], "last_seen": now
+                    }
+
             pkt = VisionPacket()
             pkt.msg_type = 1 # MSG_TYPE_VISION
             pkt.sequence_id = seq_id
             seq_id += 1
-            pkt.timestamp_ns = int(time.time() * 1e9)
+            pkt.timestamp_ns = int(now * 1e9)
 
-            # Goals
-            pkt.num_goals_reported = min(len(dets), 3)
-            for i, det in enumerate(dets[:3]):
+            # Goals reported in VisionPacket
+            pkt.num_goals_reported = min(len(goals), 3)
+            for i, g in enumerate(goals[:3]):
                 gm = pkt.goals[i]
-                gm.shape_type = det.get("shape", det.get("id", i + 1))
-                gm.is_detected = 1
-                gm.num_hypotheses = 1
-                gm.hypotheses[0].position_cam = Vec3f(float(det["x"]), float(det["y"]), float(det["z"]))
-                yaw = float(det.get("yaw", 0.0))
-                gm.hypotheses[0].orientation_cam = Quatf(math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0))
-                gm.hypotheses[0].confidence = 1.0
+                shape_type = int(g.get("shape", g.get("id", i + 1)))
+                gm.shape_type = shape_type
+
+                matching_det = next((d for d in dets if d["shape"] == shape_type), None)
+                if matching_det is not None:
+                    gm.is_detected = 1
+                    gm.centroid.x = float(matching_det["u"])
+                    gm.centroid.y = float(matching_det["v"])
+                    gm.num_hypotheses = 1
+                    gm.hypotheses[0].position_cam = Vec3f(matching_det["x"], matching_det["y"], matching_det["z"])
+                    gm.hypotheses[0].confidence = float(matching_det["conf"])
+                    yaw = float(matching_det["yaw"])
+                    gm.hypotheses[0].orientation_cam = Quatf(math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0))
+                else:
+                    gm.is_detected = 0
+                    gm.num_hypotheses = 0
 
             # Global Tag Targets
             pkt.num_tags_detected = min(len(tags), 4)
@@ -409,6 +690,10 @@ def vision_thread():
                 tm.confidence = float(tag.get("confidence", 0.95))
 
             sock.sendto(bytes(pkt), ("127.0.0.1", 14553))
+        else:
+            with state_lock:
+                current_detections = []
+
         time.sleep(0.05)
 
 async def process_request(path, request_headers):
@@ -428,7 +713,8 @@ cmd_counter = 0
 
 async def handler(websocket):
     global vision_enabled, vision_goals, global_detections, cmd_counter
-    global sim_mission_active, sim_mission_goals, sim_mission_idx, sim_mission_substep
+    global sim_mission_active, sim_mission_goals, sim_mission_idx, sim_mission_phase
+    global search_scan_angle, search_scan_dir, mission_status_text, collision_state, perceived_goals
 
     async def send_state():
         while True:
@@ -439,6 +725,10 @@ async def handler(websocket):
                     sim_state["vision_enabled"] = vision_enabled
                     sim_state["mission_active"] = sim_mission_active
                     sim_state["mission_idx"] = sim_mission_idx
+                    sim_state["mission_phase"] = sim_mission_phase
+                    sim_state["status_text"] = mission_status_text
+                    sim_state["collision"] = dict(collision_state)
+                    sim_state["detections"] = list(current_detections)
                     sim_state["autopilot_connected"] = (time.time() - last_cmd_time < 1.0)
                 await websocket.send(json.dumps(sim_state))
             except Exception:
@@ -459,10 +749,15 @@ async def handler(websocket):
                         sim_mission_active = True
                         sim_mission_goals = list(goals_to_send)
                         sim_mission_idx = 0
-                        sim_mission_substep = 0
+                        sim_mission_phase = 0
+                        search_scan_angle = 0.0
+                        collision_state["collision"] = False
+                        collision_state["object"] = ""
+                        mission_status_text = "MISSION STARTED: Scanning for targets..."
                 elif cmd_val in (2, 7): # DISARM or ESTOP
                     with state_lock:
                         sim_mission_active = False
+                        mission_status_text = "EMERGENCY STOPPED" if cmd_val == 7 else "DISARMED"
                     with follower.lock:
                         follower.vx = 0.0; follower.vy = 0.0; follower.vz = 0.0
                         if cmd_val == 7: # ESTOP immediately cuts power
@@ -506,7 +801,13 @@ async def handler(websocket):
                 with state_lock:
                     sim_mission_active = False
                     sim_mission_idx = 0
-                    sim_mission_substep = 0
+                    sim_mission_phase = 0
+                    search_scan_angle = 0.0
+                    mission_status_text = "STANDBY (Ready)"
+                    collision_state["collision"] = False
+                    collision_state["object"] = ""
+                    perceived_goals.clear()
+                    current_detections.clear()
                 with follower.lock:
                     follower.true_x = 0.0
                     follower.true_y = 0.0

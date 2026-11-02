@@ -315,14 +315,14 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         double dy = raw_target.y - current_pose.y;
                         if (dx * hoop_nx + dy * hoop_ny > 0) { approach_dx = hoop_nx; approach_dy = hoop_ny; }
                         else { approach_dx = -hoop_nx; approach_dy = -hoop_ny; }
-                        double dest_x = raw_target.x - approach_dx * 0.5;
-                        double dest_y = raw_target.y - approach_dy * 0.5;
+                        double dest_x = raw_target.x - approach_dx * 0.70;
+                        double dest_y = raw_target.y - approach_dy * 0.70;
                         transit_yaw = atan2(dest_y - current_pose.y, dest_x - current_pose.x);
                         new_goal = false; goal_phase = 0;
                     }
                     Pose adjusted_target = raw_target;
                     
-                    // APF obstacle avoidance from other detected shapes
+                    // APF obstacle avoidance from other detected shapes (No-Go Keep-Out Zones)
                     double apf_vx = 0.0, apf_vy = 0.0;
                     for (const auto& other_tg : ests) {
                         if (other_tg.shape_type == target_shape) continue;
@@ -330,25 +330,25 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         double dx = current_pose.x - gx; double dy = current_pose.y - gy; double dz = current_pose.z - gz;
                         double dist_3d = std::sqrt(dx*dx + dy*dy + dz*dz);
                         double dist_2d = std::sqrt(dx*dx + dy*dy);
-                        if (dist_3d < 0.4) {
+                        if (dist_3d < 0.65) {
                             if (dist_2d < 0.001) { dx = 1.0; dy = 0.0; dist_2d = 1.0; }
-                            double force = (0.4 - dist_3d) * 5.0;
+                            double force = (0.65 - dist_3d) * 8.0;
                             apf_vx += (dx / dist_2d) * force;
                             apf_vy += (dy / dist_2d) * force;
-                            apf_vx += -(dy / dist_2d) * force * 0.5;
-                            apf_vy += (dx / dist_2d) * force * 0.5;
+                            apf_vx += -(dy / dist_2d) * force * 0.8; // Tangential deflection around obstacle cylinder
+                            apf_vy += (dx / dist_2d) * force * 0.8;
                         }
                     }
 
                     if (goal_phase == 0) {
-                        adjusted_target.x = raw_target.x - approach_dx * 0.5;
-                        adjusted_target.y = raw_target.y - approach_dy * 0.5;
+                        adjusted_target.x = raw_target.x - approach_dx * 0.70;
+                        adjusted_target.y = raw_target.y - approach_dy * 0.70;
                         adjusted_target.yaw = transit_yaw;
                         cmd = planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
                         if (planner.has_arrived(current_pose, adjusted_target)) goal_phase = 1;
                     } else if (goal_phase == 1) {
-                        adjusted_target.x = raw_target.x - approach_dx * 0.5;
-                        adjusted_target.y = raw_target.y - approach_dy * 0.5;
+                        adjusted_target.x = raw_target.x - approach_dx * 0.70;
+                        adjusted_target.y = raw_target.y - approach_dy * 0.70;
                         adjusted_target.yaw = atan2(approach_dy, approach_dx);
                         cmd = planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
                         double dyaw = adjusted_target.yaw - current_pose.yaw;
@@ -356,8 +356,8 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
                         if (std::abs(dyaw) < 0.087) goal_phase = 2;
                     } else {
-                        adjusted_target.x = raw_target.x + approach_dx * 0.5;
-                        adjusted_target.y = raw_target.y + approach_dy * 0.5;
+                        adjusted_target.x = raw_target.x + approach_dx * 0.70;
+                        adjusted_target.y = raw_target.y + approach_dy * 0.70;
                         adjusted_target.yaw = atan2(approach_dy, approach_dx);
                         cmd = planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
                         if (planner.has_arrived(current_pose, adjusted_target)) {
