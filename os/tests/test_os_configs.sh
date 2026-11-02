@@ -89,6 +89,9 @@ assert_success "Autopilot UDP endpoint configured on 14550" grep -q "Port = 1455
 assert_success "Wi-Fi GCS broadcast endpoint configured" grep -q "Address = 192.168.4.255" "$MAVROUTER_CONF"
 assert_success "MAVLink launcher script executable" test -x "$OS_DIR/configs/common/opt/drone/scripts/start_mavlink_proxy.sh"
 assert_success "MAVLink python proxy script executable" test -x "$OS_DIR/configs/common/opt/drone/scripts/mavlink_proxy.py"
+assert_success "Profile switcher script executable" test -x "$OS_DIR/configs/common/opt/drone/scripts/set_profile.sh"
+assert_success "Profile switcher supports bringup mode" grep -q "bringup)" "$OS_DIR/configs/common/opt/drone/scripts/set_profile.sh"
+assert_success "Profile switcher supports flight mode" grep -q "flight)" "$OS_DIR/configs/common/opt/drone/scripts/set_profile.sh"
 
 # 7. Board-Specific Boot Configurations
 echo "7. Validating board bootloader configurations..."

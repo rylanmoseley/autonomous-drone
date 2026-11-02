@@ -81,13 +81,21 @@ def main():
     sock_ap_cmd.bind(("127.0.0.1", args.ap_tx_port))
     sock_ap_cmd.setblocking(False)
 
-    # Socket listening for incoming GCS packets (0.0.0.0:14555)
+    # Socket listening for incoming GCS packets (tries 0.0.0.0:14550 first for standard GCS, fallback to 14555)
     sock_gcs_cmd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock_gcs_cmd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    bound_gcs = False
     try:
-        sock_gcs_cmd.bind(("0.0.0.0", args.gcs_in_port))
-    except Exception as e:
-        print(f"[MAVLINK-PROXY] Notice: GCS inbound port {args.gcs_in_port} bind error: {e}", file=sys.stderr)
+        sock_gcs_cmd.bind(("0.0.0.0", args.gcs_port))
+        bound_gcs = True
+        print(f"  Wi-Fi GCS Inbound   <- 0.0.0.0:{args.gcs_port} (Standard GCS port)")
+    except Exception:
+        try:
+            sock_gcs_cmd.bind(("0.0.0.0", args.gcs_in_port))
+            bound_gcs = True
+            print(f"  Wi-Fi GCS Inbound   <- 0.0.0.0:{args.gcs_in_port} (Fallback GCS port)")
+        except Exception as e:
+            print(f"[MAVLINK-PROXY] Notice: GCS inbound port bind error: {e}", file=sys.stderr)
     sock_gcs_cmd.setblocking(False)
 
     print(f"[MAVLINK-PROXY] Starting MAVLink Proxy...")

@@ -166,88 +166,89 @@ You can flash the `.img` or `.img.xz` directly using:
 
 ---
 
-## 7. Setting Up a Temporary OS Image with MAVLink Proxy & WiFi AP Mode
+## 7. Early Development: Hardware Bringup Mode vs. Autonomous Flight Mode
 
-If you are bench-testing or verifying hardware, you can prepare a temporary image using either the automated pipeline or by configuring an existing Linux SD card in minutes.
+For early hardware integration, the companion computer boots into **Hardware Bringup Mode**, running **only the MAVLink proxy and Wi-Fi AP**. This allows avionics, chassis, and propulsion teams to bench-test the aircraft without interference from autonomous flight software. Once hardware is validated, the system easily pivots to **Autonomous Flight Mode** where the Autopilot daemon takes ownership of the MAVLink flight loop.
 
-### Method A: Build a Fresh Temporary Image via Docker / Build Script
-
-1. **Build the uncompressed image directly**:
-   ```bash
-   # Using Docker (no root or cross-toolchain needed on host)
-   ./os/build_os.sh --docker radxa
-
-   # Or natively on a Linux machine (fast build without xz compression)
-   sudo ./os/build_os.sh radxa --no-compress
-   ```
-2. **Flash to MicroSD**:
-   ```bash
-   sudo dd if=os/output/drone-os-radxa-zero-3w.img of=/dev/sdX bs=4M status=progress conv=fsync
-   ```
-3. Boot the SBC. It will automatically:
-   - Broadcast the Wi-Fi AP: **`HEXAGON-flight-drone`** (Password: `rylaniscool`).
-   - Run the MAVLink router daemon (`drone-mavlink-router.service`) bridging `/dev/flightcontroller` at 921,600 baud.
-   - Run the Autopilot and Vision daemons.
+| Feature | Hardware Bringup Mode (`--mode bringup`) | Autonomous Flight Mode (`--mode flight`) |
+| :--- | :--- | :--- |
+| **Primary Use** | Sensor calibration, ESC/motor testing, PID tuning | Autonomous gate navigation & competition flights |
+| **Wi-Fi AP (`HEXAGON-flight-drone`)** | **Enabled** (`192.168.4.1`) | **Enabled** (`192.168.4.1`) |
+| **MAVLink Proxy (`drone-mavlink-router`)** | **Enabled** (Exclusive FCU control for GCS) | **Enabled / Internalized** |
+| **Autopilot Daemon (`drone-autopilot`)** | **Disabled** (Rotor safety & no interference) | **Enabled** (SCHED_RR Realtime priority) |
+| **Vision Daemon (`drone-vision`)** | **Disabled** | **Enabled** (120 FPS camera tracking) |
+| **QGroundControl / Mission Planner** | Direct bidirectional bench control | Monitor telemetry & send high-level missions |
 
 ---
 
-### Method B: Configure an Existing Linux Installation (Fast In-Place Setup)
+### 7.1. Building a Hardware Bringup OS Image
 
-If you already have Ubuntu Server, Armbian, or Raspberry Pi OS running on the board, you can enable AP mode and MAVLink proxy without re-imaging:
-
-#### Step 1: Configure WiFi AP Mode (`HEXAGON-flight-drone`)
-Run with NetworkManager CLI:
 ```bash
-sudo nmcli dev wifi hotspot ifname wlan0 ssid "HEXAGON-flight-drone" password "rylaniscool"
-sudo nmcli con mod Hotspot connection.id "HEXAGON-flight-drone" ipv4.addresses 192.168.4.1/24 ipv4.method shared
-sudo nmcli con up "HEXAGON-flight-drone"
-```
-*Alternatively, copy [`drone-ap.nmconnection`](configs/common/etc/NetworkManager/system-connections/drone-ap.nmconnection) into `/etc/NetworkManager/system-connections/drone-ap.nmconnection`, set permissions `chmod 600`, and run `sudo nmcli connection reload && sudo nmcli connection up HEXAGON-flight-drone`.*
+# Using Docker (no host dependencies required)
+./os/build_os.sh --docker radxa --bringup
 
-#### Step 2: Set up Flight Controller Serial udev Rule
-Ensure non-root access and persistent symlinks:
-```bash
-echo 'KERNEL=="ttyS4", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"' | sudo tee /etc/udev/rules.d/99-drone-hardware.rules
-# For Raspberry Pi, replace ttyS4 with ttyAMA0
-sudo udevadm control --reload-rules && sudo udevadm trigger
+# Or natively on Linux (fast development build without xz compression)
+sudo ./os/build_os.sh radxa --bringup --no-compress
 ```
 
-#### Step 3: Run the MAVLink Telemetry Proxy
+Flash the generated image (`os/output/drone-os-radxa-zero-3w.img`) to a MicroSD card:
+```bash
+sudo dd if=os/output/drone-os-radxa-zero-3w.img of=/dev/sdX bs=4M status=progress conv=fsync
+```
 
-Choose any of the following 3 options depending on installed tooling:
+When booted:
+1. Connect laptop to Wi-Fi AP **`HEXAGON-flight-drone`** (Password: **`rylaniscool`**).
+2. Open **QGroundControl** or **Mission Planner** $\rightarrow$ connect to UDP **Port `14550`**.
+3. Hardware teams have full access to calibrate sensors, test motors, and adjust ArduPilot parameters.
 
-- **Option 1: Using `mavlink-routerd` (Recommended for production)**
-  Copy [`configs/common/etc/mavlink-router/main.conf`](configs/common/etc/mavlink-router/main.conf) to `/etc/mavlink-router/main.conf` and run:
-  ```bash
-  sudo mavlink-routerd -c /etc/mavlink-router/main.conf
-  ```
-  Or enable the persistent systemd service:
-  ```bash
-  sudo cp os/configs/common/etc/systemd/system/drone-mavlink-router.service /etc/systemd/system/
-  sudo systemctl daemon-reload
-  sudo systemctl enable --now drone-mavlink-router.service
-  ```
+---
 
-- **Option 2: Using `mavproxy` (Python CLI)**
-  ```bash
-  pip3 install mavproxy pymavlink
-  mavproxy.py --master=/dev/flightcontroller --baudrate=921600 \
-      --out=udp:127.0.0.1:14550 \
-      --out=udpbcast:192.168.4.255:14550 \
-      --in=udp:127.0.0.1:14551 --daemon
-  ```
+### 7.2. Switching Profiles On-Device (`set_profile.sh`)
 
-- **Option 3: Using the repository's zero-dependency Python proxy**
-  Run directly using Python 3 standard library:
-  ```bash
-  python3 os/configs/common/opt/drone/scripts/mavlink_proxy.py \
-      --serial /dev/flightcontroller \
-      --baud 921600 \
-      --ap-rx-ip 127.0.0.1 \
-      --ap-rx-port 14550 \
-      --ap-tx-port 14551 \
-      --gcs-broadcast-ip 192.168.4.255 \
-      --gcs-port 14550
+Companion images include `/opt/drone/scripts/set_profile.sh` for instant profile switching over SSH (`ssh drone@192.168.4.1`):
+
+```bash
+# Check active profile and services:
+sudo /opt/drone/scripts/set_profile.sh status
+
+# Ensure hardware testing mode is active (autopilot/vision stopped):
+sudo /opt/drone/scripts/set_profile.sh bringup
+
+# Pivot to autonomous flight mode (autopilot & vision enabled):
+sudo /opt/drone/scripts/set_profile.sh flight
+```
+
+---
+
+### 7.3. In-Place Setup on Existing Linux SD Cards (No Re-Flashing)
+
+If you already have a running Linux installation on the board:
+
+1. **Activate Wi-Fi AP Mode (`HEXAGON-flight-drone`)**:
+   ```bash
+   sudo nmcli dev wifi hotspot ifname wlan0 ssid "HEXAGON-flight-drone" password "rylaniscool"
+   sudo nmcli con mod Hotspot connection.id "HEXAGON-flight-drone" ipv4.addresses 192.168.4.1/24 ipv4.method shared
+   sudo nmcli con up "HEXAGON-flight-drone"
+   ```
+
+2. **Add Flight Controller Serial Symlink**:
+   ```bash
+   # Radxa Zero 3W:
+   echo 'KERNEL=="ttyS4", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"' | sudo tee /etc/udev/rules.d/99-drone-hardware.rules
+   # Raspberry Pi Zero 2W:
+   # echo 'KERNEL=="ttyAMA0", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"' | sudo tee /etc/udev/rules.d/99-drone-hardware.rules
+   sudo udevadm control --reload-rules && sudo udevadm trigger
+   ```
+
+3. **Run MAVLink Proxy**:
+   ```bash
+   # Run the repository's zero-dependency Python proxy directly:
+   python3 os/configs/common/opt/drone/scripts/mavlink_proxy.py \
+       --serial /dev/flightcontroller \
+       --baud 921600 \
+       --gcs-broadcast-ip 192.168.4.255 \
+       --gcs-port 14550
+   ```
   ```
 
 ---
