@@ -3,6 +3,7 @@
 
 # 64-bit Kernel & Architecture
 arm_64bit=1
+kernel=kernel8.img
 
 # Memory allocation for ISP & camera buffers
 gpu_mem=128

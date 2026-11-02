@@ -63,11 +63,13 @@ if [ "$(id -u)" -eq 0 ] && command -v losetup >/dev/null 2>&1; then
     cp -a "$ROOTFS_DIR/"* "$MOUNT_DIR/root/" 2>/dev/null || true
     
     echo "[INFO] Populating boot partition..."
-    if [ -d "$ROOTFS_DIR/boot/firmware" ] && [ -n "$(ls -A "$ROOTFS_DIR/boot/firmware" 2>/dev/null)" ]; then
-        cp -a "$ROOTFS_DIR/boot/firmware/"* "$MOUNT_DIR/boot/" 2>/dev/null || true
-    elif [ -d "$ROOTFS_DIR/boot" ]; then
+    if [ -d "$ROOTFS_DIR/boot" ]; then
         cp -a "$ROOTFS_DIR/boot/"* "$MOUNT_DIR/boot/" 2>/dev/null || true
     fi
+    if [ -d "$ROOTFS_DIR/boot/firmware" ] && [ -n "$(ls -A "$ROOTFS_DIR/boot/firmware" 2>/dev/null)" ]; then
+        cp -a "$ROOTFS_DIR/boot/firmware/"* "$MOUNT_DIR/boot/" 2>/dev/null || true
+    fi
+    rm -rf "$MOUNT_DIR/boot/firmware" "$MOUNT_DIR/boot/boot" 2>/dev/null || true
     
     sync
     umount "$MOUNT_DIR/boot" || true

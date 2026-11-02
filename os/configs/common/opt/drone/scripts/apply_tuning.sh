@@ -23,9 +23,10 @@ for iface in wlan0 eth0 usb0; do
     fi
 done
 
-# 3. Disable Bluetooth Coexistence Throttling if unused for flight
-if [ -d /sys/class/rfkill ]; then
-    # Keep WiFi on, power down bluetooth to avoid 2.4GHz interference
+# 3. Unblock WiFi and Disable Bluetooth to avoid 2.4GHz interference
+if command -v rfkill >/dev/null 2>&1; then
+    rfkill unblock wifi 2>/dev/null || true
+    rfkill unblock wlan 2>/dev/null || true
     rfkill block bluetooth 2>/dev/null || true
 fi
 

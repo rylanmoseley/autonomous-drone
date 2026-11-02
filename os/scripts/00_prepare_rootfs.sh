@@ -100,4 +100,26 @@ if [ -f "$ROOTFS_DIR/debootstrap/debootstrap" ]; then
     trap - EXIT INT TERM
 fi
 
+if [ "$TARGET" = "pi" ] || [ "$TARGET" = "pi-zero-2w" ]; then
+    echo "[INFO] Deploying official Raspberry Pi kernel, DTBs, and Broadcom Wi-Fi firmware..."
+    PI_DEB_DIR="/tmp/pi-debs"
+    mkdir -p "$PI_DEB_DIR"
+    PI_REPO="http://archive.raspberrypi.com/debian"
+    PI_PACKAGES=(
+        "pool/main/r/raspberrypi-firmware/raspberrypi-bootloader_1.20230405-1_arm64.deb"
+        "pool/main/r/raspberrypi-firmware/raspberrypi-kernel_1.20230405-1_arm64.deb"
+        "pool/main/f/firmware-nonfree/firmware-brcm80211_20240709-2~bpo12+1+rpt4_all.deb"
+    )
+    for pkg in "${PI_PACKAGES[@]}"; do
+        fn="$(basename "$pkg")"
+        if [ ! -f "$PI_DEB_DIR/$fn" ]; then
+            echo "[INFO] Downloading $fn..."
+            wget -q -O "$PI_DEB_DIR/$fn" "$PI_REPO/$pkg"
+        fi
+        echo "[INFO] Extracting $fn into rootfs..."
+        dpkg-deb -x "$PI_DEB_DIR/$fn" "$ROOTFS_DIR/"
+    done
+    rm -rf "$PI_DEB_DIR"
+fi
+
 echo "=== [STAGE 0] Base rootfs bootstrap complete! ==="
