@@ -310,19 +310,43 @@ GateDetectionResult GateDetector::processFrame(cv::Mat& frame, bool draw_overlay
     return result;
 }
 
-VisionGoalEstimate GateDetector::toVisionGoalEstimate(const GateDetectionResult& result, double timestamp) {
-    VisionGoalEstimate est{};
-    est.pose.x = result.posX_m;
-    est.pose.y = result.posY_m;
-    est.pose.z = result.posZ_m;
-    est.pose.roll = result.roll_rad;
-    est.pose.pitch = result.pitch_rad;
-    est.pose.yaw = result.yaw_rad;
-    est.pose.timestamp = timestamp;
-    est.pose.confidence = result.confidence;
-    est.goal_id = result.goal_id;
-    est.determinate = result.is_3d;
-    return est;
+VisionPacket GateDetector::toVisionPacket(const GateDetectionResult& result, uint32_t sequence_id, uint64_t timestamp_ns) {
+    VisionPacket packet{};
+    packet.msg_type = MSG_TYPE_VISION;
+    packet.sequence_id = sequence_id;
+    packet.timestamp_ns = timestamp_ns;
+    packet.error_state = result.detected ? VISION_ERR_NONE : VISION_ERR_FRAME_DROPPED;
+    packet.num_tags_detected = 0;
+
+    if (result.detected) {
+        packet.num_goals_reported = 1;
+        GoalMeasurement& gm = packet.goals[0];
+
+        if (result.shape == "Circle") {
+            gm.shape_type = SHAPE_CIRCLE;
+        } else if (result.shape == "Triangle") {
+            gm.shape_type = SHAPE_TRIANGLE;
+        } else {
+            gm.shape_type = SHAPE_SQUARE;
+        }
+
+        gm.is_detected = 1;
+        gm.centroid.u = static_cast<float>(result.center.x);
+        gm.centroid.v = static_cast<float>(result.center.y);
+        gm.contour_area = 0.0f;
+        gm.num_hypotheses = 1;
+
+        PoseHypothesis& hyp = gm.hypotheses[0];
+        hyp.position_cam.x = static_cast<float>(result.posX_m);
+        hyp.position_cam.y = static_cast<float>(result.posY_m);
+        hyp.position_cam.z = static_cast<float>(result.posZ_m);
+        hyp.orientation_cam = eulerToQuaternion(result.roll_rad, result.pitch_rad, result.yaw_rad);
+        hyp.confidence = static_cast<float>(result.confidence);
+    } else {
+        packet.num_goals_reported = 0;
+    }
+
+    return packet;
 }
 
 } // namespace vision
