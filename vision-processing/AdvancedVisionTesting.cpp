@@ -109,6 +109,7 @@ int main(int argc, char** argv) {
 
     vision::GateDetector detector(vision::FOCAL_LENGTH);
     cv::Mat frame;
+    uint32_t sequence_id = 0;
 
     while (g_running) {
         cap >> frame;
@@ -122,18 +123,19 @@ int main(int argc, char** argv) {
             break;
         }
 
-        double now = std::chrono::duration<double>(
+        sequence_id++;
+        uint64_t timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
 
         vision::GateDetectionResult result = detector.processFrame(frame, !headless);
 
         if (result.detected) {
-            VisionGoalEstimate estimate = vision::GateDetector::toVisionGoalEstimate(result, now);
+            VisionPacket packet = vision::GateDetector::toVisionPacket(result, sequence_id, timestamp_ns);
 
-            ssize_t sent = sendto(udp_sock, &estimate, sizeof(estimate), 0,
+            ssize_t sent = sendto(udp_sock, &packet, sizeof(packet), 0,
                                   (struct sockaddr*)&target_addr, sizeof(target_addr));
-            if (sent != sizeof(estimate)) {
-                std::cerr << "[WARN] Partial UDP packet sent: " << sent << " / " << sizeof(estimate) << " bytes" << std::endl;
+            if (sent != sizeof(packet)) {
+                std::cerr << "[WARN] Partial UDP packet sent: " << sent << " / " << sizeof(packet) << " bytes" << std::endl;
             }
 
             if (headless) {

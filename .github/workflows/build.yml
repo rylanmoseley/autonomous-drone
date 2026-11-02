@@ -2,10 +2,11 @@ name: Build & Test
 
 on:
   push:
-    branches: [ main, shared-protocols ]
+    branches: [ main, shared-protocols, feature/vision-processing, feature/vision-processing-integration ]
     paths:
       - 'autopilot/**'
       - 'shared/**'
+      - 'vision-processing/**'
       - 'cmake/**'
       - 'CMakeLists.txt'
       - 'build_all.sh'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'autopilot/**'
       - 'shared/**'
+      - 'vision-processing/**'
       - 'cmake/**'
       - 'CMakeLists.txt'
       - 'build_all.sh'
@@ -36,7 +38,7 @@ jobs:
             arch: "x86_64"
             build_dir: "build-host"
             cmake_args: "-DCMAKE_BUILD_TYPE=Release"
-            packages: ""
+            packages: "libopencv-dev"
             binary_path: "build-host/autopilot/autopilot_node"
             artifact_name: "autopilot-linux-x86_64"
 

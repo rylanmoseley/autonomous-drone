@@ -88,10 +88,14 @@ TEST(VisionProcessingTest, SIUnitConversions) {
     EXPECT_LT(dist_m, 1.7);
 }
 
-// 5. Verify Wire Layout Alignment of VisionGoalEstimate
+// 5. Verify Wire Layout Alignment of VisionPacket
 TEST(VisionProcessingTest, PacketMemoryLayout) {
-    EXPECT_EQ(sizeof(VisionPose), 64u);
-    EXPECT_EQ(sizeof(VisionGoalEstimate), 69u);
+    EXPECT_EQ(sizeof(Vec3f), 12u);
+    EXPECT_EQ(sizeof(Quatf), 16u);
+    EXPECT_EQ(sizeof(PoseHypothesis), 32u);
+    EXPECT_EQ(sizeof(TagMeasurement), 35u);
+    EXPECT_EQ(sizeof(GoalMeasurement), 143u);
+    EXPECT_EQ(sizeof(VisionPacket), 588u);
 }
 
 // 6. Verify UDP Serialization & Transmission to Autopilot Port Contract
@@ -130,41 +134,48 @@ TEST(VisionProcessingTest, UDPLoopbackTransmission) {
     det.posX_m = 0.25;
     det.posY_m = -0.15;
     det.posZ_m = 2.30;
-    det.pitch_rad = -0.05;
+    det.pitch_rad = 0.0;
     det.yaw_rad = 0.12;
-    det.roll_rad = 0.01;
+    det.roll_rad = 0.0;
     det.confidence = 0.95;
     det.is_3d = true;
     det.goal_id = 1;
 
-    double now = 100.5;
-    VisionGoalEstimate sent_packet = vision::GateDetector::toVisionGoalEstimate(det, now);
+    uint32_t seq = 42;
+    uint64_t ts_ns = 100500000;
+    VisionPacket sent_packet = vision::GateDetector::toVisionPacket(det, seq, ts_ns);
 
     ssize_t bytes_sent = sendto(tx_sock, &sent_packet, sizeof(sent_packet), 0,
                                 (struct sockaddr*)&tx_target, sizeof(tx_target));
     ASSERT_EQ(bytes_sent, static_cast<ssize_t>(sizeof(sent_packet)));
 
     // 3. Receive and verify packet
-    char rx_buf[256];
+    char rx_buf[sizeof(VisionPacket) + 128];
     struct sockaddr_in from{};
     socklen_t from_len = sizeof(from);
     ssize_t bytes_received = recvfrom(rx_sock, rx_buf, sizeof(rx_buf), 0,
                                       (struct sockaddr*)&from, &from_len);
 
-    ASSERT_EQ(bytes_received, static_cast<ssize_t>(sizeof(VisionGoalEstimate)));
+    ASSERT_EQ(bytes_received, static_cast<ssize_t>(sizeof(VisionPacket)));
 
-    const VisionGoalEstimate* received = reinterpret_cast<const VisionGoalEstimate*>(rx_buf);
+    const VisionPacket* received = reinterpret_cast<const VisionPacket*>(rx_buf);
 
-    EXPECT_DOUBLE_EQ(received->pose.x, 0.25);
-    EXPECT_DOUBLE_EQ(received->pose.y, -0.15);
-    EXPECT_DOUBLE_EQ(received->pose.z, 2.30);
-    EXPECT_DOUBLE_EQ(received->pose.pitch, -0.05);
-    EXPECT_DOUBLE_EQ(received->pose.yaw, 0.12);
-    EXPECT_DOUBLE_EQ(received->pose.roll, 0.01);
-    EXPECT_DOUBLE_EQ(received->pose.timestamp, 100.5);
-    EXPECT_DOUBLE_EQ(received->pose.confidence, 0.95);
-    EXPECT_EQ(received->goal_id, 1);
-    EXPECT_TRUE(received->determinate);
+    EXPECT_EQ(received->msg_type, MSG_TYPE_VISION);
+    EXPECT_EQ(received->sequence_id, 42u);
+    EXPECT_EQ(received->timestamp_ns, 100500000u);
+    EXPECT_EQ(received->num_goals_reported, 1);
+    EXPECT_EQ(received->goals[0].shape_type, SHAPE_SQUARE);
+    EXPECT_EQ(received->goals[0].is_detected, 1);
+    EXPECT_EQ(received->goals[0].num_hypotheses, 1);
+    EXPECT_FLOAT_EQ(received->goals[0].hypotheses[0].position_cam.x, 0.25f);
+    EXPECT_FLOAT_EQ(received->goals[0].hypotheses[0].position_cam.y, -0.15f);
+    EXPECT_FLOAT_EQ(received->goals[0].hypotheses[0].position_cam.z, 2.30f);
+    EXPECT_FLOAT_EQ(received->goals[0].hypotheses[0].confidence, 0.95f);
+
+    // Verify yaw reconstructed from quaternion
+    Quatf q = received->goals[0].hypotheses[0].orientation_cam;
+    double recovered_yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+    EXPECT_NEAR(recovered_yaw, 0.12, 1e-4);
 
     close(tx_sock);
     close(rx_sock);

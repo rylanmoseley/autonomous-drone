@@ -28,6 +28,23 @@ inline double calculateDistance(double knownWidth, double focalLength, double pe
     return (knownWidth * focalLength) / perWidthPixels;
 }
 
+// Helper: Convert Euler angles (roll, pitch, yaw in radians) to Quatf
+inline Quatf eulerToQuaternion(double roll, double pitch, double yaw) {
+    double cy = std::cos(yaw * 0.5);
+    double sy = std::sin(yaw * 0.5);
+    double cp = std::cos(pitch * 0.5);
+    double sp = std::sin(pitch * 0.5);
+    double cr = std::cos(roll * 0.5);
+    double sr = std::sin(roll * 0.5);
+
+    Quatf q;
+    q.w = static_cast<float>(cr * cp * cy + sr * cp * sy);
+    q.x = static_cast<float>(sr * cp * cy - cr * sp * sy);
+    q.y = static_cast<float>(cr * sp * cy + sr * cp * sy);
+    q.z = static_cast<float>(cr * cp * sy - sr * sp * cy);
+    return q;
+}
+
 // Order 4 quadrilateral corners: [Top-Left, Top-Right, Bottom-Right, Bottom-Left]
 std::vector<cv::Point2f> orderQuadPoints(const std::vector<cv::Point>& pts);
 
@@ -70,8 +87,8 @@ public:
     // Process a single frame and populate detection results
     GateDetectionResult processFrame(cv::Mat& frame, bool draw_overlay = true);
 
-    // Helper to package result into VisionGoalEstimate struct
-    static VisionGoalEstimate toVisionGoalEstimate(const GateDetectionResult& result, double timestamp);
+    // Helper to package result into canonical VisionPacket struct
+    static VisionPacket toVisionPacket(const GateDetectionResult& result, uint32_t sequence_id = 0, uint64_t timestamp_ns = 0);
 
 private:
     double focal_length_;
