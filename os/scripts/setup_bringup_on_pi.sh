@@ -66,18 +66,36 @@ nmcli connection up "$SSID" 2>/dev/null || true
 
 # 4. Install MAVLink Proxy scripts
 echo "[4/5] Installing MAVLink bringup proxy..."
-mkdir -p /opt/drone/scripts /etc/mavlink-router
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+mkdir -p /opt/drone/scripts /etc/mavlink-router /etc/systemd/system
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "")"
+REPO_DIR="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd || echo "")"
+RAW_BASE="https://raw.githubusercontent.com/rylanmoseley/autonomous-drone/feature/vision-global-drift-passthrough"
 
-if [ -f "$REPO_DIR/os/configs/common/opt/drone/scripts/mavlink_proxy.py" ]; then
-    cp "$REPO_DIR/os/configs/common/opt/drone/scripts/mavlink_proxy.py" /opt/drone/scripts/
-    cp "$REPO_DIR/os/configs/common/opt/drone/scripts/start_mavlink_proxy.sh" /opt/drone/scripts/
-    cp "$REPO_DIR/os/configs/common/opt/drone/scripts/set_profile.sh" /opt/drone/scripts/
-    cp "$REPO_DIR/os/configs/common/etc/mavlink-router/main.conf" /etc/mavlink-router/
-    cp "$REPO_DIR/os/configs/common/etc/systemd/system/drone-mavlink-router.service" /etc/systemd/system/
-fi
+copy_or_download() {
+    local rel_src="$1"
+    local dst="$2"
+    if [ -n "$REPO_DIR" ] && [ -f "$REPO_DIR/$rel_src" ]; then
+        cp "$REPO_DIR/$rel_src" "$dst"
+    else
+        echo "  Downloading $(basename "$dst")..."
+        curl -sSL "$RAW_BASE/$rel_src" -o "$dst"
+    fi
+}
+
+copy_or_download "os/configs/common/opt/drone/scripts/mavlink_proxy.py" "/opt/drone/scripts/mavlink_proxy.py"
+copy_or_download "os/configs/common/opt/drone/scripts/start_mavlink_proxy.sh" "/opt/drone/scripts/start_mavlink_proxy.sh"
+copy_or_download "os/configs/common/opt/drone/scripts/set_profile.sh" "/opt/drone/scripts/set_profile.sh"
+copy_or_download "os/configs/common/etc/mavlink-router/main.conf" "/etc/mavlink-router/main.conf"
+copy_or_download "os/configs/common/etc/systemd/system/drone-mavlink-router.service" "/etc/systemd/system/drone-mavlink-router.service"
+
 chmod +x /opt/drone/scripts/*.sh /opt/drone/scripts/*.py 2>/dev/null || true
+
+# Add udev symlink for flight controller if not present
+if [ ! -f /etc/udev/rules.d/99-drone-hardware.rules ]; then
+    echo 'KERNEL=="ttyAMA0", SYMLINK+="flightcontroller", MODE="0666"' > /etc/udev/rules.d/99-drone-hardware.rules
+    udevadm control --reload-rules 2>/dev/null || true
+    udevadm trigger 2>/dev/null || true
+fi
 
 # 5. Enable MAVLink Proxy Service
 echo "[5/5] Activating drone-mavlink-router.service..."
