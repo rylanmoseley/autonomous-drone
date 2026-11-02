@@ -1,0 +1,99 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [ main, shared-protocols ]
+    paths:
+      - 'autopilot/**'
+      - 'shared/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'build_all.sh'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main, shared-protocols ]
+    paths:
+      - 'autopilot/**'
+      - 'shared/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'build_all.sh'
+      - '.github/workflows/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }} (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "Host Native"
+            arch: "x86_64"
+            build_dir: "build-host"
+            cmake_args: "-DCMAKE_BUILD_TYPE=Release"
+            packages: ""
+            binary_path: "build-host/autopilot/autopilot_node"
+            artifact_name: "autopilot-linux-x86_64"
+
+          - name: "Raspberry Pi Zero 2W"
+            arch: "armhf"
+            build_dir: "build-pi"
+            cmake_args: "-DCMAKE_TOOLCHAIN_FILE=cmake/pi_zero_2w_toolchain.cmake -DCMAKE_BUILD_TYPE=Release"
+            packages: "gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf qemu-user-static"
+            binary_path: "build-pi/autopilot/autopilot_node"
+            artifact_name: "autopilot-pi-zero-2w-armhf"
+
+          - name: "Radxa Zero 3W"
+            arch: "aarch64"
+            build_dir: "build-radxa"
+            cmake_args: "-DCMAKE_TOOLCHAIN_FILE=cmake/radxa_zero_3w_toolchain.cmake -DCMAKE_BUILD_TYPE=Release"
+            packages: "gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user-static"
+            binary_path: "build-radxa/autopilot/autopilot_node"
+            artifact_name: "autopilot-radxa-zero-3w-aarch64"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Toolchain & Dependencies
+        if: matrix.packages != ''
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ${{ matrix.packages }}
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.arch }}
+          max-size: 500M
+
+      - name: Configure CMake
+        run: |
+          cmake -B ${{ matrix.build_dir }} \
+                ${{ matrix.cmake_args }} \
+                -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+                -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: |
+          cmake --build ${{ matrix.build_dir }} --parallel $(nproc)
+
+      - name: Run Tests (under QEMU emulation for ARM)
+        run: |
+          ctest --test-dir ${{ matrix.build_dir }} --output-on-failure
+
+      - name: Verify Binary Architecture
+        run: |
+          file ${{ matrix.binary_path }}
+
+      - name: Upload Autopilot Executable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.binary_path }}
+          if-no-files-found: error

@@ -48,13 +48,6 @@ typedef struct {
     float v;
 } Point2f;
 
-// Geometric shape classifications
-typedef enum {
-    SHAPE_NONE     = 0,
-    SHAPE_CIRCLE   = 1,
-    SHAPE_TRIANGLE = 2,
-    SHAPE_SQUARE   = 3
-} ShapeType;
 
 // Target tracking filter status in Autopilot
 typedef enum {
