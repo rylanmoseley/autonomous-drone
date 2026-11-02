@@ -107,3 +107,30 @@ TEST(AutopilotTest, FullMissionSimulation) {
                 node.getState() == FlightState::FLIGHT_STATE_STANDBY_DISARM);
     std::cout << "Mission completed in " << ticks << " ticks." << std::endl;
 }
+
+TEST(AutopilotTest, AutopilotOwnsGlobalTagMap) {
+    AutopilotNode node;
+
+    // Initially no surveyed tags registered
+    EXPECT_FALSE(node.hasSurveyedTag(1));
+
+    // Autopilot registers global surveyed positions of fiducial tags in World NED
+    node.registerSurveyedTag(1, {1.5f, -0.3f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, 0.16f);
+    node.registerSurveyedTag(2, {3.0f, 0.2f, 1.2f}, {1.0f, 0.0f, 0.0f, 0.0f}, 0.16f);
+
+    EXPECT_TRUE(node.hasSurveyedTag(1));
+    EXPECT_TRUE(node.hasSurveyedTag(2));
+    EXPECT_FALSE(node.hasSurveyedTag(3));
+
+    SurveyedTagPose tag1{};
+    EXPECT_TRUE(node.getSurveyedTag(1, tag1));
+    EXPECT_EQ(tag1.tag_id, 1);
+    EXPECT_FLOAT_EQ(tag1.world_pos.x, 1.5f);
+    EXPECT_FLOAT_EQ(tag1.world_pos.y, -0.3f);
+    EXPECT_FLOAT_EQ(tag1.world_pos.z, 1.0f);
+    EXPECT_TRUE(tag1.is_known);
+
+    // Clear registry
+    node.clearSurveyedTags();
+    EXPECT_FALSE(node.hasSurveyedTag(1));
+}

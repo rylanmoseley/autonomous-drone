@@ -40,10 +40,26 @@ void AutopilotSimHarness::clearSimulatedGoals() {
 
 void AutopilotSimHarness::addSimulatedTag(uint16_t tag_id, double x, double y, double z, double roll, double pitch, double yaw, float confidence) {
     simulated_tags_.push_back({tag_id, x, y, z, roll, pitch, yaw, confidence});
+
+    // Register tag in AutopilotNode's authoritative global survey map
+    double cy = std::cos(yaw * 0.5);
+    double sy = std::sin(yaw * 0.5);
+    double cp = std::cos(pitch * 0.5);
+    double sp = std::sin(pitch * 0.5);
+    double cr = std::cos(roll * 0.5);
+    double sr = std::sin(roll * 0.5);
+    Quatf att{
+        static_cast<float>(cr * cp * cy + sr * cp * sy),
+        static_cast<float>(sr * cp * cy - cr * sp * sy),
+        static_cast<float>(cr * sp * cy + sr * cp * sy),
+        static_cast<float>(cr * cp * sy - sr * sp * cy)
+    };
+    autopilot_.registerSurveyedTag(tag_id, {static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)}, att);
 }
 
 void AutopilotSimHarness::clearSimulatedTags() {
     simulated_tags_.clear();
+    autopilot_.clearSurveyedTags();
 }
 
 void AutopilotSimHarness::reset(const Pose& initial_pose) {

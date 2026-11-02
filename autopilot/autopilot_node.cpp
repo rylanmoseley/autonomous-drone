@@ -171,6 +171,37 @@ void AutopilotNode::ui_loop() {
     }
 }
 
+void AutopilotNode::registerSurveyedTag(uint16_t tag_id, const Vec3f& world_pos, const Quatf& world_att, float size_m) {
+    std::lock_guard<std::mutex> lock(tag_map_mutex_);
+    SurveyedTagPose tag{};
+    tag.tag_id = tag_id;
+    tag.world_pos = world_pos;
+    tag.world_att = world_att;
+    tag.size_m = size_m;
+    tag.is_known = true;
+    surveyed_tags_[tag_id] = tag;
+}
+
+bool AutopilotNode::getSurveyedTag(uint16_t tag_id, SurveyedTagPose& out_tag) const {
+    std::lock_guard<std::mutex> lock(tag_map_mutex_);
+    auto it = surveyed_tags_.find(tag_id);
+    if (it != surveyed_tags_.end()) {
+        out_tag = it->second;
+        return true;
+    }
+    return false;
+}
+
+bool AutopilotNode::hasSurveyedTag(uint16_t tag_id) const {
+    std::lock_guard<std::mutex> lock(tag_map_mutex_);
+    return surveyed_tags_.find(tag_id) != surveyed_tags_.end();
+}
+
+void AutopilotNode::clearSurveyedTags() {
+    std::lock_guard<std::mutex> lock(tag_map_mutex_);
+    surveyed_tags_.clear();
+}
+
 void AutopilotNode::handleVisionPacket(const VisionPacket& pkt, double current_time) {
     estimator.updateEstimates(pkt, current_time);
     {
