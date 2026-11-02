@@ -359,15 +359,17 @@ def vision_thread():
         time.sleep(0.05)
 
 async def process_request(path, request_headers):
-    parsed_path = urllib.parse.urlparse(path).path
-    if parsed_path == "/" or parsed_path.endswith("index.html") or parsed_path == "":
-        try:
-            with open(INDEX_PATH, "rb") as f:
-                content = f.read()
-            return HTTPStatus.OK, [("Content-Type", "text/html")], content
-        except FileNotFoundError:
-            return HTTPStatus.NOT_FOUND, [], b"Not found"
-    return None
+    # If this is a WebSocket upgrade handshake, proceed directly
+    if request_headers.get("Upgrade", "").lower() == "websocket":
+        return None
+
+    # For HTTP requests, serve the simulation dashboard
+    try:
+        with open(INDEX_PATH, "rb") as f:
+            content = f.read()
+        return HTTPStatus.OK, [("Content-Type", "text/html; charset=utf-8")], content
+    except FileNotFoundError:
+        return HTTPStatus.NOT_FOUND, [], b"Not found"
 
 cmd_counter = 0
 

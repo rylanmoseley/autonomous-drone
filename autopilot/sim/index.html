@@ -162,29 +162,73 @@
             shapesList.appendChild(div);
         });
 
-        const ws = new WebSocket("ws://" + location.host);
-        
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.drone) {
-                drone.position.set(data.drone.x, data.drone.z, -data.drone.y);
-                drone.rotation.y = data.drone.yaw + Math.PI / 2;
-                drone.rotation.x = data.drone.pitch || 0;
-                drone.rotation.z = data.drone.roll || 0;
+        let ws = null;
+
+        function connectWebSocket() {
+            const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+            let path = location.pathname;
+            // Handle reverse proxies like /proxy/5000/
+            if (!path.endsWith("/")) {
+                path = path.substring(0, path.lastIndexOf("/") + 1);
             }
-            if (data.feedback && feedbackMarker) {
-                feedbackMarker.position.set(data.feedback.x, data.feedback.z, -data.feedback.y);
+            if (!path.endsWith("/")) {
+                path += "/";
             }
-            if (data.command && targetMarker) {
-                targetMarker.position.set(data.command.x, data.command.z, -data.command.y);
+            const wsUrl = `${wsProtocol}//${location.host}${path}`;
+
+            try {
+                ws = new WebSocket(wsUrl);
+            } catch (err) {
+                console.error("Failed to initialize WebSocket:", err);
+                return;
             }
-            if (data.metrics) {
-                document.getElementById("metric-curr-err").innerText = data.metrics.current_error.toFixed(3) + " m";
-                document.getElementById("metric-rmse").innerText = data.metrics.rmse.toFixed(3) + " m";
-                document.getElementById("metric-max-err").innerText = data.metrics.max_error.toFixed(3) + " m";
-                document.getElementById("metric-dist").innerText = data.metrics.distance.toFixed(1) + " m";
-            }
-        };
+
+            ws.onopen = () => {
+                console.log("Connected to simulation server at", wsUrl);
+                sendFollowerConfig();
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.drone && drone) {
+                        drone.position.set(data.drone.x, data.drone.z, -data.drone.y);
+                        drone.rotation.y = data.drone.yaw + Math.PI / 2;
+                        drone.rotation.x = data.drone.pitch || 0;
+                        drone.rotation.z = data.drone.roll || 0;
+                    }
+                    if (data.feedback && feedbackMarker) {
+                        feedbackMarker.position.set(data.feedback.x, data.feedback.z, -data.feedback.y);
+                    }
+                    if (data.command && targetMarker) {
+                        targetMarker.position.set(data.command.x, data.command.z, -data.command.y);
+                    }
+                    if (data.metrics) {
+                        const currErr = document.getElementById("metric-curr-err");
+                        if (currErr) currErr.innerText = data.metrics.current_error.toFixed(3) + " m";
+                        const rmse = document.getElementById("metric-rmse");
+                        if (rmse) rmse.innerText = data.metrics.rmse.toFixed(3) + " m";
+                        const maxErr = document.getElementById("metric-max-err");
+                        if (maxErr) maxErr.innerText = data.metrics.max_error.toFixed(3) + " m";
+                        const dist = document.getElementById("metric-dist");
+                        if (dist) dist.innerText = data.metrics.distance.toFixed(1) + " m";
+                    }
+                } catch (e) {
+                    console.error("Error processing telemetry:", e);
+                }
+            };
+
+            ws.onclose = () => {
+                console.warn("Simulation WebSocket closed. Retrying in 2 seconds...");
+                setTimeout(connectWebSocket, 2000);
+            };
+
+            ws.onerror = (err) => {
+                console.error("Simulation WebSocket error:", err);
+            };
+        }
+
+        connectWebSocket();
 
         function sendFollowerConfig() {
             const enabled = document.getElementById("noise-toggle").checked;
@@ -200,7 +244,7 @@
             document.getElementById("lbl-drift-x").innerText = driftX.toFixed(2) + " m/s";
             document.getElementById("lbl-drift-y").innerText = driftY.toFixed(2) + " m/s";
 
-            if (ws.readyState === WebSocket.OPEN) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: "follower_config",
                     noise_enabled: enabled,
@@ -214,14 +258,16 @@
         }
 
         function resetSim() {
-            if (ws.readyState === WebSocket.OPEN) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: "reset_sim" }));
             }
         }
 
         function toggleVision() {
             const enabled = document.getElementById("vision-toggle").checked;
-            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "toggle", enabled: enabled }));
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "toggle", enabled: enabled }));
+            }
         }
 
         function updateVisionGoals() {
@@ -234,7 +280,9 @@
             const goalsArray = Object.values(shapes).map(s => ({
                 id: s.id, shape: s.shape, x: s.x, y: s.y, z: s.z, yaw: s.yaw
             }));
-            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "update_goals", goals: goalsArray }));
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "update_goals", goals: goalsArray }));
+            }
             updateThreeJsHoops();
         }
 
@@ -249,7 +297,7 @@
                 { id: shapes[seq3].id, shape: shapes[seq3].shape, x: shapes[seq3].x, y: shapes[seq3].y, z: shapes[seq3].z, yaw: shapes[seq3].yaw }
             ];
 
-            if (ws.readyState === WebSocket.OPEN) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: "ui", command: 3, goals: sequenceGoals, end_action: 0 }));
             }
         }
