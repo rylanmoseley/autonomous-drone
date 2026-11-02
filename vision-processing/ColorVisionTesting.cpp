@@ -4,7 +4,7 @@
 #include <opencv2/opencv.hpp>
 
 // --- Distance Calculation Constants ---
-const double FOCAL_LENGTH = 566.8;.
+const double FOCAL_LENGTH = 566.8;
 const double KNOWN_WIDTH = 3.0; // Assuming a standard 3x3 inch Post-it note
 
 // Advanced classification using Circularity, Fill Ratio, and aspect ratio checks
