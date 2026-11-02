@@ -171,6 +171,28 @@ void AutopilotNode::ui_loop() {
     }
 }
 
+void AutopilotNode::handleVisionPacket(const VisionPacket& pkt, double current_time) {
+    estimator.updateEstimates(pkt, current_time);
+    {
+        std::lock_guard<std::mutex> lock(vision_mutex);
+        last_vision_time = std::chrono::steady_clock::now();
+    }
+
+    // Pass through global tag measurements (AprilTag / ChArUco) to ArduPilot FCU via MAVLink
+    for (uint8_t i = 0; i < pkt.num_tags_detected && i < 4; ++i) {
+        const TagMeasurement& tag = pkt.tags[i];
+        if (tag.is_valid) {
+            tags_received_count++;
+            uint64_t usec = (pkt.timestamp_ns > 0)
+                ? (pkt.timestamp_ns / 1000)
+                : static_cast<uint64_t>(current_time * 1e6);
+            fcu.sendVisionPositionEstimate(tag, usec);
+            tags_forwarded_count++;
+            last_tag_measurement = tag;
+        }
+    }
+}
+
 void AutopilotNode::vision_loop() {
     char buffer[2048];
     while (running) {
@@ -181,11 +203,7 @@ void AutopilotNode::vision_loop() {
             if (pkt->msg_type == MSG_TYPE_VISION) {
                 double current_time = std::chrono::duration<double>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
-                estimator.updateEstimates(*pkt, current_time);
-                {
-                    std::lock_guard<std::mutex> lock(vision_mutex);
-                    last_vision_time = std::chrono::steady_clock::now();
-                }
+                handleVisionPacket(*pkt, current_time);
             }
         }
     }

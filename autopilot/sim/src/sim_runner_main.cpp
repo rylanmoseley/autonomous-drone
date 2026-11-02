@@ -80,6 +80,16 @@ int main(int argc, char** argv) {
         harness.getFollower().setConfig(cfg);
         harness.setupMission({SHAPE_CIRCLE}, MISSION_END_HOVER);
         harness.addSimulatedGoal(SHAPE_CIRCLE, 2.0, 0.0, 1.0, 0.0);
+    } else if (scenario == "tag_drift_correction") {
+        cfg.drift_vel_x = 0.15; // Lateral wind drift
+        cfg.drift_vel_y = -0.10;
+        harness.getFollower().setConfig(cfg);
+        harness.setupMission({SHAPE_CIRCLE, SHAPE_SQUARE}, MISSION_END_HOVER);
+        harness.addSimulatedGoal(SHAPE_CIRCLE, 1.8, 0.0, 1.0, 0.0);
+        harness.addSimulatedGoal(SHAPE_SQUARE, 3.6, 0.0, 1.0, 0.0);
+        // Anchor tags for global drift correction via MAVLink pass-through
+        harness.addSimulatedTag(1, 1.8, 0.0, 1.0, 0.0, 0.0, 0.0, 0.95f);
+        harness.addSimulatedTag(2, 3.6, 0.0, 1.0, 0.0, 0.0, 0.0, 0.95f);
     } else { // "multi_gate"
         harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_LAND);
         harness.addSimulatedGoal(SHAPE_CIRCLE, 1.5, -0.5, 1.0, 0.0);

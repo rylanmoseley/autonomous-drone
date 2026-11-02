@@ -141,7 +141,20 @@ class FollowerSimulator:
         self.max_error = 0.0
         self.current_error = 0.0
         self.total_dist = 0.0
+        self.tag_corrections = 0
         self.last_target = {"x": 0.0, "y": 0.0, "z": 1.0, "yaw": 0.0}
+
+    def correct_drift(self, x, y, z, yaw, confidence=0.95):
+        with self.lock:
+            k = min(0.95, max(0.20, confidence))
+            self.feedback_x += k * (x - self.feedback_x)
+            self.feedback_y += k * (y - self.feedback_y)
+            self.feedback_z += k * (z - self.feedback_z)
+            dyaw = yaw - self.feedback_yaw
+            while dyaw > math.pi: dyaw -= 2 * math.pi
+            while dyaw < -math.pi: dyaw += 2 * math.pi
+            self.feedback_yaw += k * dyaw
+            self.tag_corrections += 1
 
     def step(self, cmd, dt):
         with self.lock:
@@ -250,6 +263,11 @@ vision_goals = [
     {"id": 2, "shape": 2, "x": 3.0, "y": 0.0, "z": 1.2, "yaw": 0.1},
     {"id": 3, "shape": 1, "x": 4.5, "y": 0.5, "z": 1.0, "yaw": 0.0}
 ]
+vision_tags = [
+    {"id": 1, "x": 1.5, "y": -0.5, "z": 1.0, "yaw": 0.0, "confidence": 0.95},
+    {"id": 2, "x": 3.0, "y": 0.0, "z": 1.2, "yaw": 0.1, "confidence": 0.95},
+    {"id": 3, "x": 4.5, "y": 0.5, "z": 1.0, "yaw": 0.0, "confidence": 0.95}
+]
 vision_enabled = True
 global_detections = []
 
@@ -269,9 +287,17 @@ def _fcu_thread():
 
     while True:
         try:
-            data, addr = sock.recvfrom(1024)
+            data, addr = sock.recvfrom(2048)
             if len(data) == ctypes.sizeof(FlightCommand):
                 last_cmd = FlightCommand.from_buffer_copy(data)
+            elif len(data) >= 12 and data[0] == 0xFD:
+                # MAVLink v2 packet
+                payload_len = data[1]
+                msgid = data[7] | (data[8] << 8) | (data[9] << 16)
+                if msgid == 102 and len(data) >= 10 + 32: # VISION_POSITION_ESTIMATE
+                    import struct
+                    usec, x, y, z, roll, pitch, yaw = struct.unpack_from("<Qffffff", data[10:])
+                    follower.correct_drift(x, y, z, yaw)
         except BlockingIOError:
             pass
         except Exception as e:
@@ -297,6 +323,7 @@ def vision_thread():
         with state_lock:
             enabled = vision_enabled
             dets = list(global_detections) if global_detections else list(vision_goals)
+            tags = list(vision_tags)
 
         if enabled:
             pkt = VisionPacket()
@@ -304,6 +331,8 @@ def vision_thread():
             pkt.sequence_id = seq_id
             seq_id += 1
             pkt.timestamp_ns = int(time.time() * 1e9)
+
+            # Goals
             pkt.num_goals_reported = min(len(dets), 3)
             for i, det in enumerate(dets[:3]):
                 gm = pkt.goals[i]
@@ -314,6 +343,18 @@ def vision_thread():
                 yaw = float(det.get("yaw", 0.0))
                 gm.hypotheses[0].orientation_cam = Quatf(math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0))
                 gm.hypotheses[0].confidence = 1.0
+
+            # Global Tag Targets
+            pkt.num_tags_detected = min(len(tags), 4)
+            for i, tag in enumerate(tags[:4]):
+                tm = pkt.tags[i]
+                tm.tag_id = int(tag.get("id", i + 1))
+                tm.is_valid = 1
+                tm.camera_pos_world = Vec3f(float(tag["x"]), float(tag["y"]), float(tag["z"]))
+                yaw = float(tag.get("yaw", 0.0))
+                tm.camera_att_world = Quatf(math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0))
+                tm.confidence = float(tag.get("confidence", 0.95))
+
             sock.sendto(bytes(pkt), ("127.0.0.1", 14553))
         time.sleep(0.05)
 

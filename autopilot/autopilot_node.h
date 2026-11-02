@@ -60,6 +60,11 @@ public:
     std::chrono::steady_clock::time_point last_vision_time;
     std::mutex vision_mutex;
 
+    // Tag pass-through telemetry counters
+    uint32_t tags_received_count{0};
+    uint32_t tags_forwarded_count{0};
+    TagMeasurement last_tag_measurement{};
+
     AutopilotNode();
     ~AutopilotNode();
 
@@ -68,6 +73,7 @@ public:
     void run();
     void ui_loop();
     void vision_loop();
+    void handleVisionPacket(const VisionPacket& pkt, double current_time);
     void handleUICommand(const UICommandPacket& pkt, const struct sockaddr_in& from, socklen_t from_len);
     
     // For testing

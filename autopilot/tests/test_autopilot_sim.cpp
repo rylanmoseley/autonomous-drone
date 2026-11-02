@@ -240,3 +240,137 @@ TEST(AutopilotSimulationHarnessTest, EStopTriggerDropsThrottle) {
     // Drone drops to ground under E-Stop
     EXPECT_LE(harness.getFollower().getTruePose().z, 0.05);
 }
+
+// 8. Vision Tag Conversion to MAVLink VISION_POSITION_ESTIMATE
+TEST(AutopilotSimulationHarnessTest, TagToMavlinkVisionPositionEstimate) {
+    TagMeasurement tag{};
+    tag.tag_id = 7;
+    tag.is_valid = 1;
+    tag.camera_pos_world = {1.5f, -2.0f, 0.9f};
+
+    // Yaw = 90 deg (pi/2) -> Quat w = cos(pi/4), z = sin(pi/4)
+    double yaw = M_PI / 2.0;
+    tag.camera_att_world.w = static_cast<float>(std::cos(yaw * 0.5));
+    tag.camera_att_world.x = 0.0f;
+    tag.camera_att_world.y = 0.0f;
+    tag.camera_att_world.z = static_cast<float>(std::sin(yaw * 0.5));
+    tag.confidence = 0.80f;
+
+    MavlinkVisionPositionEstimate est = tag_to_mavlink_vision_position(tag, 555000ULL);
+    EXPECT_EQ(est.usec, 555000ULL);
+    EXPECT_FLOAT_EQ(est.x, 1.5f);
+    EXPECT_FLOAT_EQ(est.y, -2.0f);
+    EXPECT_FLOAT_EQ(est.z, 0.9f);
+    EXPECT_NEAR(est.roll, 0.0f, 1e-4);
+    EXPECT_NEAR(est.pitch, 0.0f, 1e-4);
+    EXPECT_NEAR(est.yaw, M_PI / 2.0, 1e-4);
+
+    // Covariance check
+    EXPECT_GT(est.covariance[0], 0.0f);
+    EXPECT_FLOAT_EQ(est.covariance[0], est.covariance[6]);  // pos_var x == pos_var y
+    EXPECT_GT(est.covariance[20], 0.0f); // yaw variance
+}
+
+// 9. AutopilotNode Tag Pass-Through Verification
+TEST(AutopilotSimulationHarnessTest, TagPassThroughForwarding) {
+    AutopilotNode autopilot;
+
+    VisionPacket pkt{};
+    pkt.msg_type = MSG_TYPE_VISION;
+    pkt.sequence_id = 101;
+    pkt.timestamp_ns = 2500000000ULL; // 2.5s
+    pkt.num_tags_detected = 2;
+
+    pkt.tags[0].tag_id = 10;
+    pkt.tags[0].is_valid = 1;
+    pkt.tags[0].camera_pos_world = {3.0f, 1.0f, 1.0f};
+    pkt.tags[0].camera_att_world = {1.0f, 0.0f, 0.0f, 0.0f};
+    pkt.tags[0].confidence = 0.9f;
+
+    pkt.tags[1].tag_id = 11;
+    pkt.tags[1].is_valid = 1;
+    pkt.tags[1].camera_pos_world = {4.0f, -1.0f, 1.2f};
+    pkt.tags[1].camera_att_world = {1.0f, 0.0f, 0.0f, 0.0f};
+    pkt.tags[1].confidence = 0.85f;
+
+    autopilot.handleVisionPacket(pkt, 2.5);
+
+    EXPECT_EQ(autopilot.tags_received_count, 2u);
+    EXPECT_EQ(autopilot.tags_forwarded_count, 2u);
+    EXPECT_TRUE(autopilot.fcu.hasVisionPositionEstimate());
+    EXPECT_EQ(autopilot.fcu.getVisionEstimateCount(), 2u);
+
+    MavlinkVisionPositionEstimate last_est = autopilot.fcu.getLastVisionPositionEstimate();
+    EXPECT_FLOAT_EQ(last_est.x, 4.0f);
+    EXPECT_FLOAT_EQ(last_est.y, -1.0f);
+    EXPECT_FLOAT_EQ(last_est.z, 1.2f);
+}
+
+// 10. Follower Drift Reset via Global Vision Reading
+TEST(AutopilotSimulationHarnessTest, FollowerDriftResetWithVision) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.01;
+    cfg.random_walk_drift_std = 0.25; // Random walk dead reckoning drift
+    cfg.random_seed = 123;
+    FcuFollowerSimulator follower(cfg);
+    follower.reset({0.0, 0.0, 1.0, 0, 0, 0, 0, 1.0});
+
+    FlightCommand cmd{};
+    cmd.enable = true;
+    cmd.target_x = 0.0;
+    cmd.target_y = 0.0;
+    cmd.target_z = 1.0;
+
+    // Simulate 3 seconds of flight: dead reckoning drift accumulates
+    for (int i = 0; i < 60; ++i) {
+        follower.step(cmd, 0.05);
+    }
+
+    double drift_before = follower.getDriftMagnitude();
+    EXPECT_GT(drift_before, 0.10);
+
+    // Now inject tag observation representing ground truth external navigation
+    Pose true_p = follower.getTruePose();
+    TagMeasurement tag{};
+    tag.tag_id = 99;
+    tag.is_valid = 1;
+    tag.camera_pos_world = {static_cast<float>(true_p.x), static_cast<float>(true_p.y), static_cast<float>(true_p.z)};
+    tag.camera_att_world = {1.0f, 0.0f, 0.0f, 0.0f};
+    tag.confidence = 0.95f;
+
+    follower.correctDriftWithVision(tag);
+
+    EXPECT_GT(follower.getMetrics().tag_corrections_count, 0u);
+    double drift_after = follower.getDriftMagnitude();
+    EXPECT_LT(drift_after, drift_before * 0.4);
+    EXPECT_NEAR(follower.getFeedbackPose().x, true_p.x, 0.08);
+    EXPECT_NEAR(follower.getFeedbackPose().y, true_p.y, 0.08);
+}
+
+// 11. Closed-Loop Mission with Tag Drift Correction Active
+TEST(AutopilotSimulationHarnessTest, ClosedLoopMissionWithTagDriftHandling) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.02;
+    cfg.random_walk_drift_std = 0.10; // Optical flow dead-reckoning random walk drift
+    cfg.drift_vel_x = 0.03;           // Mild environmental drift
+    cfg.drift_vel_y = -0.02;
+    cfg.random_seed = 999;
+
+    AutopilotSimHarness harness(cfg);
+    harness.setupMission({SHAPE_CIRCLE}, MISSION_END_HOVER);
+
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 1.8, -0.3, 1.0, 0.0);
+
+    // Place surveyed fiducial tag anchor at the gate location
+    harness.addSimulatedTag(1, 1.8, -0.3, 1.0, 0.0, 0.0, 0.0, 0.95f);
+
+    MissionReport report = harness.runUntil(40.0, 0.05);
+
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_GT(report.tag_readings_forwarded, 0u);
+    EXPECT_GT(report.total_drift_corrected_m, 0.0);
+    EXPECT_LT(report.rmse_tracking, 0.35);
+}
+

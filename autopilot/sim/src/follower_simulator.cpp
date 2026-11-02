@@ -32,6 +32,9 @@ void SimulationMetrics::reset() {
     sample_count = 0;
     arrived_at_target = false;
     time_to_arrival = 0.0;
+    tag_corrections_count = 0;
+    total_drift_corrected_m = 0.0;
+    max_drift_error = 0.0;
 }
 
 FcuFollowerSimulator::FcuFollowerSimulator(const FollowerConfig& config)
@@ -189,6 +192,50 @@ void FcuFollowerSimulator::step(const FlightCommand& cmd, double dt) {
 
     bool arrived = (tracking_error <= 0.20);
     metrics_.recordSample(tracking_error, dt, arrived);
+}
+
+void FcuFollowerSimulator::correctDriftWithVision(const TagMeasurement& tag) {
+    if (!tag.is_valid) return;
+    uint64_t usec = static_cast<uint64_t>(true_pose_.timestamp * 1e6);
+    MavlinkVisionPositionEstimate est = tag_to_mavlink_vision_position(tag, usec);
+    correctDriftWithVisionEstimate(est);
+}
+
+void FcuFollowerSimulator::correctDriftWithVisionEstimate(const MavlinkVisionPositionEstimate& est) {
+    // EKF innovation: difference between external vision position and internal FCU feedback pose
+    double err_x = est.x - feedback_pose_.x;
+    double err_y = est.y - feedback_pose_.y;
+    double err_z = est.z - feedback_pose_.z;
+
+    // Kalman gain weighting based on observation covariance
+    float pos_var = (est.covariance[0] > 0.0f) ? est.covariance[0] : 0.01f;
+    double kalman_gain = 1.0 / (1.0 + pos_var);
+    if (kalman_gain > 0.95) kalman_gain = 0.95;
+    if (kalman_gain < 0.20) kalman_gain = 0.20;
+
+    double corr_x = kalman_gain * err_x;
+    double corr_y = kalman_gain * err_y;
+    double corr_z = kalman_gain * err_z;
+
+    feedback_pose_.x += corr_x;
+    feedback_pose_.y += corr_y;
+    feedback_pose_.z += corr_z;
+
+    // Bias error in dead reckoning is directly reduced by the correction
+    bias_x_ += corr_x;
+    bias_y_ += corr_y;
+    bias_z_ += corr_z;
+
+    // Heading correction
+    double dyaw = wrapAnglePi(static_cast<double>(est.yaw) - feedback_pose_.yaw);
+    feedback_pose_.yaw = wrapAnglePi(feedback_pose_.yaw + kalman_gain * dyaw);
+
+    double corr_mag = std::sqrt(corr_x * corr_x + corr_y * corr_y + corr_z * corr_z);
+    metrics_.tag_corrections_count++;
+    metrics_.total_drift_corrected_m += corr_mag;
+    if (corr_mag > metrics_.max_drift_error) {
+        metrics_.max_drift_error = corr_mag;
+    }
 }
 
 Telemetry FcuFollowerSimulator::getTelemetry(int battery_level, bool error_state) const {
