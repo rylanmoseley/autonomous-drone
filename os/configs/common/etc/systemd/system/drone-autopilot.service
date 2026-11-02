@@ -1,7 +1,7 @@
 [Unit]
 Description=Autonomous Drone Autopilot Daemon
-After=network.target local-fs.target drone-tuning.service
-Wants=network.target drone-tuning.service
+After=network.target local-fs.target drone-tuning.service drone-mavlink-router.service
+Wants=network.target drone-tuning.service drone-mavlink-router.service
 
 [Service]
 Type=simple

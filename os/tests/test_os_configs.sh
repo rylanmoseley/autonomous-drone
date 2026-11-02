@@ -48,9 +48,10 @@ done
 echo "3. Validating NetworkManager AP configuration..."
 NM_FILE="$OS_DIR/configs/common/etc/NetworkManager/system-connections/drone-ap.nmconnection"
 assert_success "NetworkManager config exists" test -f "$NM_FILE"
-assert_success "SSID defined as Autonomous-Drone-AP" grep -q "^ssid=Autonomous-Drone-AP" "$NM_FILE"
+assert_success "SSID defined as HEXAGON-flight-drone" grep -q "^ssid=HEXAGON-flight-drone" "$NM_FILE"
 assert_success "Mode configured as AP" grep -q "^mode=ap" "$NM_FILE"
 assert_success "WPA-PSK security enabled" grep -q "^key-mgmt=wpa-psk" "$NM_FILE"
+assert_success "WPA-PSK password configured" grep -q "^psk=rylaniscool" "$NM_FILE"
 assert_success "Static IP 192.168.4.1/24 configured" grep -q "^address1=192.168.4.1/24" "$NM_FILE"
 assert_success "Shared IPv4 method for auto-DHCP" grep -q "^method=shared" "$NM_FILE"
 
@@ -78,6 +79,16 @@ AVAHI_FILE="$OS_DIR/configs/common/etc/avahi/services/drone.service"
 assert_success "Avahi service definition exists" test -f "$AVAHI_FILE"
 assert_success "Web UI port 8080 registered" grep -q "<port>8080</port>" "$AVAHI_FILE"
 assert_success "MAVLink UDP port 14550 registered" grep -q "<port>14550</port>" "$AVAHI_FILE"
+
+# 6b. MAVLink Proxy & Router Configuration Validation
+echo "6b. Validating MAVLink proxy configurations..."
+MAVROUTER_CONF="$OS_DIR/configs/common/etc/mavlink-router/main.conf"
+assert_success "MAVLink router config exists" test -f "$MAVROUTER_CONF"
+assert_success "Flightcontroller UART endpoint configured" grep -q "Device = /dev/flightcontroller" "$MAVROUTER_CONF"
+assert_success "Autopilot UDP endpoint configured on 14550" grep -q "Port = 14550" "$MAVROUTER_CONF"
+assert_success "Wi-Fi GCS broadcast endpoint configured" grep -q "Address = 192.168.4.255" "$MAVROUTER_CONF"
+assert_success "MAVLink launcher script executable" test -x "$OS_DIR/configs/common/opt/drone/scripts/start_mavlink_proxy.sh"
+assert_success "MAVLink python proxy script executable" test -x "$OS_DIR/configs/common/opt/drone/scripts/mavlink_proxy.py"
 
 # 7. Board-Specific Boot Configurations
 echo "7. Validating board bootloader configurations..."

@@ -37,7 +37,7 @@ flowchart LR
         ESTOP["Emergency Stop Button\n(High Priority Cutoff)"]
     end
 
-    subgraph Network ["Wi-Fi 802.11ac Link (Autonomous-Drone-AP)"]
+    subgraph Network ["Wi-Fi 802.11ac Link (HEXAGON-flight-drone)"]
         UDP_CMD["UDP :14552 (UICommandPacket)"]
         UDP_STAT["UDP :14552 (UIStatusPacket)"]
         VID_STREAM["RTSP / UDP Video Stream"]
@@ -99,7 +99,7 @@ Based on the preliminary interface design (PDR Section 5.3.6, Figure 14):
 ## Network Communication & Protocol
 
 The UI communicates with the SBC over the drone's dedicated onboard Wi-Fi network:
-- **SSID**: `Autonomous-Drone-AP` (Password: `DronePilot123`).
+- **SSID**: `HEXAGON-flight-drone` (Password: `rylaniscool`).
 - **Drone Static IP**: `192.168.4.1`.
 - **Port**: `14552` (UDP).
 

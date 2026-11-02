@@ -22,8 +22,8 @@ This subproject provides the build infrastructure, board support packages, drive
 - Shipped with `v4l-utils`, `media-ctl`, and OpenCV 4 runtime libraries.
 
 ### 2.2. Autonomous WiFi Access Point (AP Mode)
-- **SSID**: `Autonomous-Drone-AP`
-- **Security**: WPA2-PSK (`DronePilot123`)
+- **SSID**: `HEXAGON-flight-drone`
+- **Security**: WPA2-PSK (`rylaniscool`)
 - **Static IP**: `192.168.4.1/24` on interface `wlan0`.
 - **Automatic DHCP**: Managed by NetworkManager (`method=shared`), dynamically leasing `192.168.4.10` - `192.168.4.50` to connected ground control stations or laptops without needing manual configuration.
 - **mDNS Service Discovery**: Avahi daemon advertises `drone.local` on ports:
@@ -46,6 +46,7 @@ This subproject provides the build infrastructure, board support packages, drive
 
 ### 2.5. Automatic Systemd Daemons
 - **`drone-tuning.service`**: Applies hardware clocks and latency tuning at early boot.
+- **`drone-mavlink-router.service`**: Multiplexes FCU serial telemetry (`/dev/flightcontroller` @ 921,600 baud) between the onboard Autopilot daemon (`127.0.0.1:14550`/`14551`) and Wi-Fi GCS broadcast (`192.168.4.255:14550`).
 - **`drone-autopilot.service`**: Autostarts `/opt/drone/bin/autopilot_node` with realtime scheduling priority.
 - **`drone-vision.service`**: Autostarts `/opt/drone/bin/vision_node --headless` and initialises the camera subdevice.
 
@@ -63,8 +64,11 @@ os/
 │   │   ├── etc/
 │   │   │   ├── sysctl.d/99-drone-tuning.conf
 │   │   │   ├── udev/rules.d/99-drone-hardware.rules
+│   │   │   ├── mavlink-router/
+│   │   │   │   └── main.conf
 │   │   │   ├── systemd/system/
 │   │   │   │   ├── drone-autopilot.service
+│   │   │   │   ├── drone-mavlink-router.service
 │   │   │   │   ├── drone-vision.service
 │   │   │   │   └── drone-tuning.service
 │   │   │   ├── NetworkManager/system-connections/
@@ -72,7 +76,9 @@ os/
 │   │   │   └── avahi/services/drone.service
 │   │   └── opt/drone/scripts/
 │   │       ├── init_camera.sh
-│   │       └── apply_tuning.sh
+│   │       ├── apply_tuning.sh
+│   │       ├── start_mavlink_proxy.sh
+│   │       └── mavlink_proxy.py
 │   ├── radxa-zero-3w/             # Radxa-specific boot & packages
 │   │   ├── boot/uEnv.txt
 │   │   └── packages.list
@@ -157,3 +163,102 @@ xz -dc os/output/drone-os-radxa-zero-3w.img.xz | sudo dd of=/dev/sdX bs=4M statu
 You can flash the `.img` or `.img.xz` directly using:
 - **[Raspberry Pi Imager](https://www.raspberrypi.com/software/)** (Choose OS $\rightarrow$ Use custom)
 - **[Balena Etcher](https://etcher.balena.io/)**
+
+---
+
+## 7. Setting Up a Temporary OS Image with MAVLink Proxy & WiFi AP Mode
+
+If you are bench-testing or verifying hardware, you can prepare a temporary image using either the automated pipeline or by configuring an existing Linux SD card in minutes.
+
+### Method A: Build a Fresh Temporary Image via Docker / Build Script
+
+1. **Build the uncompressed image directly**:
+   ```bash
+   # Using Docker (no root or cross-toolchain needed on host)
+   ./os/build_os.sh --docker radxa
+
+   # Or natively on a Linux machine (fast build without xz compression)
+   sudo ./os/build_os.sh radxa --no-compress
+   ```
+2. **Flash to MicroSD**:
+   ```bash
+   sudo dd if=os/output/drone-os-radxa-zero-3w.img of=/dev/sdX bs=4M status=progress conv=fsync
+   ```
+3. Boot the SBC. It will automatically:
+   - Broadcast the Wi-Fi AP: **`HEXAGON-flight-drone`** (Password: `rylaniscool`).
+   - Run the MAVLink router daemon (`drone-mavlink-router.service`) bridging `/dev/flightcontroller` at 921,600 baud.
+   - Run the Autopilot and Vision daemons.
+
+---
+
+### Method B: Configure an Existing Linux Installation (Fast In-Place Setup)
+
+If you already have Ubuntu Server, Armbian, or Raspberry Pi OS running on the board, you can enable AP mode and MAVLink proxy without re-imaging:
+
+#### Step 1: Configure WiFi AP Mode (`HEXAGON-flight-drone`)
+Run with NetworkManager CLI:
+```bash
+sudo nmcli dev wifi hotspot ifname wlan0 ssid "HEXAGON-flight-drone" password "rylaniscool"
+sudo nmcli con mod Hotspot connection.id "HEXAGON-flight-drone" ipv4.addresses 192.168.4.1/24 ipv4.method shared
+sudo nmcli con up "HEXAGON-flight-drone"
+```
+*Alternatively, copy [`drone-ap.nmconnection`](configs/common/etc/NetworkManager/system-connections/drone-ap.nmconnection) into `/etc/NetworkManager/system-connections/drone-ap.nmconnection`, set permissions `chmod 600`, and run `sudo nmcli connection reload && sudo nmcli connection up HEXAGON-flight-drone`.*
+
+#### Step 2: Set up Flight Controller Serial udev Rule
+Ensure non-root access and persistent symlinks:
+```bash
+echo 'KERNEL=="ttyS4", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"' | sudo tee /etc/udev/rules.d/99-drone-hardware.rules
+# For Raspberry Pi, replace ttyS4 with ttyAMA0
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+#### Step 3: Run the MAVLink Telemetry Proxy
+
+Choose any of the following 3 options depending on installed tooling:
+
+- **Option 1: Using `mavlink-routerd` (Recommended for production)**
+  Copy [`configs/common/etc/mavlink-router/main.conf`](configs/common/etc/mavlink-router/main.conf) to `/etc/mavlink-router/main.conf` and run:
+  ```bash
+  sudo mavlink-routerd -c /etc/mavlink-router/main.conf
+  ```
+  Or enable the persistent systemd service:
+  ```bash
+  sudo cp os/configs/common/etc/systemd/system/drone-mavlink-router.service /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now drone-mavlink-router.service
+  ```
+
+- **Option 2: Using `mavproxy` (Python CLI)**
+  ```bash
+  pip3 install mavproxy pymavlink
+  mavproxy.py --master=/dev/flightcontroller --baudrate=921600 \
+      --out=udp:127.0.0.1:14550 \
+      --out=udpbcast:192.168.4.255:14550 \
+      --in=udp:127.0.0.1:14551 --daemon
+  ```
+
+- **Option 3: Using the repository's zero-dependency Python proxy**
+  Run directly using Python 3 standard library:
+  ```bash
+  python3 os/configs/common/opt/drone/scripts/mavlink_proxy.py \
+      --serial /dev/flightcontroller \
+      --baud 921600 \
+      --ap-rx-ip 127.0.0.1 \
+      --ap-rx-port 14550 \
+      --ap-tx-port 14551 \
+      --gcs-broadcast-ip 192.168.4.255 \
+      --gcs-port 14550
+  ```
+
+---
+
+### Verifying Telemetry with QGroundControl / Mission Planner
+
+1. Connect your laptop to the Wi-Fi network:
+   - **SSID**: `HEXAGON-flight-drone`
+   - **Password**: `rylaniscool`
+2. Open **QGroundControl** or **Mission Planner**.
+3. Under **Application Settings $\rightarrow$ Comm Links**:
+   - Add a **UDP** link on Port **`14550`**.
+   - QGroundControl will automatically detect the MAVLink heartbeat from `192.168.4.1` and display live attitude, battery, and GPS/EKF status.
+

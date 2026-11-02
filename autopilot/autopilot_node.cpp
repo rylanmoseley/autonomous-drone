@@ -330,9 +330,9 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         double dx = current_pose.x - gx; double dy = current_pose.y - gy; double dz = current_pose.z - gz;
                         double dist_3d = std::sqrt(dx*dx + dy*dy + dz*dz);
                         double dist_2d = std::sqrt(dx*dx + dy*dy);
-                        if (dist_3d < 0.65) {
+                        if (dist_3d < 0.42) {
                             if (dist_2d < 0.001) { dx = 1.0; dy = 0.0; dist_2d = 1.0; }
-                            double force = (0.65 - dist_3d) * 8.0;
+                            double force = (0.42 - dist_3d) * 8.0;
                             apf_vx += (dx / dist_2d) * force;
                             apf_vy += (dy / dist_2d) * force;
                             apf_vx += -(dy / dist_2d) * force * 0.8; // Tangential deflection around obstacle cylinder

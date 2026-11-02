@@ -109,7 +109,7 @@ flowchart TD
 | :--- | :--- | :--- |
 | **[Autopilot](autopilot/README.md)** | [`autopilot/`](autopilot/README.md) | High-level mission coordination, stateful goal tracking, APF obstacle avoidance, MAVLink bridge, and 3D simulation. |
 | **[Vision Processing](vision-processing/README.md)** | [`vision-processing/`](vision-processing/README.md) | 120 FPS camera capture, OpenCV shape detection, 6-DoF relative pose estimation, and UDP packet broadcast. |
-| **[Operating System](os/README.md)** | [`os/`](os/README.md) | Bootable Ubuntu Server 22.04 ARM64 image builder, WiFi AP mode (`Autonomous-Drone-AP`), systemd daemons, and low-latency RT-tuning. |
+| **[Operating System](os/README.md)** | [`os/`](os/README.md) | Bootable Ubuntu Server 22.04 ARM64 image builder, WiFi AP mode (`HEXAGON-flight-drone`), systemd daemons, and low-latency RT-tuning. |
 | **[Shared Contracts](shared/README.md)** | [`shared/`](shared/README.md) | Standardized, packed C/C++ binary wire protocol headers and MAVLink v2 encoder/decoder. |
 | **[User Interface](ui/README.md)** | [`ui/`](ui/README.md) | PySide6 desktop application for sequence ordering, telemetry visualization, live video display, and emergency stop. |
 | **[Flight Control](flight-control/README.md)** | [`flight-control/`](flight-control/README.md) | Flywoo GOKU GN745 AIO flight controller, optical flow / ToF sensor integration, and ArduPilot EKF3 tuning. |
@@ -287,7 +287,7 @@ cd os
 ```
 
 Flash the generated image (`os/output/drone-os-radxa-zero3w.img.xz`) to a micro-SD card using `dd` or Raspberry Pi Imager. Once booted:
-- The drone broadcasts a WiFi network: **`Autonomous-Drone-AP`** (Password: `DronePilot123`).
+- The drone broadcasts a WiFi network: **`HEXAGON-flight-drone`** (Password: `rylaniscool`).
 - Connect to the drone via SSH: `ssh drone@192.168.4.1` (or `ssh drone@drone.local`).
 - Autopilot and Vision systemd daemons automatically start on boot with realtime priorities.
 

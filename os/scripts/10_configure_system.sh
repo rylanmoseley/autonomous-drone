@@ -97,6 +97,7 @@ mkdir -p "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants" \
          "$ROOTFS_DIR/etc/systemd/system/basic.target.wants"
 
 ln -sf /etc/systemd/system/drone-tuning.service "$ROOTFS_DIR/etc/systemd/system/basic.target.wants/drone-tuning.service"
+ln -sf /etc/systemd/system/drone-mavlink-router.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/drone-mavlink-router.service"
 ln -sf /etc/systemd/system/drone-autopilot.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/drone-autopilot.service"
 ln -sf /etc/systemd/system/drone-vision.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/drone-vision.service"
 ln -sf /lib/systemd/system/NetworkManager.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/NetworkManager.service" 2>/dev/null || true
