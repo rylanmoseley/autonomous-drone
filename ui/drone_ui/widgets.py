@@ -1,10 +1,12 @@
 """Building blocks for the operator GUI."""
 import math
 import time
+from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QUrl
 from PySide6.QtGui import (
-    QColor, QFont, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
+    QColor, QFont, QIcon, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
+    QPolygonF,
 )
 from PySide6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QSizePolicy,
@@ -93,26 +95,35 @@ def fmt(value, spec, unit=""):
 # Header
 
 
-class DroneLogo(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setFixedSize(52, 52)
+LOGO_PATH = Path(__file__).parent / "assets" / "hexagon_flight_logo.png"
 
-    def paintEvent(self, _):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#2f80ed"))
-        p.drawRoundedRect(self.rect(), 12, 12)
-        p.setPen(QPen(QColor("white"), 3))
-        c = QPointF(26, 26)
-        for dx, dy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
-            rotor = QPointF(26 + dx * 12, 26 + dy * 12)
-            p.drawLine(c, rotor)
-            p.setBrush(Qt.NoBrush)
-            p.drawEllipse(rotor, 7, 7)
-        p.setBrush(QColor("white"))
-        p.drawRoundedRect(QRectF(19, 20, 14, 12), 3, 3)
+
+def logo_pixmap(height, color="#ffffff"):
+    """Team logo recolored for the dark theme: dark ink becomes `color`, the white
+    background becomes transparent, and empty margins are trimmed."""
+    src = QImage(str(LOGO_PATH)).convertToFormat(QImage.Format_ARGB32)
+    ink = QColor(color)
+    out = QImage(src.size(), QImage.Format_ARGB32)
+    out.fill(Qt.transparent)
+    left, top, right, bottom = src.width(), src.height(), -1, -1
+    for y in range(src.height()):
+        for x in range(src.width()):
+            c = src.pixelColor(x, y)
+            lum = 0.299 * c.red() + 0.587 * c.green() + 0.114 * c.blue()
+            # Light grey (the image's dotted border) and white drop out entirely
+            alpha = int(max(0.0, min(1.0, (170.0 - lum) / 150.0)) * c.alpha())
+            if alpha > 8:
+                out.setPixelColor(x, y, QColor(ink.red(), ink.green(), ink.blue(), alpha))
+                left, top, right, bottom = min(left, x), min(top, y), max(right, x), max(bottom, y)
+    if right >= 0:
+        out = out.copy(left, top, right - left + 1, bottom - top + 1)
+    return QPixmap.fromImage(out).scaledToHeight(height, Qt.SmoothTransformation)
+
+
+class TeamLogo(QLabel):
+    def __init__(self, height=64):
+        super().__init__()
+        self.setPixmap(logo_pixmap(height))
 
 
 class Header(QFrame):
@@ -146,8 +157,13 @@ class Header(QFrame):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 10, 20, 10)
-        layout.addWidget(DroneLogo())
-        layout.addSpacing(10)
+        layout.addWidget(TeamLogo())
+        layout.addSpacing(18)
+        divider = QFrame()
+        divider.setFrameShape(QFrame.VLine)
+        divider.setStyleSheet("color:#2a3a5c;")
+        layout.addWidget(divider)
+        layout.addSpacing(18)
         layout.addLayout(titles)
         layout.addStretch(1)
         layout.addWidget(self.conn_dot)
