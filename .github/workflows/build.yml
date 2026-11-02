@@ -44,7 +44,7 @@ jobs:
             arch: "armhf"
             build_dir: "build-pi"
             cmake_args: "-DCMAKE_TOOLCHAIN_FILE=cmake/pi_zero_2w_toolchain.cmake -DCMAKE_BUILD_TYPE=Release"
-            packages: "gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf qemu-user-static"
+            packages: "gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf"
             binary_path: "build-pi/autopilot/autopilot_node"
             artifact_name: "autopilot-pi-zero-2w-armhf"
 
@@ -52,7 +52,7 @@ jobs:
             arch: "aarch64"
             build_dir: "build-radxa"
             cmake_args: "-DCMAKE_TOOLCHAIN_FILE=cmake/radxa_zero_3w_toolchain.cmake -DCMAKE_BUILD_TYPE=Release"
-            packages: "gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user-static"
+            packages: "gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"
             binary_path: "build-radxa/autopilot/autopilot_node"
             artifact_name: "autopilot-radxa-zero-3w-aarch64"
 
@@ -65,6 +65,19 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends ${{ matrix.packages }}
+          # Install QEMU emulation (handles both Ubuntu 26 qemu-user-binfmt and Ubuntu 24/Debian qemu-user-static)
+          sudo apt-get install -y --no-install-recommends qemu-user-binfmt qemu-user || \
+          sudo apt-get install -y --no-install-recommends qemu-user-static || true
+
+          # Ensure static emulator symlinks are present if only dynamic/unprefixed binaries were installed
+          if [ ! -f /usr/bin/qemu-arm-static ]; then
+            EMU=$(which qemu-arm-static 2>/dev/null || which qemu-arm 2>/dev/null || true)
+            [ -n "$EMU" ] && sudo ln -sf "$EMU" /usr/bin/qemu-arm-static || true
+          fi
+          if [ ! -f /usr/bin/qemu-aarch64-static ]; then
+            EMU=$(which qemu-aarch64-static 2>/dev/null || which qemu-aarch64 2>/dev/null || true)
+            [ -n "$EMU" ] && sudo ln -sf "$EMU" /usr/bin/qemu-aarch64-static || true
+          fi
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
