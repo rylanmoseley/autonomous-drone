@@ -14,9 +14,20 @@ pip install -r requirements.txt
 ## Run
 
 ```powershell
-python -m drone_ui.app      # the GUI
-python -m pytest            # tests
+python -m drone_ui.app                                   # GUI with the built-in simulator
+python -m drone_ui.app --autopilot 127.0.0.1             # GUI driving the real autopilot
+python -m drone_ui.app --autopilot 127.0.0.1 --camera webcam
+python -m pytest                                         # tests
 ```
+
+`--camera` takes `sim`, `webcam`, `none`, or a stream URL (e.g. `rtsp://...` or an HTTP MJPEG stream from the Pi).
+
+## Layout
+
+- `model.py`: what the GUI displays (`DroneState`, shapes, mission phases)
+- `backends.py`: `SimBackend` (pretend mission) and `AutopilotBackend` (UDP to the real autopilot). Fields the autopilot doesn't report yet stay `None` and show as a dash.
+- `widgets.py`: header, shape pickers, sequence preview, camera view, status cards, mission log
+- `app.py`: main window, theme, command-line options
 
 ## How it talks to the autopilot
 

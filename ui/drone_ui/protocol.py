@@ -4,10 +4,15 @@ Keep these in sync with the C++ headers: the autopilot drops any UDP packet
 whose size doesn't exactly match sizeof() of the struct it expects.
 """
 import ctypes
+import json
 import socket
 
 AUTOPILOT_UI_PORT = 14552
+AUTOPILOT_LOG_PORT = 14554  # UdpTelemetryLogger in autopilot/telemetry_logger_impl.h
 MAX_GOALS = 16
+
+# Order of MissionState in autopilot/autopilot_node.h
+MISSION_STATES = ["IDLE", "TAKEOFF", "NAVIGATING", "RETURN_TO_HOME", "LANDING", "ERROR", "ESTOP"]
 
 
 class UIGoalPose(ctypes.Structure):
@@ -57,6 +62,23 @@ def build_sequence(goals, start=False, stop=False, estop=False):
     seq.num_goals = len(goals)
     seq.start, seq.stop, seq.estop = start, stop, estop
     return seq
+
+
+def build_shape_sequence(shape_ids, **flags):
+    """Goal sequence from shape ids only. The autopilot flies to where vision sees
+    each shape, so positions are left at zero."""
+    return build_sequence(
+        ({"id": s, "x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0} for s in shape_ids), **flags
+    )
+
+
+def parse_log(data):
+    """Decode one logger datagram (a flat JSON object) and add a readable state name."""
+    log = json.loads(data)
+    state = log.get("state")
+    if isinstance(state, int) and 0 <= state < len(MISSION_STATES):
+        log["state_name"] = MISSION_STATES[state]
+    return log
 
 
 class AutopilotLink:

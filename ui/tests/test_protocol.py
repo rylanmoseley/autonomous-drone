@@ -3,7 +3,22 @@ import socket
 
 from drone_ui.protocol import (
     AutopilotLink, UIAckPacket, UIConfigPacket, UIGoalPose, UIGoalSequence, build_sequence,
+    build_shape_sequence, parse_log,
 )
+
+
+def test_build_shape_sequence():
+    seq = build_shape_sequence([3, 1, 2], start=True)
+    assert seq.num_goals == 3
+    assert [seq.goals[i].id for i in range(3)] == [3, 1, 2]
+    assert seq.start
+
+
+def test_parse_log_names_state():
+    # Format produced by UdpTelemetryLogger::flush
+    log = parse_log(b'{"cmd_tx":1.000000,"dt":0.050000,"state":2,"telem_x":0.500000}')
+    assert log["state_name"] == "NAVIGATING"
+    assert log["cmd_tx"] == 1.0
 
 
 def test_struct_sizes_match_64bit_autopilot():
