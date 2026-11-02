@@ -77,6 +77,7 @@ os/
 │   │   └── opt/drone/scripts/
 │   │       ├── init_camera.sh
 │   │       ├── apply_tuning.sh
+│   │       ├── set_profile.sh
 │   │       ├── start_mavlink_proxy.sh
 │   │       └── mavlink_proxy.py
 │   ├── radxa-zero-3w/             # Radxa-specific boot & packages
@@ -92,7 +93,7 @@ os/
 │   ├── 20_deploy_binaries.sh      # Cross-compiles & deploys autopilot/vision binaries
 │   └── 30_create_image.sh         # Partitions, formats (FAT32+ext4), and compresses .img.xz
 └── tests/
-    └── test_os_configs.sh         # Configuration test suite (55 assertions)
+    └── test_os_configs.sh         # Configuration test suite (72 assertions)
 ```
 
 ---
@@ -111,22 +112,26 @@ sudo apt-get install -y debootstrap parted dosfstools e2fsprogs xz-utils qemu-us
 # 1. Validate configuration files and recipes (fast test)
 ./os/build_os.sh --test-only
 
-# 2. Build complete flashable image for Radxa Zero 3W
-sudo ./os/build_os.sh radxa
+# 2. Build Hardware Bringup image for Raspberry Pi Zero 2W (MAVLink proxy only)
+sudo ./os/build_os.sh pi --bringup
 
-# 3. Build for Raspberry Pi Zero 2W
-sudo ./os/build_os.sh pi
+# 3. Build Hardware Bringup image for Radxa Zero 3W (MAVLink proxy only)
+sudo ./os/build_os.sh radxa --bringup
 
-# 4. Fast development build (skip compression)
-sudo ./os/build_os.sh radxa --no-compress
+# 4. Fast development build (skip xz compression)
+sudo ./os/build_os.sh pi --bringup --no-compress
 
-# 5. Build inside Docker (no host dependencies required)
-./os/build_os.sh --docker radxa
+# 5. Build full Autonomous Flight image (autopilot & vision enabled)
+sudo ./os/build_os.sh pi --flight
+
+# 6. Build inside Docker (no host dependencies required)
+./os/build_os.sh --docker pi --bringup
 ```
 
 Finished images are generated in `os/output/`:
+- `drone-os-pi-zero-2w.img` (and compressed `drone-os-pi-zero-2w.img.xz`)
+- `drone-os-pi-zero-2w.img.sha256` (and `drone-os-pi-zero-2w.img.xz.sha256`)
 - `drone-os-radxa-zero-3w.img` (and compressed `drone-os-radxa-zero-3w.img.xz`)
-- `drone-os-radxa-zero-3w.img.sha256`
 
 ---
 
@@ -183,27 +188,65 @@ For early hardware integration, the companion computer boots into **Hardware Bri
 
 ### 7.1. Building a Hardware Bringup OS Image
 
-```bash
-# Using Docker (no host dependencies required)
-./os/build_os.sh --docker radxa --bringup
+The build system defaults to `--bringup` mode:
 
-# Or natively on Linux (fast development build without xz compression)
-sudo ./os/build_os.sh radxa --bringup --no-compress
+```bash
+# Build for Raspberry Pi Zero 2W (Bringup Mode)
+sudo ./os/build_os.sh pi --bringup
+
+# Build for Radxa Zero 3W (Bringup Mode)
+sudo ./os/build_os.sh radxa --bringup
+
+# Fast local development build (skips xz compression)
+sudo ./os/build_os.sh pi --bringup --no-compress
 ```
 
-Flash the generated image (`os/output/drone-os-radxa-zero-3w.img`) to a MicroSD card:
+Flash the generated image (`os/output/drone-os-pi-zero-2w.img.xz` or `drone-os-radxa-zero-3w.img.xz`) to a MicroSD card:
 ```bash
-sudo dd if=os/output/drone-os-radxa-zero-3w.img of=/dev/sdX bs=4M status=progress conv=fsync
-```
+# Using dd:
+xz -dc os/output/drone-os-pi-zero-2w.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 
-When booted:
-1. Connect laptop to Wi-Fi AP **`HEXAGON-flight-drone`** (Password: **`rylaniscool`**).
-2. Open **QGroundControl** or **Mission Planner** $\rightarrow$ connect to UDP **Port `14550`**.
-3. Hardware teams have full access to calibrate sensors, test motors, and adjust ArduPilot parameters.
+# Or using graphical tools:
+# Select the .img or .img.xz directly in Raspberry Pi Imager or Balena Etcher.
+```
 
 ---
 
-### 7.2. Switching Profiles On-Device (`set_profile.sh`)
+### 7.2. Connecting ArduPilot Mission Planner & QGroundControl
+
+Once the SBC boots with the Bringup image:
+
+1. Connect your laptop to the Wi-Fi AP:
+   - **SSID**: `HEXAGON-flight-drone`
+   - **Password**: `rylaniscool`
+   - *(Your laptop receives an IP like `192.168.4.10` via auto-DHCP; the drone is `192.168.4.1`)*.
+
+#### Connecting with ArduPilot Mission Planner (Native UDP)
+Mission Planner connects directly to the MAVLink telemetry broadcast via native UDP:
+1. In the top-right corner of Mission Planner, click the connection dropdown (where COM ports appear) and select **`UDP`**.
+2. Click the green **Connect** button.
+3. In the port prompt, enter **`14550`** and click **OK**.
+4. Mission Planner detects the heartbeat from `192.168.4.1`, downloads all ArduPilot parameters, and displays the HUD.
+
+#### Connecting with QGroundControl
+1. Open QGroundControl.
+2. Under **Application Settings $\rightarrow$ Comm Links**:
+   - Add a new **UDP** connection on Port **`14550`**.
+   - QGroundControl will auto-detect the vehicle heartbeat and connect.
+
+---
+
+### 7.3. What the Hardware Team Can Test
+
+With Bringup Mode active, the Autopilot daemon is dormant and the hardware team has exclusive, unrestricted access to the FCU:
+- **Motor Spin & ESC Calibration**: Test motor order (1-4), verify rotation direction, and calibrate ESC throttle endpoints without autonomous interference.
+- **Sensor Calibrations**: Complete 6-position Accelerometer, spherical Compass/Magnetometer, and Gyro calibrations.
+- **Rangefinder & Optical Flow Validation**: Read real-time distance from the VL53L0X ToF rangefinder and surface tracking quality from the MTF-02P optical flow sensor.
+- **Parameter Inspection & Flashing**: Read, modify, and burn ArduPilot parameters directly to the FCU's non-volatile EEPROM.
+
+---
+
+### 7.4. Switching Profiles On-Device (`set_profile.sh`)
 
 Companion images include `/opt/drone/scripts/set_profile.sh` for instant profile switching over SSH (`ssh drone@192.168.4.1`):
 
@@ -211,16 +254,16 @@ Companion images include `/opt/drone/scripts/set_profile.sh` for instant profile
 # Check active profile and services:
 sudo /opt/drone/scripts/set_profile.sh status
 
-# Ensure hardware testing mode is active (autopilot/vision stopped):
+# Re-engage Bringup Mode (disables autopilot/vision, ensures proxy is active):
 sudo /opt/drone/scripts/set_profile.sh bringup
 
-# Pivot to autonomous flight mode (autopilot & vision enabled):
+# PIVOT: Activate Autonomous Flight Mode (autopilot & vision enabled):
 sudo /opt/drone/scripts/set_profile.sh flight
 ```
 
 ---
 
-### 7.3. In-Place Setup on Existing Linux SD Cards (No Re-Flashing)
+### 7.5. In-Place Setup on Existing Linux SD Cards (No Re-Flashing)
 
 If you already have a running Linux installation on the board:
 
@@ -233,33 +276,19 @@ If you already have a running Linux installation on the board:
 
 2. **Add Flight Controller Serial Symlink**:
    ```bash
-   # Radxa Zero 3W:
-   echo 'KERNEL=="ttyS4", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"' | sudo tee /etc/udev/rules.d/99-drone-hardware.rules
-   # Raspberry Pi Zero 2W:
-   # echo 'KERNEL=="ttyAMA0", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"' | sudo tee /etc/udev/rules.d/99-drone-hardware.rules
+   # Raspberry Pi Zero 2W (UART0):
+   echo 'KERNEL=="ttyAMA0", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"' | sudo tee /etc/udev/rules.d/99-drone-hardware.rules
+   # Radxa Zero 3W (UART4):
+   # echo 'KERNEL=="ttyS4", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"' | sudo tee /etc/udev/rules.d/99-drone-hardware.rules
    sudo udevadm control --reload-rules && sudo udevadm trigger
    ```
 
 3. **Run MAVLink Proxy**:
    ```bash
-   # Run the repository's zero-dependency Python proxy directly:
    python3 os/configs/common/opt/drone/scripts/mavlink_proxy.py \
        --serial /dev/flightcontroller \
        --baud 921600 \
        --gcs-broadcast-ip 192.168.4.255 \
        --gcs-port 14550
    ```
-  ```
-
----
-
-### Verifying Telemetry with QGroundControl / Mission Planner
-
-1. Connect your laptop to the Wi-Fi network:
-   - **SSID**: `HEXAGON-flight-drone`
-   - **Password**: `rylaniscool`
-2. Open **QGroundControl** or **Mission Planner**.
-3. Under **Application Settings $\rightarrow$ Comm Links**:
-   - Add a **UDP** link on Port **`14550`**.
-   - QGroundControl will automatically detect the MAVLink heartbeat from `192.168.4.1` and display live attitude, battery, and GPS/EKF status.
 
