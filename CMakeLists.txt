@@ -20,5 +20,13 @@ add_subdirectory(shared)
 # Autopilot & Simulator
 add_subdirectory(autopilot)
 
-# add_subdirectory(vision-processing)
+# Vision Processing Subsystem
+find_package(OpenCV QUIET)
+if(OpenCV_FOUND)
+    message(STATUS "OpenCV ${OpenCV_VERSION} found: building vision-processing")
+    add_subdirectory(vision-processing)
+else()
+    message(WARNING "OpenCV not found: skipping vision-processing (install libopencv-dev to build)")
+endif()
+
 # add_subdirectory(ui)
