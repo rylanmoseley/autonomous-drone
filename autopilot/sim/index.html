@@ -1,70 +1,133 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Drone Simulator</title>
+    <title>Autonomous Drone Autopilot Simulator</title>
     <style>
-        body { margin: 0; display: flex; font-family: sans-serif; }
-        #canvas-container { flex: 1; height: 100vh; }
-        #sidebar { width: 350px; padding: 20px; background: #f0f0f0; height: 100vh; overflow-y: auto; box-sizing: border-box; }
-        .panel { margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        button { width: 100%; padding: 10px; margin-top: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        body { margin: 0; display: flex; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a1a; color: #333; }
+        #canvas-container { flex: 1; height: 100vh; position: relative; }
+        #sidebar { width: 380px; padding: 15px; background: #f4f6f9; height: 100vh; overflow-y: auto; box-sizing: border-box; }
+        .panel { margin-bottom: 15px; background: white; padding: 14px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+        .panel h3 { margin-top: 0; margin-bottom: 10px; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px; color: #2c3e50; }
+        button { width: 100%; padding: 8px; margin-top: 8px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
         button:hover { background: #0056b3; }
-        .shape-row { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
-        .shape-row:last-child { border-bottom: none; }
-        .shape-inputs { display: flex; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+        .slider-group { margin-bottom: 8px; }
+        .slider-group label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 2px; }
+        .slider-group input[type="range"] { width: 100%; }
+        .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 5px; }
+        .metric-card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; padding: 8px; text-align: center; }
+        .metric-val { font-size: 16px; font-weight: bold; color: #007bff; margin-top: 2px; }
+        .metric-lbl { font-size: 11px; color: #6c757d; }
+        .shape-row { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+        .shape-inputs { display: flex; gap: 4px; margin-top: 4px; }
         .shape-inputs input { width: 45px; }
         select { width: 100%; padding: 5px; margin-bottom: 5px; }
-        #pip-container { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 240px; border: 2px solid white; z-index: 10; background: black; }
+        #pip-container { position: absolute; bottom: 20px; right: 20px; width: 320px; height: 240px; border: 2px solid #555; z-index: 10; background: black; border-radius: 6px; overflow: hidden; }
         #pip-overlay { position: absolute; top: 0; left: 0; pointer-events: none; }
+        .legend { display: flex; gap: 10px; font-size: 11px; margin-top: 8px; }
+        .legend span { display: inline-flex; align-items: center; gap: 4px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
     </style>
 </head>
 <body>
     <div id="sidebar">
-        <h2>Autopilot Control</h2>
+        <h2 style="margin-top: 0; color: #1e3c72; font-size: 20px;">Autopilot Simulator</h2>
         
+        <!-- Live Tracking Error Metrics -->
         <div class="panel">
-            <h3>Dynamics Config</h3>
-            <label>Max Velocity (m/s): <input type="number" id="cfg-max-vel" value="2.0" step="0.1" style="width: 60px; float: right;"></label><br><br>
-            <label>Max Vert Vel (m/s): <input type="number" id="cfg-max-vert-vel" value="1.0" step="0.1" style="width: 60px; float: right;"></label><br><br>
-            <label>Max Yaw Rate (rad/s): <input type="number" id="cfg-max-yaw-rate" value="1.0" step="0.1" style="width: 60px; float: right;"></label>
-            <button onclick="sendConfig()" style="background: #17a2b8;">Update Config</button>
+            <h3>Closed-Loop Tracking Metrics</h3>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-lbl">Current Error</div>
+                    <div class="metric-val" id="metric-curr-err">0.000 m</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-lbl">Tracking RMSE</div>
+                    <div class="metric-val" id="metric-rmse" style="color: #28a745;">0.000 m</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-lbl">Peak Error</div>
+                    <div class="metric-val" id="metric-max-err" style="color: #dc3545;">0.000 m</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-lbl">Distance Traveled</div>
+                    <div class="metric-val" id="metric-dist">0.0 m</div>
+                </div>
+            </div>
+            <div class="legend">
+                <span><span class="dot" style="background: #28a745;"></span> True Pose</span>
+                <span><span class="dot" style="background: #00e5ff;"></span> Noisy Feedback</span>
+                <span><span class="dot" style="background: #ff9900;"></span> Setpoint Target</span>
+            </div>
         </div>
-        
+
+        <!-- Follower Kinematics & Imputed Noise Controls -->
+        <div class="panel">
+            <h3>Follower & Imputed Noise</h3>
+            <label style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: bold;">
+                <input type="checkbox" id="noise-toggle" checked onchange="sendFollowerConfig()">
+                Enable Imputed Noise
+            </label>
+            <div class="slider-group">
+                <label><span>Position Noise &sigma;<sub>xy</sub>:</span><span id="lbl-pos-noise">0.03 m</span></label>
+                <input type="range" id="pos-noise" min="0.0" max="0.15" step="0.005" value="0.03" oninput="sendFollowerConfig()">
+            </div>
+            <div class="slider-group">
+                <label><span>Yaw Noise &sigma;<sub>&psi;</sub>:</span><span id="lbl-yaw-noise">0.02 rad</span></label>
+                <input type="range" id="yaw-noise" min="0.0" max="0.15" step="0.005" value="0.02" oninput="sendFollowerConfig()">
+            </div>
+            <div class="slider-group">
+                <label><span>Follower Lag &tau;:</span><span id="lbl-tau">0.15 s</span></label>
+                <input type="range" id="follower-tau" min="0.05" max="0.50" step="0.01" value="0.15" oninput="sendFollowerConfig()">
+            </div>
+            <div class="slider-group">
+                <label><span>Wind Drift X:</span><span id="lbl-drift-x">0.00 m/s</span></label>
+                <input type="range" id="drift-x" min="-0.50" max="0.50" step="0.02" value="0.00" oninput="sendFollowerConfig()">
+            </div>
+            <div class="slider-group">
+                <label><span>Wind Drift Y:</span><span id="lbl-drift-y">0.00 m/s</span></label>
+                <input type="range" id="drift-y" min="-0.50" max="0.50" step="0.02" value="0.00" oninput="sendFollowerConfig()">
+            </div>
+            <button onclick="resetSim()" style="background: #6c757d;">Reset Drone & Metrics</button>
+        </div>
+
+        <!-- Vision Sensor Configuration -->
         <div class="panel">
             <h3>Vision Sensor</h3>
-            <label>
+            <label style="font-size: 13px;">
                 <input type="checkbox" id="vision-toggle" checked onchange="toggleVision()">
-                Enable Vision Broadcast
+                Enable Vision Broadcast (Port 14553)
             </label>
         </div>
 
+        <!-- Shape Map Setup -->
         <div class="panel">
-            <h3>Shape Map</h3>
+            <h3>Gate / Obstacle Map</h3>
             <div id="shapes-list"></div>
-            <button onclick="updateVisionGoals()" style="background: #28a745;">Update Vision World</button>
+            <button onclick="updateVisionGoals()" style="background: #28a745;">Update Gate World</button>
         </div>
 
+        <!-- Mission Sequence -->
         <div class="panel">
-            <h3>Mission Sequence</h3>
-            <label>Waypoint 1:</label>
+            <h3>Autonomous Mission</h3>
+            <label style="font-size: 12px;">Waypoint 1:</label>
             <select id="seq-1">
+                <option value="circle" selected>Circle</option>
                 <option value="triangle">Triangle</option>
                 <option value="square">Square</option>
-                <option value="circle">Circle</option>
             </select>
-            <label>Waypoint 2:</label>
+            <label style="font-size: 12px;">Waypoint 2:</label>
             <select id="seq-2">
+                <option value="circle">Circle</option>
+                <option value="triangle" selected>Triangle</option>
+                <option value="square">Square</option>
+            </select>
+            <label style="font-size: 12px;">Waypoint 3:</label>
+            <select id="seq-3">
+                <option value="circle">Circle</option>
                 <option value="triangle">Triangle</option>
                 <option value="square" selected>Square</option>
-                <option value="circle">Circle</option>
             </select>
-            <label>Waypoint 3:</label>
-            <select id="seq-3">
-                <option value="triangle">Triangle</option>
-                <option value="square">Square</option>
-                <option value="circle" selected>Circle</option>
-            </select>
-            <button onclick="sendUISequence()">Start Autonomous Mission</button>
+            <button onclick="sendUISequence()">Start Mission (Port 14552)</button>
         </div>
     </div>
     
@@ -78,85 +141,98 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script>
         let shapes = {
-            triangle: { id: 1, name: "Triangle", x: 1.0, y: -0.5, z: 1.0, yaw: 0.0, color: 0x00ff00, segments: 3 },
-            square:   { id: 2, name: "Square",   x: 1.0, y: 0.0,  z: 1.0, yaw: 0.0, color: 0x0000ff, segments: 4 },
-            circle:   { id: 3, name: "Circle",   x: 1.0, y: 0.5,  z: 1.0, yaw: 0.0, color: 0xff0000, segments: 100 }
+            triangle: { id: 2, shape: 2, x: 2.5, y: 0.0, z: 1.2, yaw: 0.0, color: 0xff0000, segments: 3 },
+            square:   { id: 3, shape: 3, x: 4.0, y: 0.4, z: 1.0, yaw: 0.0, color: 0x00ff00, segments: 4 },
+            circle:   { id: 1, shape: 1, x: 1.2, y: -0.4, z: 1.0, yaw: 0.0, color: 0x0000ff, segments: 32 }
         };
 
-        function renderShapesList() {
-            const list = document.getElementById("shapes-list");
-            list.innerHTML = "";
-            Object.keys(shapes).forEach(key => {
-                const s = shapes[key];
-                const yawDeg = (s.yaw * 180 / Math.PI).toFixed(1);
-                list.innerHTML += `
-                    <div class="shape-row">
-                        <strong>${s.name} (ID: ${s.id})</strong>
-                        <div class="shape-inputs">
-                            X:<input type="number" step="0.1" value="${s.x}" onchange="shapes['${key}'].x=parseFloat(this.value)">
-                            Y:<input type="number" step="0.1" value="${s.y}" onchange="shapes['${key}'].y=parseFloat(this.value)">
-                            Z:<input type="number" step="0.1" value="${s.z}" onchange="shapes['${key}'].z=parseFloat(this.value)">
-                            Yaw(°):<input type="number" step="1" value="${yawDeg}" onchange="shapes['${key}'].yaw=parseFloat(this.value) * Math.PI / 180">
-                        </div>
-                    </div>
-                `;
-            });
-        }
+        const shapesList = document.getElementById("shapes-list");
+        Object.entries(shapes).forEach(([name, s]) => {
+            const div = document.createElement("div");
+            div.className = "shape-row";
+            div.innerHTML = `
+                <strong style="text-transform: capitalize; font-size: 13px;">${name} (Shape ${s.shape})</strong>
+                <div class="shape-inputs">
+                    X:<input type="number" step="0.1" value="${s.x}" id="${name}-x">
+                    Y:<input type="number" step="0.1" value="${s.y}" id="${name}-y">
+                    Z:<input type="number" step="0.1" value="${s.z}" id="${name}-z">
+                    Yaw:<input type="number" step="0.1" value="${s.yaw}" id="${name}-yaw">
+                </div>
+            `;
+            shapesList.appendChild(div);
+        });
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}${window.location.pathname.replace(/\/$/, '')}/ws`;
-        const ws = new WebSocket(wsUrl);
-
-        let trailPoints = [];
-        let trailLine = null;
-
+        const ws = new WebSocket("ws://" + location.host);
+        
         ws.onmessage = (event) => {
-            const state = JSON.parse(event.data);
-            drone.position.set(state.drone.x, state.drone.z, -state.drone.y);
-            drone.rotation.order = "YZX";
-            drone.rotation.y = state.drone.yaw || 0;
-            drone.rotation.z = state.drone.pitch || 0;
-            drone.rotation.x = -(state.drone.roll || 0);
-            
-            if (state.drone.z > 0.05) {
-                trailPoints.push(new THREE.Vector3(state.drone.x, state.drone.z, -state.drone.y));
-                if (trailPoints.length > 500) trailPoints.shift();
-            } else if (trailPoints.length > 0) {
-                trailPoints = [];
+            const data = JSON.parse(event.data);
+            if (data.drone) {
+                drone.position.set(data.drone.x, data.drone.z, -data.drone.y);
+                drone.rotation.y = data.drone.yaw + Math.PI / 2;
+                drone.rotation.x = data.drone.pitch || 0;
+                drone.rotation.z = data.drone.roll || 0;
             }
-            
-            if (trailLine) scene.remove(trailLine);
-            if (trailPoints.length > 1) {
-                const geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
-                const material = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8 });
-                trailLine = new THREE.Line(geometry, material);
-                scene.add(trailLine);
+            if (data.feedback && feedbackMarker) {
+                feedbackMarker.position.set(data.feedback.x, data.feedback.z, -data.feedback.y);
+            }
+            if (data.command && targetMarker) {
+                targetMarker.position.set(data.command.x, data.command.z, -data.command.y);
+            }
+            if (data.metrics) {
+                document.getElementById("metric-curr-err").innerText = data.metrics.current_error.toFixed(3) + " m";
+                document.getElementById("metric-rmse").innerText = data.metrics.rmse.toFixed(3) + " m";
+                document.getElementById("metric-max-err").innerText = data.metrics.max_error.toFixed(3) + " m";
+                document.getElementById("metric-dist").innerText = data.metrics.distance.toFixed(1) + " m";
             }
         };
 
-        function toggleVision() {
-            const enabled = document.getElementById("vision-toggle").checked;
-            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "toggle", enabled }));
-        }
+        function sendFollowerConfig() {
+            const enabled = document.getElementById("noise-toggle").checked;
+            const posNoise = parseFloat(document.getElementById("pos-noise").value);
+            const yawNoise = parseFloat(document.getElementById("yaw-noise").value);
+            const tau = parseFloat(document.getElementById("follower-tau").value);
+            const driftX = parseFloat(document.getElementById("drift-x").value);
+            const driftY = parseFloat(document.getElementById("drift-y").value);
 
-        function sendConfig() {
-            const max_vel = parseFloat(document.getElementById("cfg-max-vel").value);
-            const max_vert_vel = parseFloat(document.getElementById("cfg-max-vert-vel").value);
-            const max_yaw_rate = parseFloat(document.getElementById("cfg-max-yaw-rate").value);
+            document.getElementById("lbl-pos-noise").innerText = posNoise.toFixed(3) + " m";
+            document.getElementById("lbl-yaw-noise").innerText = yawNoise.toFixed(3) + " rad";
+            document.getElementById("lbl-tau").innerText = tau.toFixed(2) + " s";
+            document.getElementById("lbl-drift-x").innerText = driftX.toFixed(2) + " m/s";
+            document.getElementById("lbl-drift-y").innerText = driftY.toFixed(2) + " m/s";
+
             if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ 
-                    type: "config", 
-                    max_velocity: max_vel, 
-                    max_vertical_velocity: max_vert_vel, 
-                    max_yaw_rate: max_yaw_rate 
+                ws.send(JSON.stringify({
+                    type: "follower_config",
+                    noise_enabled: enabled,
+                    pos_noise_std: posNoise,
+                    yaw_noise_std: yawNoise,
+                    tau: tau,
+                    drift_x: driftX,
+                    drift_y: driftY
                 }));
             }
         }
 
-        let pathLine = null;
+        function resetSim() {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "reset_sim" }));
+            }
+        }
+
+        function toggleVision() {
+            const enabled = document.getElementById("vision-toggle").checked;
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "toggle", enabled: enabled }));
+        }
+
         function updateVisionGoals() {
+            Object.keys(shapes).forEach(name => {
+                shapes[name].x = parseFloat(document.getElementById(`${name}-x`).value);
+                shapes[name].y = parseFloat(document.getElementById(`${name}-y`).value);
+                shapes[name].z = parseFloat(document.getElementById(`${name}-z`).value);
+                shapes[name].yaw = parseFloat(document.getElementById(`${name}-yaw`).value);
+            });
             const goalsArray = Object.values(shapes).map(s => ({
-                id: s.id, x: s.x, y: s.y, z: s.z, yaw: s.yaw
+                id: s.id, shape: s.shape, x: s.x, y: s.y, z: s.z, yaw: s.yaw
             }));
             if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "update_goals", goals: goalsArray }));
             updateThreeJsHoops();
@@ -168,139 +244,73 @@
             const seq3 = document.getElementById("seq-3").value;
             
             const sequenceGoals = [
-                { id: shapes[seq1].id, x: shapes[seq1].x, y: shapes[seq1].y, z: shapes[seq1].z, yaw: shapes[seq1].yaw },
-                { id: shapes[seq2].id, x: shapes[seq2].x, y: shapes[seq2].y, z: shapes[seq2].z, yaw: shapes[seq2].yaw },
-                { id: shapes[seq3].id, x: shapes[seq3].x, y: shapes[seq3].y, z: shapes[seq3].z, yaw: shapes[seq3].yaw }
+                { id: shapes[seq1].id, shape: shapes[seq1].shape, x: shapes[seq1].x, y: shapes[seq1].y, z: shapes[seq1].z, yaw: shapes[seq1].yaw },
+                { id: shapes[seq2].id, shape: shapes[seq2].shape, x: shapes[seq2].x, y: shapes[seq2].y, z: shapes[seq2].z, yaw: shapes[seq2].yaw },
+                { id: shapes[seq3].id, shape: shapes[seq3].shape, x: shapes[seq3].x, y: shapes[seq3].y, z: shapes[seq3].z, yaw: shapes[seq3].yaw }
             ];
 
-            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ui", goals: sequenceGoals }));
-            
-            if (pathLine) scene.remove(pathLine);
-            const points = [];
-            
-            let px = drone.position.x;
-            let pz = drone.position.y; // Drone z is y in THREE
-            let py = -drone.position.z; // Drone y is -z in THREE
-            
-            // Takeoff
-            pz = 1.0;
-            points.push(new THREE.Vector3(px, pz, -py));
-            
-            sequenceGoals.forEach((g, idx) => {
-                let target_x = g.x - Math.cos(g.yaw) * 0.5;
-                let target_y = g.y - Math.sin(g.yaw) * 0.5;
-                
-                // Simulate APF path to approach point
-                for (let iter = 0; iter < 1000; ++iter) {
-                    let dx = target_x - px;
-                    let dy = target_y - py;
-                    let dist = Math.sqrt(dx*dx + dy*dy);
-                    if (dist < 0.05) break;
-                    
-                    let step_x = (dx / dist) * 0.05;
-                    let step_y = (dy / dist) * 0.05;
-                    
-                    sequenceGoals.forEach((og, oidx) => {
-                        if (oidx === idx) return;
-                        let odx = px - og.x;
-                        let ody = py - og.y;
-                        let odist = Math.sqrt(odx*odx + ody*ody);
-                        if (odist < 0.4) {
-                            let push = (0.4 - odist) * 0.5;
-                            step_x += (odx / odist) * push;
-                            step_y += (ody / odist) * push;
-                            step_x += -(ody / odist) * push * 0.5;
-                            step_y += (odx / odist) * push * 0.5;
-                        }
-                    });
-                    
-                    px += step_x;
-                    py += step_y;
-                    points.push(new THREE.Vector3(px, pz, -py));
-                }
-                
-                // Fly through hoop
-                px = g.x + Math.cos(g.yaw) * 0.5;
-                py = g.y + Math.sin(g.yaw) * 0.5;
-                points.push(new THREE.Vector3(px, pz, -py));
-            });
-            
-            // RTH
-            pz = 0.4;
-            points.push(new THREE.Vector3(px, pz, -py));
-            for (let iter = 0; iter < 1000; ++iter) {
-                let dx = 0.0 - px;
-                let dy = 0.0 - py;
-                let dist = Math.sqrt(dx*dx + dy*dy);
-                if (dist < 0.05) break;
-                
-                let step_x = (dx / dist) * 0.05;
-                let step_y = (dy / dist) * 0.05;
-                
-                sequenceGoals.forEach(og => {
-                    let odx = px - og.x;
-                    let ody = py - og.y;
-                    let odist = Math.sqrt(odx*odx + ody*ody);
-                    if (odist < 0.4) {
-                        let push = (0.4 - odist) * 0.5;
-                        step_x += (odx / odist) * push;
-                        step_y += (ody / odist) * push;
-                        step_x += -(ody / odist) * push * 0.5;
-                        step_y += (odx / odist) * push * 0.5;
-                    }
-                });
-                
-                px += step_x;
-                py += step_y;
-                points.push(new THREE.Vector3(px, pz, -py));
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "ui", command: 3, goals: sequenceGoals, end_action: 0 }));
             }
-            
-            points.push(new THREE.Vector3(0, 0, 0));
-            const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            const material = new THREE.LineDashedMaterial({ color: 0xffa500, dashSize: 0.2, gapSize: 0.1 });
-            pathLine = new THREE.Line(geometry, material);
-            pathLine.computeLineDistances();
-            scene.add(pathLine);
         }
 
-        renderShapesList();
-
+        // -------------------------------------------------------------------
+        // Three.js 3D Visualizer Setup
+        // -------------------------------------------------------------------
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87ceeb);
-        
-        const camera = new THREE.PerspectiveCamera(75, (window.innerWidth - 350) / window.innerHeight, 0.1, 1000);
+        scene.background = new THREE.Color(0x1a1a24);
+
+        const camera = new THREE.PerspectiveCamera(60, (window.innerWidth - 380) / window.innerHeight, 0.1, 100);
+        camera.position.set(-2, 3, 3);
+
         const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth - 350, window.innerHeight);
+        renderer.setSize(window.innerWidth - 380, window.innerHeight);
         document.getElementById("canvas-container").appendChild(renderer.domElement);
-        
+
         const controls = new THREE.OrbitControls(camera, renderer.domElement);
-        camera.position.set(2, 2, 2);
-        controls.target.set(0, 0, 0);
+        controls.target.set(2, 1, 0);
+        controls.update();
 
-        const gridHelper = new THREE.GridHelper(5, 20);
-        scene.add(gridHelper);
+        const grid = new THREE.GridHelper(20, 20, 0x444466, 0x222233);
+        scene.add(grid);
 
-        const droneGeometry = new THREE.BoxGeometry(0.2, 0.1, 0.2);
-        const droneMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
-        const drone = new THREE.Mesh(droneGeometry, droneMaterial);
+        // Drone True Model (Green body with cross arms)
+        const drone = new THREE.Group();
+        const bodyGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.05, 16);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x28a745, roughness: 0.3 });
+        drone.add(new THREE.Mesh(bodyGeo, bodyMat));
+
+        const armGeo = new THREE.BoxGeometry(0.35, 0.02, 0.02);
+        const armMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+        const arm1 = new THREE.Mesh(armGeo, armMat); arm1.rotation.y = Math.PI / 4; drone.add(arm1);
+        const arm2 = new THREE.Mesh(armGeo, armMat); arm2.rotation.y = -Math.PI / 4; drone.add(arm2);
+
+        const droneCamera = new THREE.PerspectiveCamera(70, 320 / 240, 0.05, 20);
+        droneCamera.rotation.y = -Math.PI / 2;
+        drone.add(droneCamera);
         scene.add(drone);
-        
-        // Virtual Camera for PiP
-        const pipRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+
+        // Noisy Feedback Marker (Cyan wireframe sphere showing state estimation jitter)
+        const feedbackGeo = new THREE.SphereGeometry(0.08, 12, 12);
+        const feedbackMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, wireframe: true, transparent: true, opacity: 0.6 });
+        const feedbackMarker = new THREE.Mesh(feedbackGeo, feedbackMat);
+        scene.add(feedbackMarker);
+
+        // Autopilot Setpoint Target Marker (Orange glowing sphere)
+        const targetGeo = new THREE.SphereGeometry(0.06, 12, 12);
+        const targetMat = new THREE.MeshBasicMaterial({ color: 0xff9900 });
+        const targetMarker = new THREE.Mesh(targetGeo, targetMat);
+        scene.add(targetMarker);
+
+        // PiP Camera Renderer
+        const pipRenderer = new THREE.WebGLRenderer({ antialias: true });
         pipRenderer.setSize(320, 240);
         document.getElementById("pip-three").appendChild(pipRenderer.domElement);
-        
-        const droneCamera = new THREE.PerspectiveCamera(90, 320/240, 0.1, 100);
-        // Look down the local X axis (drone forward direction)
-        droneCamera.position.set(0, 0, 0);
-        droneCamera.up.set(0, 1, 0); // Y is up
-        droneCamera.lookAt(new THREE.Vector3(1, 0, 0));
-        drone.add(droneCamera);
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-        dirLight.position.set(5, 5, 5);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(5, 10, 5);
         scene.add(dirLight);
-        scene.add(new THREE.AmbientLight(0x404040));
+        scene.add(new THREE.AmbientLight(0x606070));
 
         let hoopMeshes = [];
 
@@ -308,13 +318,13 @@
             hoopMeshes.forEach(h => scene.remove(h));
             hoopMeshes = [];
             Object.values(shapes).forEach(s => {
-                const geometry = new THREE.TorusGeometry(0.15, 0.02, 16, s.segments);
-                const material = new THREE.MeshStandardMaterial({ color: s.color });
+                const geometry = new THREE.TorusGeometry(0.20, 0.03, 16, s.segments);
+                const material = new THREE.MeshStandardMaterial({ color: s.color, roughness: 0.4 });
                 const torus = new THREE.Mesh(geometry, material);
                 torus.position.set(s.x, s.z, -s.y);
                 if (s.segments === 4) torus.rotation.z = Math.PI / 4;
                 torus.rotation.y = s.yaw + Math.PI / 2;
-                torus.userData = { id: s.id }; // Tag with ID for vision system
+                torus.userData = { id: s.id, shape: s.shape };
                 scene.add(torus);
                 hoopMeshes.push(torus);
             });
@@ -322,58 +332,10 @@
         
         updateVisionGoals();
 
-        const frustum = new THREE.Frustum();
-        const projScreenMatrix = new THREE.Matrix4();
-
         function updateVision() {
-            // 1. Render actual image from virtual camera
             pipRenderer.render(scene, droneCamera);
-            
-            // 2. Perform bounding box tracking (Simulated CV)
-            droneCamera.updateMatrixWorld();
-            droneCamera.matrixWorldInverse.copy(droneCamera.matrixWorld).invert();
-            projScreenMatrix.multiplyMatrices(droneCamera.projectionMatrix, droneCamera.matrixWorldInverse);
-            frustum.setFromProjectionMatrix(projScreenMatrix);
-            
-            const ctx = document.getElementById("pip-overlay").getContext("2d");
-            ctx.clearRect(0, 0, 320, 240);
-            
-            let detections = [];
-            
-            hoopMeshes.forEach(mesh => {
-                if (frustum.intersectsObject(mesh)) {
-                    const center = new THREE.Vector3();
-                    mesh.getWorldPosition(center);
-                    center.project(droneCamera);
-                    
-                    // Frustum intersection doesn't mean it's in front of camera (Z could be behind)
-                    // Project returns z between -1 and 1 if inside frustum
-                    if (center.z > 1 || center.z < -1) return;
-
-                    const x = (center.x * 0.5 + 0.5) * 320;
-                    const y = (-(center.y * 0.5) + 0.5) * 240;
-                    
-                    const dist = droneCamera.position.distanceTo(mesh.position);
-                    const size = Math.max(20, 150 / dist);
-                    
-                    ctx.strokeStyle = "yellow";
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(x - size/2, y - size/2, size, size);
-                    ctx.fillStyle = "yellow";
-                    ctx.fillText("Target " + mesh.userData.id, x - size/2, y - size/2 - 5);
-                    
-                    const shapeData = Object.values(shapes).find(s => s.id === mesh.userData.id);
-                    if (shapeData) detections.push(shapeData);
-                }
-            });
-            
-            // 3. Forward detections back to Python Server
-            if (document.getElementById("vision-toggle").checked) {
-                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "vision", detections: detections }));
-            }
         }
-
-        setInterval(updateVision, 500); // 2Hz Vision Engine
+        setInterval(updateVision, 100);
 
         function animate() {
             requestAnimationFrame(animate);
@@ -382,14 +344,11 @@
         }
         animate();
 
-         // 4Hz State Sync
-
-        window.addEventListener('resize', onWindowResize, false);
-        function onWindowResize() {
-            camera.aspect = (window.innerWidth - 350) / window.innerHeight;
+        window.addEventListener('resize', () => {
+            camera.aspect = (window.innerWidth - 380) / window.innerHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth - 350, window.innerHeight);
-        }
+            renderer.setSize(window.innerWidth - 380, window.innerHeight);
+        });
     </script>
 </body>
 </html>
