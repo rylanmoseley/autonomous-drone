@@ -29,40 +29,14 @@ rfkill unblock all 2>/dev/null || true
 
 # 3. Configure NetworkManager Wi-Fi AP
 echo "[3/5] Configuring NetworkManager AP ($SSID)..."
-mkdir -p /etc/NetworkManager/system-connections
-cat > /etc/NetworkManager/system-connections/drone-ap.nmconnection <<EOF
-[connection]
-id=$SSID
-uuid=a1b2c3d4-e5f6-47a8-9b0c-droneap00001
-type=wifi
-interface-name=wlan0
-autoconnect=true
-autoconnect-priority=100
-permissions=
-
-[wifi]
-mode=ap
-ssid=$SSID
-band=bg
-channel=6
-
-[wifi-security]
-key-mgmt=wpa-psk
-psk=$PSK
-psk-flags=0
-
-[ipv4]
-method=shared
-address1=192.168.4.1/24
-
-[ipv6]
-method=ignore
-EOF
-
-chmod 600 /etc/NetworkManager/system-connections/drone-ap.nmconnection
-systemctl reload NetworkManager || systemctl restart NetworkManager
-sleep 2
-nmcli connection up "$SSID" 2>/dev/null || true
+nmcli con delete "$SSID" 2>/dev/null || true
+nmcli con delete drone-ap 2>/dev/null || true
+rm -f /etc/NetworkManager/system-connections/drone-ap.nmconnection
+nmcli device wifi hotspot ifname wlan0 con-name "$SSID" ssid "$SSID" password "$PSK"
+nmcli con modify "$SSID" ipv4.addresses 192.168.4.1/24
+nmcli con modify "$SSID" connection.autoconnect yes
+nmcli con modify "$SSID" connection.autoconnect-priority 100
+nmcli con up "$SSID" 2>/dev/null || true
 
 # 4. Install MAVLink Proxy scripts
 echo "[4/5] Installing MAVLink bringup proxy..."
