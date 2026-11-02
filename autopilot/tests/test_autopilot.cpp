@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "../autopilot_node.h"
+#include "generated_surveyed_tags.h"
 #include <cmath>
 
 TEST(AutopilotTest, UninitializedFlightCommand) {
@@ -108,29 +109,56 @@ TEST(AutopilotTest, FullMissionSimulation) {
     std::cout << "Mission completed in " << ticks << " ticks." << std::endl;
 }
 
-TEST(AutopilotTest, AutopilotOwnsGlobalTagMap) {
+TEST(AutopilotTest, CompileTimeSurveyedTagMap) {
+    // 1. Verify compile-time precomputed ROM entries
+    EXPECT_EQ(COMPILED_SURVEYED_TAG_COUNT, 4u);
+    EXPECT_STREQ(COMPILED_ARENA_NAME, "Competition Arena Alpha");
+
+    // Fast O(log N) binary search lookup in ROM table
+    const auto* tag1 = findCompiledSurveyedTag(1);
+    ASSERT_NE(tag1, nullptr);
+    EXPECT_EQ(tag1->tag_id, 1);
+    EXPECT_FLOAT_EQ(tag1->world_pos.x, 1.5f);
+    EXPECT_FLOAT_EQ(tag1->world_pos.y, -0.3f);
+    EXPECT_FLOAT_EQ(tag1->world_pos.z, 1.0f);
+    EXPECT_FLOAT_EQ(tag1->size_m, 0.16f);
+    EXPECT_STREQ(tag1->label, "Gate 1 Entrance Marker");
+
+    const auto* tag4 = findCompiledSurveyedTag(4);
+    ASSERT_NE(tag4, nullptr);
+    EXPECT_EQ(tag4->tag_id, 4);
+    EXPECT_FLOAT_EQ(tag4->world_pos.y, 2.0f);
+    EXPECT_FLOAT_EQ(tag4->world_pos.z, 0.5f);
+    // 90 deg yaw quaternion: w=0.7071, z=0.7071
+    EXPECT_NEAR(tag4->world_att.w, 0.7071f, 1e-3);
+    EXPECT_NEAR(tag4->world_att.z, 0.7071f, 1e-3);
+
+    // Non-existent tag returns nullptr
+    EXPECT_EQ(findCompiledSurveyedTag(999), nullptr);
+}
+
+TEST(AutopilotTest, AutopilotNodePreloadedWithCompiledTags) {
     AutopilotNode node;
 
-    // Initially no surveyed tags registered
-    EXPECT_FALSE(node.hasSurveyedTag(1));
-
-    // Autopilot registers global surveyed positions of fiducial tags in World NED
-    node.registerSurveyedTag(1, {1.5f, -0.3f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, 0.16f);
-    node.registerSurveyedTag(2, {3.0f, 0.2f, 1.2f}, {1.0f, 0.0f, 0.0f, 0.0f}, 0.16f);
-
+    // Node boots automatically initialized with compiled tag map from JSON
     EXPECT_TRUE(node.hasSurveyedTag(1));
     EXPECT_TRUE(node.hasSurveyedTag(2));
-    EXPECT_FALSE(node.hasSurveyedTag(3));
+    EXPECT_TRUE(node.hasSurveyedTag(3));
+    EXPECT_TRUE(node.hasSurveyedTag(4));
+    EXPECT_FALSE(node.hasSurveyedTag(5));
 
     SurveyedTagPose tag1{};
     EXPECT_TRUE(node.getSurveyedTag(1, tag1));
-    EXPECT_EQ(tag1.tag_id, 1);
     EXPECT_FLOAT_EQ(tag1.world_pos.x, 1.5f);
     EXPECT_FLOAT_EQ(tag1.world_pos.y, -0.3f);
     EXPECT_FLOAT_EQ(tag1.world_pos.z, 1.0f);
-    EXPECT_TRUE(tag1.is_known);
+
+    // Dynamic runtime additions or overrides can still be registered
+    node.registerSurveyedTag(5, {10.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, 0.25f);
+    EXPECT_TRUE(node.hasSurveyedTag(5));
 
     // Clear registry
     node.clearSurveyedTags();
     EXPECT_FALSE(node.hasSurveyedTag(1));
+    EXPECT_FALSE(node.hasSurveyedTag(5));
 }

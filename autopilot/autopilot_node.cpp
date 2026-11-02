@@ -1,4 +1,5 @@
 #include "autopilot_node.h"
+#include "generated_surveyed_tags.h"
 #include <iostream>
 #include <chrono>
 #include <cmath>
@@ -22,6 +23,9 @@ AutopilotNode::AutopilotNode()
       estimator(0.5, 2.0),
       logger("127.0.0.1", 14554)
 {
+    // Load pre-compiled surveyed tag map generated at compile time from surveyed_tags.json
+    loadCompiledSurveyedTags(*this);
+
     ui_sock = socket(AF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in ui_addr;
     memset(&ui_addr, 0, sizeof(ui_addr));
