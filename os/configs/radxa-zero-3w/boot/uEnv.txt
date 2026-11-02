@@ -1,0 +1,11 @@
+# /boot/uEnv.txt
+# Boot environment configuration for Radxa Zero 3W (Rockchip RK3566)
+verbosity=7
+console=both
+bootargs=earlycon=uart8250,mmio32,0xfe660000 console=ttyFIQ0,1500000n8 console=tty1 root=/dev/mmcblk0p2 rootwait rw net.ifnames=0 cgroup_enable=cpuset cgroup_memory=1 cgroup_enable=memory quiet
+
+# Hardware Overlays:
+#   radxa-zero3-uart4-m1 : Enables UART4 on Header Pins 16 (RX) & 18 (TX) for Flight Controller
+#   radxa-zero3-ov9281   : Enables MIPI CSI-2 interface for Arducam OV9281 global shutter camera
+#   radxa-zero3-i2c3-m0  : Enables I2C3 bus for VL53L0X ToF rangefinder
+overlays=radxa-zero3-uart4-m1 radxa-zero3-ov9281 radxa-zero3-i2c3-m0

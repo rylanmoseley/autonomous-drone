@@ -1,0 +1,26 @@
+[Unit]
+Description=Autonomous Drone Autopilot Daemon
+After=network.target local-fs.target drone-tuning.service
+Wants=network.target drone-tuning.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/drone
+ExecStart=/opt/drone/bin/autopilot_node
+Restart=always
+RestartSec=2
+
+# Realtime Scheduling Priority (SCHED_RR, priority 50)
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+CPUSchedulingPolicy=rr
+CPUSchedulingPriority=50
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=drone-autopilot
+
+[Install]
+WantedBy=multi-user.target

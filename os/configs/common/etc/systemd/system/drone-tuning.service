@@ -1,0 +1,13 @@
+[Unit]
+Description=Autonomous Drone Hardware & Performance Tuning
+DefaultDependencies=no
+After=local-fs.target
+Before=basic.target drone-autopilot.service drone-vision.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/drone/scripts/apply_tuning.sh
+
+[Install]
+WantedBy=basic.target
