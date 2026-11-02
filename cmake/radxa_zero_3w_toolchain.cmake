@@ -19,4 +19,7 @@ set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
 # Emulator for running cross-compiled tests on host
-set(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-aarch64-static -L /usr/aarch64-linux-gnu)
+find_program(QEMU_AARCH64_EMULATOR NAMES qemu-aarch64-static qemu-aarch64 PATHS /usr/bin /usr/local/bin)
+if(QEMU_AARCH64_EMULATOR)
+    set(CMAKE_CROSSCOMPILING_EMULATOR ${QEMU_AARCH64_EMULATOR} -L /usr/aarch64-linux-gnu)
+endif()
