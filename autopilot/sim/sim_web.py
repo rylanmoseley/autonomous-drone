@@ -5,12 +5,16 @@ import time
 import json
 import math
 import os
+import random
 import asyncio
 import websockets
 from websockets.server import serve
 from http import HTTPStatus
 import urllib.parse
 
+# ---------------------------------------------------------------------------
+# C-Compatible Data Contracts
+# ---------------------------------------------------------------------------
 class Pose(ctypes.Structure):
     _pack_ = 1
     _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double), ("z", ctypes.c_double), 
@@ -96,34 +100,157 @@ class UICommandPacket(ctypes.Structure):
         ("tube_rail_z", ctypes.c_float),
     ]
 
-class UIStatusPacket(ctypes.Structure):
-    _pack_ = 1
-    _fields_ = [
-        ("msg_type", ctypes.c_uint8),
-        ("sequence_id", ctypes.c_uint32),
-        ("timestamp_ns", ctypes.c_uint64),
-        ("flight_state", ctypes.c_uint8),
-        ("is_armed", ctypes.c_uint8),
-        ("estop_active", ctypes.c_uint8),
-        ("active_sequence_len", ctypes.c_uint8),
-        ("current_seq_index", ctypes.c_uint8),
-        ("current_target_shape", ctypes.c_uint8),
-        ("configured_end_action", ctypes.c_uint8),
-        ("battery_voltage", ctypes.c_float),
-        ("battery_remaining", ctypes.c_float),
-        ("active_error_flags", ctypes.c_uint32),
-        ("last_acked_cmd_id", ctypes.c_uint32),
-        ("cmd_ack_result", ctypes.c_uint8),
-    ]
+# ---------------------------------------------------------------------------
+# Kinematic Follower with Configurable Imputed Noise
+# ---------------------------------------------------------------------------
+class FollowerSimulator:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.tau_xy = 0.15
+        self.tau_z = 0.20
+        self.tau_yaw = 0.10
+        self.max_velocity_xy = 2.5
+        self.max_velocity_z = 1.5
+        self.max_acceleration = 8.0
+        self.max_yaw_rate = 2.0
 
+        self.noise_enabled = True
+        self.pos_noise_std_xy = 0.03
+        self.pos_noise_std_z = 0.015
+        self.yaw_noise_std = 0.02
+
+        self.drift_vel_x = 0.0
+        self.drift_vel_y = 0.0
+        self.drift_vel_z = 0.0
+
+        self.true_x = 0.0
+        self.true_y = 0.0
+        self.true_z = 1.0
+        self.true_yaw = 0.0
+        self.vx = 0.0
+        self.vy = 0.0
+        self.vz = 0.0
+
+        self.feedback_x = 0.0
+        self.feedback_y = 0.0
+        self.feedback_z = 1.0
+        self.feedback_yaw = 0.0
+
+        self.total_samples = 0
+        self.sum_sq_err = 0.0
+        self.max_error = 0.0
+        self.current_error = 0.0
+        self.total_dist = 0.0
+        self.last_target = {"x": 0.0, "y": 0.0, "z": 1.0, "yaw": 0.0}
+
+    def step(self, cmd, dt):
+        with self.lock:
+            if not cmd or not cmd.en:
+                self.vx = 0.0
+                self.vy = 0.0
+                self.vz = 0.0
+                self._apply_noise()
+                return
+
+            if cmd.est:
+                self.true_z = max(0.0, self.true_z - 9.81 * dt * dt)
+                self._apply_noise()
+                return
+
+            self.last_target = {"x": cmd.tx, "y": cmd.ty, "z": cmd.tz, "yaw": cmd.tyaw}
+
+            des_vx = (cmd.tx - self.true_x) / max(0.01, self.tau_xy)
+            des_vy = (cmd.ty - self.true_y) / max(0.01, self.tau_xy)
+            des_vz = (cmd.tz - self.true_z) / max(0.01, self.tau_z)
+
+            h_speed = math.sqrt(des_vx*des_vx + des_vy*des_vy)
+            if h_speed > self.max_velocity_xy and h_speed > 1e-6:
+                scale = self.max_velocity_xy / h_speed
+                des_vx *= scale
+                des_vy *= scale
+            des_vz = max(-self.max_velocity_z, min(self.max_velocity_z, des_vz))
+
+            max_dv = self.max_acceleration * dt
+            self.vx += max(-max_dv, min(max_dv, des_vx - self.vx))
+            self.vy += max(-max_dv, min(max_dv, des_vy - self.vy))
+            self.vz += max(-max_dv, min(max_dv, des_vz - self.vz))
+
+            dx = (self.vx + self.drift_vel_x) * dt
+            dy = (self.vy + self.drift_vel_y) * dt
+            dz = (self.vz + self.drift_vel_z) * dt
+            self.true_x += dx
+            self.true_y += dy
+            self.true_z = max(0.0, self.true_z + dz)
+            self.total_dist += math.sqrt(dx*dx + dy*dy + dz*dz)
+
+            dyaw = cmd.tyaw - self.true_yaw
+            while dyaw > math.pi: dyaw -= 2 * math.pi
+            while dyaw < -math.pi: dyaw += 2 * math.pi
+            yaw_rate = max(-self.max_yaw_rate, min(self.max_yaw_rate, dyaw / max(0.01, self.tau_yaw)))
+            self.true_yaw += yaw_rate * dt
+            while self.true_yaw > math.pi: self.true_yaw -= 2 * math.pi
+            while self.true_yaw < -math.pi: self.true_yaw += 2 * math.pi
+
+            self._apply_noise()
+
+            err_x = cmd.tx - self.true_x
+            err_y = cmd.ty - self.true_y
+            err_z = cmd.tz - self.true_z
+            self.current_error = math.sqrt(err_x*err_x + err_y*err_y + err_z*err_z)
+            if self.current_error > self.max_error:
+                self.max_error = self.current_error
+            self.sum_sq_err += self.current_error * self.current_error
+            self.total_samples += 1
+
+    def _apply_noise(self):
+        nx = random.gauss(0, self.pos_noise_std_xy) if self.noise_enabled else 0.0
+        ny = random.gauss(0, self.pos_noise_std_xy) if self.noise_enabled else 0.0
+        nz = random.gauss(0, self.pos_noise_std_z) if self.noise_enabled else 0.0
+        nyaw = random.gauss(0, self.yaw_noise_std) if self.noise_enabled else 0.0
+
+        self.feedback_x = self.true_x + nx
+        self.feedback_y = self.true_y + ny
+        self.feedback_z = max(0.0, self.true_z + nz)
+        self.feedback_yaw = self.true_yaw + nyaw
+
+    def get_state(self):
+        with self.lock:
+            rmse = math.sqrt(self.sum_sq_err / max(1, self.total_samples))
+            return {
+                "drone": {
+                    "x": self.true_x, "y": self.true_y, "z": self.true_z,
+                    "yaw": self.true_yaw, "pitch": max(-0.35, min(0.35, self.vx / 9.81)),
+                    "roll": max(-0.35, min(0.35, -self.vy / 9.81))
+                },
+                "feedback": {
+                    "x": self.feedback_x, "y": self.feedback_y, "z": self.feedback_z,
+                    "yaw": self.feedback_yaw
+                },
+                "command": self.last_target,
+                "metrics": {
+                    "current_error": round(self.current_error, 4),
+                    "rmse": round(rmse, 4),
+                    "max_error": round(self.max_error, 4),
+                    "distance": round(self.total_dist, 2)
+                },
+                "config": {
+                    "noise_enabled": self.noise_enabled,
+                    "pos_noise_std": self.pos_noise_std_xy,
+                    "yaw_noise_std": self.yaw_noise_std,
+                    "drift_x": self.drift_vel_x,
+                    "drift_y": self.drift_vel_y,
+                    "tau": self.tau_xy
+                }
+            }
+
+follower = FollowerSimulator()
 state_lock = threading.Lock()
-drone_pos = {"x": 0, "y": 0, "z": 1, "yaw": 0}
 vision_goals = [
-    {"id": 1, "x": 1.0, "y": 0.0, "z": 1.0, "yaw": 0.0},
-    {"id": 2, "x": 1.0, "y": 1.0, "z": 1.0, "yaw": 0.0}
+    {"id": 1, "shape": 3, "x": 1.5, "y": -0.5, "z": 1.0, "yaw": 0.0},
+    {"id": 2, "shape": 2, "x": 3.0, "y": 0.0, "z": 1.2, "yaw": 0.1},
+    {"id": 3, "shape": 1, "x": 4.5, "y": 0.5, "z": 1.0, "yaw": 0.0}
 ]
 vision_enabled = True
-global_fixed_speed = 2.0
 global_detections = []
 
 def fcu_thread():
@@ -137,57 +264,26 @@ def _fcu_thread():
     sock.bind(("0.0.0.0", 14551))
     sock.setblocking(False)
 
-    p = Pose(0,0,1,0,0,0,0,1)
     last_cmd = None
-    
+    dt = 0.05
+
     while True:
         try:
             data, addr = sock.recvfrom(1024)
             if len(data) == ctypes.sizeof(FlightCommand):
                 last_cmd = FlightCommand.from_buffer_copy(data)
-            else:
-                print(f"Data length mismatch: {len(data)} != {ctypes.sizeof(FlightCommand)}")
         except BlockingIOError:
             pass
         except Exception as e:
             print(f"FCU error: {e}")
 
-        dt = 0.05
-        if last_cmd and last_cmd.en:
-            with state_lock:
-                fixed_speed = global_fixed_speed
-            
-            dx = last_cmd.tx - p.x
-            dy = last_cmd.ty - p.y
-            dz = last_cmd.tz - p.z
-            dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-            
-            if dist > fixed_speed * dt:
-                p.x += (dx / dist) * fixed_speed * dt
-                p.y += (dy / dist) * fixed_speed * dt
-                p.z += (dz / dist) * fixed_speed * dt
-            else:
-                p.x = last_cmd.tx
-                p.y = last_cmd.ty
-                p.z = last_cmd.tz
-            
-            dyaw = last_cmd.tyaw - p.yaw
-            while dyaw > math.pi: dyaw -= 2*math.pi
-            while dyaw < -math.pi: dyaw += 2*math.pi
-            p.yaw += dyaw
-            
-            p.pitch = 0.0
-            p.roll = 0.0
-            
-            with state_lock:
-                drone_pos["x"] = p.x
-                drone_pos["y"] = p.y
-                drone_pos["z"] = p.z
-                drone_pos["yaw"] = p.yaw
-                drone_pos["pitch"] = p.pitch
-                drone_pos["roll"] = p.roll
+        follower.step(last_cmd, dt)
 
-        telem = Telemetry(p, 90, False)
+        # Transmit feedback pose in Telemetry datagram to Autopilot
+        with follower.lock:
+            p = Pose(follower.feedback_x, follower.feedback_y, follower.feedback_z,
+                     0.0, 0.0, follower.feedback_yaw, time.time(), 1.0)
+        telem = Telemetry(p, 92, False)
         sock.sendto(bytes(telem), ("127.0.0.1", 14550))
         time.sleep(dt)
 
@@ -200,8 +296,8 @@ def vision_thread():
     while True:
         with state_lock:
             enabled = vision_enabled
-            dets = list(global_detections)
-        
+            dets = list(global_detections) if global_detections else list(vision_goals)
+
         if enabled:
             pkt = VisionPacket()
             pkt.msg_type = 1 # MSG_TYPE_VISION
@@ -235,35 +331,39 @@ async def process_request(path, request_headers):
 cmd_counter = 0
 
 async def handler(websocket):
-    global vision_enabled, vision_goals, global_detections, global_fixed_speed, cmd_counter
-    
+    global vision_enabled, vision_goals, global_detections, cmd_counter
+
     async def send_state():
         while True:
+            sim_state = follower.get_state()
             with state_lock:
-                state = {"drone": drone_pos, "goals": vision_goals, "vision_enabled": vision_enabled}
+                sim_state["goals"] = vision_goals
+                sim_state["vision_enabled"] = vision_enabled
             try:
-                await websocket.send(json.dumps(state))
+                await websocket.send(json.dumps(sim_state))
             except Exception:
                 break
-            await asyncio.sleep(0.1) # 10Hz telemetry
-            
+            await asyncio.sleep(0.05) # 20Hz telemetry
+
     task = asyncio.create_task(send_state())
-    
+
     try:
         async for message in websocket:
             data = json.loads(message)
-            if data["type"] == "ui":
+            msg_type = data.get("type")
+            if msg_type == "ui":
                 cmd = UICommandPacket()
                 cmd.msg_type = 2 # MSG_TYPE_UI_CMD
                 cmd_counter += 1
                 cmd.command_id = cmd_counter
                 cmd.timestamp_ns = int(time.time() * 1e9)
-                cmd.command = 3 # UI_CMD_START_MISSION
-                cmd.sequence_length = min(len(data["goals"]), 16)
-                for i, g in enumerate(data["goals"][:16]):
+                cmd.command = data.get("command", 3) # UI_CMD_START_MISSION
+                goals_to_send = data.get("goals", vision_goals)
+                cmd.sequence_length = min(len(goals_to_send), 16)
+                for i, g in enumerate(goals_to_send[:16]):
                     cmd.goal_sequence[i] = g.get("shape", g.get("id", i + 1))
-                cmd.end_action = 0 # MISSION_END_HOVER
-                
+                cmd.end_action = data.get("end_action", 0) # MISSION_END_HOVER
+
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 sock.settimeout(0.5)
                 sock.sendto(bytes(cmd), ("127.0.0.1", 14552))
@@ -272,25 +372,47 @@ async def handler(websocket):
                 except socket.timeout:
                     pass
                 sock.close()
-            elif data["type"] == "vision":
-                with state_lock:
-                    global_detections = data.get("detections", [])
-            elif data["type"] == "toggle":
+            elif msg_type == "follower_config":
+                with follower.lock:
+                    if "pos_noise_std" in data:
+                        follower.pos_noise_std_xy = float(data["pos_noise_std"])
+                        follower.pos_noise_std_z = follower.pos_noise_std_xy * 0.5
+                    if "yaw_noise_std" in data:
+                        follower.yaw_noise_std = float(data["yaw_noise_std"])
+                    if "drift_x" in data:
+                        follower.drift_vel_x = float(data["drift_x"])
+                    if "drift_y" in data:
+                        follower.drift_vel_y = float(data["drift_y"])
+                    if "tau" in data:
+                        follower.tau_xy = float(data["tau"])
+                        follower.tau_z = follower.tau_xy * 1.33
+                    if "noise_enabled" in data:
+                        follower.noise_enabled = bool(data["noise_enabled"])
+            elif msg_type == "reset_sim":
+                with follower.lock:
+                    follower.true_x = 0.0
+                    follower.true_y = 0.0
+                    follower.true_z = 1.0
+                    follower.true_yaw = 0.0
+                    follower.vx = 0.0; follower.vy = 0.0; follower.vz = 0.0
+                    follower.total_samples = 0
+                    follower.sum_sq_err = 0.0
+                    follower.max_error = 0.0
+                    follower.current_error = 0.0
+                    follower.total_dist = 0.0
+            elif msg_type == "toggle":
                 with state_lock:
                     vision_enabled = data["enabled"]
-            elif data["type"] == "update_goals":
+            elif msg_type == "update_goals":
                 with state_lock:
                     vision_goals = data["goals"]
-            elif data["type"] == "config":
-                with state_lock:
-                    global_fixed_speed = data["max_velocity"]
     except Exception:
         pass
     finally:
         task.cancel()
 
 async def main():
-    print("Serving at http://localhost:5000")
+    print("Autopilot Simulation Server running at http://localhost:5000")
     async with serve(handler, "", 5000, process_request=process_request):
         await asyncio.Future()
 
