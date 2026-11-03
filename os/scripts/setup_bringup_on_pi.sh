@@ -47,7 +47,34 @@ nmcli con modify "$SSID" 802-11-wireless-security.psk "$PSK"
 nmcli con down "$SSID" 2>/dev/null || true
 nmcli con up "$SSID" 2>/dev/null || true
 
-# 4. Install MAVLink Proxy scripts
+# 4. Configure Hardware UART & Persistent Flight Controller Symlinks
+echo "[4/5] Configuring Flight Controller serial port..."
+CONFIG_TXT="/boot/firmware/config.txt"
+[ ! -f "$CONFIG_TXT" ] && [ -f "/boot/config.txt" ] && CONFIG_TXT="/boot/config.txt"
+
+if [ -f "$CONFIG_TXT" ]; then
+    grep -q "^enable_uart=1" "$CONFIG_TXT" || echo "enable_uart=1" >> "$CONFIG_TXT"
+    grep -q "^dtoverlay=miniuart-bt" "$CONFIG_TXT" || echo "dtoverlay=miniuart-bt" >> "$CONFIG_TXT"
+fi
+
+# Free up UART from Linux login console
+systemctl stop serial-getty@ttyAMA0.service 2>/dev/null || true
+systemctl disable serial-getty@ttyAMA0.service 2>/dev/null || true
+systemctl stop serial-getty@ttyS0.service 2>/dev/null || true
+systemctl disable serial-getty@ttyS0.service 2>/dev/null || true
+sed -i 's/console=serial0,[0-9]* //g; s/console=ttyAMA0,[0-9]* //g' /boot/firmware/cmdline.txt 2>/dev/null || true
+sed -i 's/console=serial0,[0-9]* //g; s/console=ttyAMA0,[0-9]* //g' /boot/cmdline.txt 2>/dev/null || true
+
+# Add udev symlinks for flight controller (supports GPIO UART pins or USB cable)
+cat > /etc/udev/rules.d/99-drone-hardware.rules << 'EOF'
+KERNEL=="ttyAMA0", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"
+KERNEL=="ttyACM[0-9]*", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"
+KERNEL=="ttyUSB[0-9]*", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"
+EOF
+udevadm control --reload-rules 2>/dev/null || true
+udevadm trigger 2>/dev/null || true
+
+# 5. Install MAVLink Proxy scripts
 echo "[4/5] Installing MAVLink bringup proxy..."
 mkdir -p /opt/drone/scripts /etc/mavlink-router /etc/systemd/system
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "")"
@@ -72,13 +99,6 @@ copy_or_download "os/configs/common/etc/mavlink-router/main.conf" "/etc/mavlink-
 copy_or_download "os/configs/common/etc/systemd/system/drone-mavlink-router.service" "/etc/systemd/system/drone-mavlink-router.service"
 
 chmod +x /opt/drone/scripts/*.sh /opt/drone/scripts/*.py 2>/dev/null || true
-
-# Add udev symlink for flight controller if not present
-if [ ! -f /etc/udev/rules.d/99-drone-hardware.rules ]; then
-    echo 'KERNEL=="ttyAMA0", SYMLINK+="flightcontroller", MODE="0666"' > /etc/udev/rules.d/99-drone-hardware.rules
-    udevadm control --reload-rules 2>/dev/null || true
-    udevadm trigger 2>/dev/null || true
-fi
 
 # 5. Enable MAVLink Proxy Service
 echo "[5/5] Activating drone-mavlink-router.service..."
