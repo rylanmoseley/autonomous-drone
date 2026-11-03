@@ -38,10 +38,12 @@ nmcli con modify "$SSID" ipv4.addresses 192.168.4.1/24
 nmcli con modify "$SSID" connection.autoconnect yes
 nmcli con modify "$SSID" connection.autoconnect-priority 100
 # Disable PMF and force standard WPA2 (prevents client connection handshaking errors on Pi Zero 2W)
-nmcli con modify "$SSID" wifi-sec.pmf 0
-nmcli con modify "$SSID" wifi-sec.proto rsn
-nmcli con modify "$SSID" wifi-sec.pairwise ccmp
-nmcli con modify "$SSID" wifi-sec.group ccmp
+nmcli con modify "$SSID" 802-11-wireless-security.key-mgmt wpa-psk
+nmcli con modify "$SSID" 802-11-wireless-security.pmf disable
+nmcli con modify "$SSID" 802-11-wireless-security.proto rsn
+nmcli con modify "$SSID" 802-11-wireless-security.pairwise ccmp
+nmcli con modify "$SSID" 802-11-wireless-security.group ccmp
+nmcli con modify "$SSID" 802-11-wireless-security.psk "$PSK"
 nmcli con down "$SSID" 2>/dev/null || true
 nmcli con up "$SSID" 2>/dev/null || true
 
