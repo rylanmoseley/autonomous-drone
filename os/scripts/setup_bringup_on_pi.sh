@@ -29,6 +29,7 @@ rfkill unblock all 2>/dev/null || true
 
 # 3. Configure NetworkManager Wi-Fi AP
 echo "[3/5] Configuring NetworkManager AP ($SSID)..."
+echo "options brcmfmac roamoff=1 feature_disable=0x82000" > /etc/modprobe.d/brcmfmac.conf
 nmcli con delete "$SSID" 2>/dev/null || true
 nmcli con delete drone-ap 2>/dev/null || true
 rm -f /etc/NetworkManager/system-connections/drone-ap.nmconnection
@@ -36,6 +37,12 @@ nmcli device wifi hotspot ifname wlan0 con-name "$SSID" ssid "$SSID" password "$
 nmcli con modify "$SSID" ipv4.addresses 192.168.4.1/24
 nmcli con modify "$SSID" connection.autoconnect yes
 nmcli con modify "$SSID" connection.autoconnect-priority 100
+# Disable PMF and force standard WPA2 (prevents client connection handshaking errors on Pi Zero 2W)
+nmcli con modify "$SSID" wifi-sec.pmf 0
+nmcli con modify "$SSID" wifi-sec.proto rsn
+nmcli con modify "$SSID" wifi-sec.pairwise ccmp
+nmcli con modify "$SSID" wifi-sec.group ccmp
+nmcli con down "$SSID" 2>/dev/null || true
 nmcli con up "$SSID" 2>/dev/null || true
 
 # 4. Install MAVLink Proxy scripts
