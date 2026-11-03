@@ -13,6 +13,16 @@
 #include <mutex>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <map>
+
+// Global surveyed pose of a fiducial tag owned authoritatively by the Autopilot
+struct SurveyedTagPose {
+    uint16_t tag_id{0};
+    Vec3f world_pos{0.0f, 0.0f, 0.0f};  // World NED coordinates (meters)
+    Quatf world_att{1.0f, 0.0f, 0.0f, 0.0f}; // World NED attitude
+    float size_m{0.16f};                 // Physical side length in meters
+    bool is_known{false};
+};
 
 class AutopilotNode {
 public:
@@ -60,6 +70,20 @@ public:
     std::chrono::steady_clock::time_point last_vision_time;
     std::mutex vision_mutex;
 
+    // Tag pass-through telemetry counters
+    uint32_t tags_received_count{0};
+    uint32_t tags_forwarded_count{0};
+    TagMeasurement last_tag_measurement{};
+
+    // Authoritative global tag survey map owned by the Autopilot
+    std::map<uint16_t, SurveyedTagPose> surveyed_tags_;
+    mutable std::mutex tag_map_mutex_;
+
+    void registerSurveyedTag(uint16_t tag_id, const Vec3f& world_pos, const Quatf& world_att, float size_m = 0.16f);
+    bool getSurveyedTag(uint16_t tag_id, SurveyedTagPose& out_tag) const;
+    bool hasSurveyedTag(uint16_t tag_id) const;
+    void clearSurveyedTags();
+
     AutopilotNode();
     ~AutopilotNode();
 
@@ -68,6 +92,7 @@ public:
     void run();
     void ui_loop();
     void vision_loop();
+    void handleVisionPacket(const VisionPacket& pkt, double current_time);
     void handleUICommand(const UICommandPacket& pkt, const struct sockaddr_in& from, socklen_t from_len);
     
     // For testing

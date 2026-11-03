@@ -1,4 +1,5 @@
 #include "autopilot_node.h"
+#include "generated_surveyed_tags.h"
 #include <iostream>
 #include <chrono>
 #include <cmath>
@@ -22,6 +23,9 @@ AutopilotNode::AutopilotNode()
       estimator(0.5, 2.0),
       logger("127.0.0.1", 14554)
 {
+    // Load pre-compiled surveyed tag map generated at compile time from surveyed_tags.json
+    loadCompiledSurveyedTags(*this);
+
     ui_sock = socket(AF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in ui_addr;
     memset(&ui_addr, 0, sizeof(ui_addr));
@@ -171,6 +175,59 @@ void AutopilotNode::ui_loop() {
     }
 }
 
+void AutopilotNode::registerSurveyedTag(uint16_t tag_id, const Vec3f& world_pos, const Quatf& world_att, float size_m) {
+    std::lock_guard<std::mutex> lock(tag_map_mutex_);
+    SurveyedTagPose tag{};
+    tag.tag_id = tag_id;
+    tag.world_pos = world_pos;
+    tag.world_att = world_att;
+    tag.size_m = size_m;
+    tag.is_known = true;
+    surveyed_tags_[tag_id] = tag;
+}
+
+bool AutopilotNode::getSurveyedTag(uint16_t tag_id, SurveyedTagPose& out_tag) const {
+    std::lock_guard<std::mutex> lock(tag_map_mutex_);
+    auto it = surveyed_tags_.find(tag_id);
+    if (it != surveyed_tags_.end()) {
+        out_tag = it->second;
+        return true;
+    }
+    return false;
+}
+
+bool AutopilotNode::hasSurveyedTag(uint16_t tag_id) const {
+    std::lock_guard<std::mutex> lock(tag_map_mutex_);
+    return surveyed_tags_.find(tag_id) != surveyed_tags_.end();
+}
+
+void AutopilotNode::clearSurveyedTags() {
+    std::lock_guard<std::mutex> lock(tag_map_mutex_);
+    surveyed_tags_.clear();
+}
+
+void AutopilotNode::handleVisionPacket(const VisionPacket& pkt, double current_time) {
+    estimator.updateEstimates(pkt, current_time);
+    {
+        std::lock_guard<std::mutex> lock(vision_mutex);
+        last_vision_time = std::chrono::steady_clock::now();
+    }
+
+    // Pass through global tag measurements (AprilTag / ChArUco) to ArduPilot FCU via MAVLink
+    for (uint8_t i = 0; i < pkt.num_tags_detected && i < 4; ++i) {
+        const TagMeasurement& tag = pkt.tags[i];
+        if (tag.is_valid) {
+            tags_received_count++;
+            uint64_t usec = (pkt.timestamp_ns > 0)
+                ? (pkt.timestamp_ns / 1000)
+                : static_cast<uint64_t>(current_time * 1e6);
+            fcu.sendVisionPositionEstimate(tag, usec);
+            tags_forwarded_count++;
+            last_tag_measurement = tag;
+        }
+    }
+}
+
 void AutopilotNode::vision_loop() {
     char buffer[2048];
     while (running) {
@@ -181,11 +238,7 @@ void AutopilotNode::vision_loop() {
             if (pkt->msg_type == MSG_TYPE_VISION) {
                 double current_time = std::chrono::duration<double>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
-                estimator.updateEstimates(*pkt, current_time);
-                {
-                    std::lock_guard<std::mutex> lock(vision_mutex);
-                    last_vision_time = std::chrono::steady_clock::now();
-                }
+                handleVisionPacket(*pkt, current_time);
             }
         }
     }
@@ -262,14 +315,14 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         double dy = raw_target.y - current_pose.y;
                         if (dx * hoop_nx + dy * hoop_ny > 0) { approach_dx = hoop_nx; approach_dy = hoop_ny; }
                         else { approach_dx = -hoop_nx; approach_dy = -hoop_ny; }
-                        double dest_x = raw_target.x - approach_dx * 0.5;
-                        double dest_y = raw_target.y - approach_dy * 0.5;
+                        double dest_x = raw_target.x - approach_dx * 0.70;
+                        double dest_y = raw_target.y - approach_dy * 0.70;
                         transit_yaw = atan2(dest_y - current_pose.y, dest_x - current_pose.x);
                         new_goal = false; goal_phase = 0;
                     }
                     Pose adjusted_target = raw_target;
                     
-                    // APF obstacle avoidance from other detected shapes
+                    // APF obstacle avoidance from other detected shapes (No-Go Keep-Out Zones)
                     double apf_vx = 0.0, apf_vy = 0.0;
                     for (const auto& other_tg : ests) {
                         if (other_tg.shape_type == target_shape) continue;
@@ -277,25 +330,25 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         double dx = current_pose.x - gx; double dy = current_pose.y - gy; double dz = current_pose.z - gz;
                         double dist_3d = std::sqrt(dx*dx + dy*dy + dz*dz);
                         double dist_2d = std::sqrt(dx*dx + dy*dy);
-                        if (dist_3d < 0.4) {
+                        if (dist_3d < 0.42) {
                             if (dist_2d < 0.001) { dx = 1.0; dy = 0.0; dist_2d = 1.0; }
-                            double force = (0.4 - dist_3d) * 5.0;
+                            double force = (0.42 - dist_3d) * 8.0;
                             apf_vx += (dx / dist_2d) * force;
                             apf_vy += (dy / dist_2d) * force;
-                            apf_vx += -(dy / dist_2d) * force * 0.5;
-                            apf_vy += (dx / dist_2d) * force * 0.5;
+                            apf_vx += -(dy / dist_2d) * force * 0.8; // Tangential deflection around obstacle cylinder
+                            apf_vy += (dx / dist_2d) * force * 0.8;
                         }
                     }
 
                     if (goal_phase == 0) {
-                        adjusted_target.x = raw_target.x - approach_dx * 0.5;
-                        adjusted_target.y = raw_target.y - approach_dy * 0.5;
+                        adjusted_target.x = raw_target.x - approach_dx * 0.70;
+                        adjusted_target.y = raw_target.y - approach_dy * 0.70;
                         adjusted_target.yaw = transit_yaw;
                         cmd = planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
                         if (planner.has_arrived(current_pose, adjusted_target)) goal_phase = 1;
                     } else if (goal_phase == 1) {
-                        adjusted_target.x = raw_target.x - approach_dx * 0.5;
-                        adjusted_target.y = raw_target.y - approach_dy * 0.5;
+                        adjusted_target.x = raw_target.x - approach_dx * 0.70;
+                        adjusted_target.y = raw_target.y - approach_dy * 0.70;
                         adjusted_target.yaw = atan2(approach_dy, approach_dx);
                         cmd = planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
                         double dyaw = adjusted_target.yaw - current_pose.yaw;
@@ -303,8 +356,8 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
                         if (std::abs(dyaw) < 0.087) goal_phase = 2;
                     } else {
-                        adjusted_target.x = raw_target.x + approach_dx * 0.5;
-                        adjusted_target.y = raw_target.y + approach_dy * 0.5;
+                        adjusted_target.x = raw_target.x + approach_dx * 0.70;
+                        adjusted_target.y = raw_target.y + approach_dy * 0.70;
                         adjusted_target.yaw = atan2(approach_dy, approach_dx);
                         cmd = planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
                         if (planner.has_arrived(current_pose, adjusted_target)) {

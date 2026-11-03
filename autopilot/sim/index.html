@@ -109,6 +109,9 @@
         <!-- Mission Sequence -->
         <div class="panel">
             <h3>Autonomous Mission</h3>
+            <div id="mission-status-box" style="font-size: 13px; font-weight: bold; padding: 8px; border-radius: 6px; background: #e9ecef; text-align: center; margin-bottom: 10px; color: #495057;">
+                &#9632; Status: STANDBY (Ready)
+            </div>
             <label style="font-size: 12px;">Waypoint 1:</label>
             <select id="seq-1">
                 <option value="circle" selected>Circle</option>
@@ -127,7 +130,8 @@
                 <option value="triangle">Triangle</option>
                 <option value="square" selected>Square</option>
             </select>
-            <button onclick="sendUISequence()">Start Mission (Port 14552)</button>
+            <button id="btn-start" onclick="sendUISequence()" style="background: #28a745; font-size: 14px;">Start Mission</button>
+            <button onclick="emergencyStop()" style="background: #dc3545; margin-top: 6px;">Emergency Stop (E-Stop)</button>
         </div>
     </div>
     
@@ -162,29 +166,129 @@
             shapesList.appendChild(div);
         });
 
-        const ws = new WebSocket("ws://" + location.host);
-        
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.drone) {
-                drone.position.set(data.drone.x, data.drone.z, -data.drone.y);
-                drone.rotation.y = data.drone.yaw + Math.PI / 2;
-                drone.rotation.x = data.drone.pitch || 0;
-                drone.rotation.z = data.drone.roll || 0;
+        let ws = null;
+        let latestDetections = [];
+        let latestCollision = null;
+
+        function connectWebSocket() {
+            const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+            let path = location.pathname;
+            // Handle reverse proxies like /proxy/5000/
+            if (!path.endsWith("/")) {
+                path = path.substring(0, path.lastIndexOf("/") + 1);
             }
-            if (data.feedback && feedbackMarker) {
-                feedbackMarker.position.set(data.feedback.x, data.feedback.z, -data.feedback.y);
+            if (!path.endsWith("/")) {
+                path += "/";
             }
-            if (data.command && targetMarker) {
-                targetMarker.position.set(data.command.x, data.command.z, -data.command.y);
+            const wsUrl = `${wsProtocol}//${location.host}${path}`;
+
+            try {
+                ws = new WebSocket(wsUrl);
+            } catch (err) {
+                console.error("Failed to initialize WebSocket:", err);
+                return;
             }
-            if (data.metrics) {
-                document.getElementById("metric-curr-err").innerText = data.metrics.current_error.toFixed(3) + " m";
-                document.getElementById("metric-rmse").innerText = data.metrics.rmse.toFixed(3) + " m";
-                document.getElementById("metric-max-err").innerText = data.metrics.max_error.toFixed(3) + " m";
-                document.getElementById("metric-dist").innerText = data.metrics.distance.toFixed(1) + " m";
-            }
-        };
+
+            ws.onopen = () => {
+                console.log("Connected to simulation server at", wsUrl);
+                sendFollowerConfig();
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.drone && drone) {
+                        drone.position.set(data.drone.x, data.drone.z, -data.drone.y);
+                        drone.rotation.y = data.drone.yaw;
+                        drone.rotation.x = data.drone.pitch || 0;
+                        drone.rotation.z = data.drone.roll || 0;
+                    }
+                    if (data.feedback && feedbackMarker) {
+                        feedbackMarker.position.set(data.feedback.x, data.feedback.z, -data.feedback.y);
+                    }
+                    if (data.command && targetMarker) {
+                        targetMarker.position.set(data.command.x, data.command.z, -data.command.y);
+                    }
+                    if (data.metrics) {
+                        const currErr = document.getElementById("metric-curr-err");
+                        if (currErr) currErr.innerText = data.metrics.current_error.toFixed(3) + " m";
+                        const rmse = document.getElementById("metric-rmse");
+                        if (rmse) rmse.innerText = data.metrics.rmse.toFixed(3) + " m";
+                        const maxErr = document.getElementById("metric-max-err");
+                        if (maxErr) maxErr.innerText = data.metrics.max_error.toFixed(3) + " m";
+                        const dist = document.getElementById("metric-dist");
+                        if (dist) dist.innerText = data.metrics.distance.toFixed(1) + " m";
+                    }
+
+                    if (data.detections) {
+                        latestDetections = data.detections;
+                    }
+                    if (data.collision) {
+                        latestCollision = data.collision;
+                    }
+
+                    // Update Mission Status Badge with perception and safety feedback
+                    const statusBox = document.getElementById("mission-status-box");
+                    const startBtn = document.getElementById("btn-start");
+                    if (statusBox) {
+                        if (data.collision && data.collision.collision) {
+                            statusBox.innerHTML = `&#9888; ${data.collision.object} (E-STOP)`;
+                            statusBox.style.background = "#f8d7da";
+                            statusBox.style.color = "#721c24";
+                            if (startBtn) {
+                                startBtn.innerText = "Crash / E-Stop";
+                                startBtn.style.background = "#dc3545";
+                            }
+                        } else if (data.autopilot_connected) {
+                            statusBox.innerHTML = '<span style="color:#28a745;">&#9679;</span> AUTOPILOT ACTIVE (Port 14551)';
+                            statusBox.style.background = "#d4edda";
+                            statusBox.style.color = "#155724";
+                        } else if (data.status_text) {
+                            const txt = data.status_text;
+                            statusBox.innerHTML = txt;
+                            if (txt.includes("SEARCH")) {
+                                statusBox.style.background = "#fff3cd";
+                                statusBox.style.color = "#856404";
+                                if (startBtn) { startBtn.innerText = "Searching Target..."; startBtn.style.background = "#ffc107"; startBtn.style.color = "#212529"; }
+                            } else if (txt.includes("AVOID")) {
+                                statusBox.style.background = "#ffe8d6";
+                                statusBox.style.color = "#b05206";
+                                if (startBtn) { startBtn.innerText = "Avoiding Obstacle..."; startBtn.style.background = "#fd7e14"; startBtn.style.color = "#fff"; }
+                            } else if (txt.includes("LOCKED") || txt.includes("ALIGN")) {
+                                statusBox.style.background = "#cce5ff";
+                                statusBox.style.color = "#004085";
+                                if (startBtn) { startBtn.innerText = "Boresight Locked..."; startBtn.style.background = "#007bff"; startBtn.style.color = "#fff"; }
+                            } else if (txt.includes("TRAVERS")) {
+                                statusBox.style.background = "#e2d9f3";
+                                statusBox.style.color = "#472175";
+                                if (startBtn) { startBtn.innerText = "Traversing Gate..."; startBtn.style.background = "#6f42c1"; startBtn.style.color = "#fff"; }
+                            } else if (txt.includes("COMPLETE")) {
+                                statusBox.style.background = "#d4edda";
+                                statusBox.style.color = "#155724";
+                                if (startBtn) { startBtn.innerText = "Mission Complete"; startBtn.style.background = "#28a745"; startBtn.style.color = "#fff"; }
+                            } else {
+                                statusBox.style.background = "#e9ecef";
+                                statusBox.style.color = "#495057";
+                                if (startBtn) { startBtn.innerText = "Start Mission"; startBtn.style.background = "#28a745"; startBtn.style.color = "#fff"; }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error processing telemetry:", e);
+                }
+            };
+
+            ws.onclose = () => {
+                console.warn("Simulation WebSocket closed. Retrying in 2 seconds...");
+                setTimeout(connectWebSocket, 2000);
+            };
+
+            ws.onerror = (err) => {
+                console.error("Simulation WebSocket error:", err);
+            };
+        }
+
+        connectWebSocket();
 
         function sendFollowerConfig() {
             const enabled = document.getElementById("noise-toggle").checked;
@@ -200,7 +304,7 @@
             document.getElementById("lbl-drift-x").innerText = driftX.toFixed(2) + " m/s";
             document.getElementById("lbl-drift-y").innerText = driftY.toFixed(2) + " m/s";
 
-            if (ws.readyState === WebSocket.OPEN) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: "follower_config",
                     noise_enabled: enabled,
@@ -214,14 +318,16 @@
         }
 
         function resetSim() {
-            if (ws.readyState === WebSocket.OPEN) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: "reset_sim" }));
             }
         }
 
         function toggleVision() {
             const enabled = document.getElementById("vision-toggle").checked;
-            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "toggle", enabled: enabled }));
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "toggle", enabled: enabled }));
+            }
         }
 
         function updateVisionGoals() {
@@ -234,11 +340,24 @@
             const goalsArray = Object.values(shapes).map(s => ({
                 id: s.id, shape: s.shape, x: s.x, y: s.y, z: s.z, yaw: s.yaw
             }));
-            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "update_goals", goals: goalsArray }));
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "update_goals", goals: goalsArray }));
+            }
             updateThreeJsHoops();
         }
 
+        function emergencyStop() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "ui", command: 7 })); // UI_CMD_ESTOP
+            }
+        }
+
         function sendUISequence() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert("Simulator WebSocket not connected yet. Please wait a moment.");
+                return;
+            }
+
             const seq1 = document.getElementById("seq-1").value;
             const seq2 = document.getElementById("seq-2").value;
             const seq3 = document.getElementById("seq-3").value;
@@ -249,9 +368,10 @@
                 { id: shapes[seq3].id, shape: shapes[seq3].shape, x: shapes[seq3].x, y: shapes[seq3].y, z: shapes[seq3].z, yaw: shapes[seq3].yaw }
             ];
 
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: "ui", command: 3, goals: sequenceGoals, end_action: 0 }));
-            }
+            const btn = document.getElementById("btn-start");
+            if (btn) btn.innerText = "Starting...";
+
+            ws.send(JSON.stringify({ type: "ui", command: 3, goals: sequenceGoals, end_action: 0 }));
         }
 
         // -------------------------------------------------------------------
@@ -285,9 +405,20 @@
         const arm1 = new THREE.Mesh(armGeo, armMat); arm1.rotation.y = Math.PI / 4; drone.add(arm1);
         const arm2 = new THREE.Mesh(armGeo, armMat); arm2.rotation.y = -Math.PI / 4; drone.add(arm2);
 
+        // FPV Camera mounted at the front nose of the drone, facing forward (+X direction)
         const droneCamera = new THREE.PerspectiveCamera(70, 320 / 240, 0.05, 20);
+        droneCamera.position.set(0.18, 0.04, 0);
         droneCamera.rotation.y = -Math.PI / 2;
         drone.add(droneCamera);
+
+        // Visualized Camera Frustum Cone (70 deg FOV)
+        const fovGeo = new THREE.ConeGeometry(1.2, 2.5, 4, 1, true);
+        const fovMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, wireframe: true, transparent: true, opacity: 0.15 });
+        const fovCone = new THREE.Mesh(fovGeo, fovMat);
+        fovCone.rotation.z = -Math.PI / 2;
+        fovCone.position.set(1.25, 0.04, 0);
+        drone.add(fovCone);
+
         scene.add(drone);
 
         // Noisy Feedback Marker (Cyan wireframe sphere showing state estimation jitter)
@@ -313,10 +444,13 @@
         scene.add(new THREE.AmbientLight(0x606070));
 
         let hoopMeshes = [];
+        let nogoMeshes = [];
 
         function updateThreeJsHoops() {
             hoopMeshes.forEach(h => scene.remove(h));
+            nogoMeshes.forEach(m => scene.remove(m));
             hoopMeshes = [];
+            nogoMeshes = [];
             Object.values(shapes).forEach(s => {
                 const geometry = new THREE.TorusGeometry(0.20, 0.03, 16, s.segments);
                 const material = new THREE.MeshStandardMaterial({ color: s.color, roughness: 0.4 });
@@ -327,15 +461,111 @@
                 torus.userData = { id: s.id, shape: s.shape };
                 scene.add(torus);
                 hoopMeshes.push(torus);
+
+                // No-Go Zone Keep-Out Boundary (0.55m buffer cylinder around physical gate)
+                const nogoGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.60, 20, 1, true);
+                const nogoMat = new THREE.MeshBasicMaterial({ color: 0xff3333, wireframe: true, transparent: true, opacity: 0.18 });
+                const nogo = new THREE.Mesh(nogoGeo, nogoMat);
+                nogo.position.set(s.x, s.z, -s.y);
+                nogo.rotation.y = s.yaw + Math.PI / 2;
+                scene.add(nogo);
+                nogoMeshes.push(nogo);
             });
         }
         
         updateVisionGoals();
 
         function updateVision() {
+            // Temporarily hide drone body, frustum cone, and tracking markers so FPV camera only sees world & gates
+            drone.visible = false;
+            if (fovCone) fovCone.visible = false;
+            if (feedbackMarker) feedbackMarker.visible = false;
+            if (targetMarker) targetMarker.visible = false;
+
             pipRenderer.render(scene, droneCamera);
+
+            drone.visible = true;
+            if (fovCone) fovCone.visible = true;
+            if (feedbackMarker) feedbackMarker.visible = true;
+            if (targetMarker) targetMarker.visible = true;
+
+            // Render FPV HUD reticle and dynamic vision detection bounding boxes
+            const canvas = document.getElementById("pip-overlay");
+            if (canvas) {
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, 320, 240);
+                
+                // Central crosshairs
+                ctx.strokeStyle = "rgba(0, 255, 120, 0.75)";
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(140, 120); ctx.lineTo(180, 120);
+                ctx.moveTo(160, 100); ctx.lineTo(160, 140);
+                ctx.stroke();
+
+                // Center reticle ring
+                ctx.strokeStyle = "rgba(0, 255, 120, 0.4)";
+                ctx.beginPath();
+                ctx.arc(160, 120, 18, 0, 2 * Math.PI);
+                ctx.stroke();
+
+                // Dynamic target recognition bounding boxes gathered by vision
+                if (latestDetections && latestDetections.length > 0) {
+                    latestDetections.forEach(det => {
+                        const cx = det.u;
+                        const cy = det.v;
+                        const sz = det.box_size || 40;
+                        const hs = sz / 2;
+                        const cl = Math.min(10, hs * 0.4);
+
+                        // Corner brackets
+                        ctx.strokeStyle = "#00ff66";
+                        ctx.lineWidth = 2.0;
+                        ctx.beginPath();
+                        // Top-left
+                        ctx.moveTo(cx - hs, cy - hs + cl); ctx.lineTo(cx - hs, cy - hs); ctx.lineTo(cx - hs + cl, cy - hs);
+                        // Top-right
+                        ctx.moveTo(cx + hs - cl, cy - hs); ctx.lineTo(cx + hs, cy - hs); ctx.lineTo(cx + hs, cy - hs + cl);
+                        // Bottom-left
+                        ctx.moveTo(cx - hs, cy + hs - cl); ctx.lineTo(cx - hs, cy + hs); ctx.lineTo(cx - hs + cl, cy + hs);
+                        // Bottom-right
+                        ctx.moveTo(cx + hs - cl, cy + hs); ctx.lineTo(cx + hs, cy + hs); ctx.lineTo(cx + hs, cy + hs - cl);
+                        ctx.stroke();
+
+                        // Centroid dot
+                        ctx.fillStyle = "#00ff66";
+                        ctx.fillRect(cx - 2, cy - 2, 4, 4);
+
+                        // Label
+                        const sName = det.shape === 1 ? "CIRCLE" : (det.shape === 2 ? "TRIANGLE" : "SQUARE");
+                        ctx.font = "10px monospace";
+                        ctx.fillStyle = "rgba(0,0,0,0.65)";
+                        ctx.fillRect(cx - hs, cy - hs - 15, 105, 13);
+                        ctx.fillStyle = "#00ff66";
+                        ctx.fillText(`[${sName}] ${det.dist}m`, cx - hs + 2, cy - hs - 4);
+                    });
+                }
+
+                // FPV HUD status text
+                ctx.font = "11px monospace";
+                ctx.fillStyle = "rgba(0, 255, 120, 0.9)";
+                ctx.fillText("CAM 0: FPV NOSE FORWARD", 10, 18);
+                if (latestDetections && latestDetections.length > 0) {
+                    ctx.fillStyle = "#00ff66";
+                    ctx.fillText(`LOCK: ${latestDetections.length} TARGET(S) IN FOV`, 10, 32);
+                } else {
+                    ctx.fillStyle = "#ffc107";
+                    ctx.fillText("SEARCH: NO TARGET IN FOV", 10, 32);
+                }
+
+                if (latestCollision && latestCollision.collision) {
+                    ctx.fillStyle = "#ff3333";
+                    ctx.font = "bold 12px monospace";
+                    ctx.fillText("ALERT: COLLISION DETECTED!", 10, 48);
+                }
+            }
         }
-        setInterval(updateVision, 100);
+        setInterval(updateVision, 33);
 
         function animate() {
             requestAnimationFrame(animate);

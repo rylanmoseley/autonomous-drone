@@ -25,8 +25,9 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 TARGET="radxa"
 DISTRO="bookworm"
+PROFILE="bringup"
 OUTPUT_DIR="$SCRIPT_DIR/output"
-IMAGE_SIZE_MB="2560"
+IMAGE_SIZE_MB="1536"
 COMPRESS="true"
 SKIP_BOOTSTRAP="false"
 SKIP_IMAGE="false"
@@ -50,6 +51,9 @@ Target Platforms:
 
 Options:
   --distro <name>         Debian distribution (bookworm, trixie; default: bookworm)
+  --mode <bringup|flight> Image profile (default: bringup for hardware testing)
+  --bringup               Configure for hardware bringup (MAVLink proxy only)
+  --flight                Configure for autonomous flight (autopilot & vision enabled)
   --output-dir <path>     Directory to store finished images (default: os/output)
   --image-size <MB>       Disk image size in megabytes (default: 2560)
   --no-compress           Do not compress .img with xz (saves time on local test builds)
@@ -83,6 +87,18 @@ while [ "$#" -gt 0 ]; do
         --distro)
             DISTRO="$2"
             shift 2
+            ;;
+        --mode)
+            PROFILE="$2"
+            shift 2
+            ;;
+        --bringup)
+            PROFILE="bringup"
+            shift
+            ;;
+        --flight)
+            PROFILE="flight"
+            shift
             ;;
         --output-dir)
             OUTPUT_DIR="$2"
@@ -130,7 +146,7 @@ if [ "$USE_DOCKER" = "true" ]; then
     docker run --rm --privileged \
                -v "$REPO_DIR:/workspace" \
                drone-os-builder \
-               /workspace/os/build_os.sh --target "$TARGET" --distro "$DISTRO" \
+               /workspace/os/build_os.sh --target "$TARGET" --distro "$DISTRO" --mode "$PROFILE" \
                                         $([ "$COMPRESS" = "false" ] && echo "--no-compress") \
                                         $([ "$SKIP_IMAGE" = "true" ] && echo "--skip-image")
     exit 0
@@ -147,7 +163,7 @@ build_target() {
 
     echo ""
     echo -e "${GREEN}================================================================${NC}"
-    echo -e "${GREEN} Building Drone OS for Target: ${tgt} (${DISTRO})${NC}"
+    echo -e "${GREEN} Building Drone OS for Target: ${tgt} (${DISTRO}, Profile: ${PROFILE})${NC}"
     echo -e "${GREEN} Output: ${output_img}${NC}"
     echo -e "${GREEN}================================================================${NC}"
 
@@ -162,12 +178,12 @@ build_target() {
     fi
 
     # Stage 1: Configure system, networking, users, udev, systemd services
-    echo -e "${BLUE}[STAGE 1] Applying configurations, WiFi AP, and services...${NC}"
-    "$SCRIPT_DIR/scripts/10_configure_system.sh" "$tgt" "$rootfs_dir"
+    echo -e "${BLUE}[STAGE 1] Applying configurations, WiFi AP, and services (Profile: ${PROFILE})...${NC}"
+    "$SCRIPT_DIR/scripts/10_configure_system.sh" "$tgt" "$rootfs_dir" "$PROFILE"
 
     # Stage 2: Cross-compile and deploy drone flight binaries
-    echo -e "${BLUE}[STAGE 2] Building and deploying drone binaries...${NC}"
-    "$SCRIPT_DIR/scripts/20_deploy_binaries.sh" "$tgt" "$rootfs_dir"
+    echo -e "${BLUE}[STAGE 2] Building and deploying drone binaries (Profile: ${PROFILE})...${NC}"
+    "$SCRIPT_DIR/scripts/20_deploy_binaries.sh" "$tgt" "$rootfs_dir" "$PROFILE"
 
     # Stage 3: Package into flashable partitioned disk image
     if [ "$SKIP_IMAGE" = "true" ]; then

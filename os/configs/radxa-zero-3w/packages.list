@@ -17,6 +17,8 @@ cpufrequtils
 
 # Networking & Telemetry Access Point
 network-manager
+wpasupplicant
+rfkill
 avahi-daemon
 iproute2
 iw

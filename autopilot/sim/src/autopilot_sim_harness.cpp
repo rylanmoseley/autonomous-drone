@@ -38,6 +38,30 @@ void AutopilotSimHarness::clearSimulatedGoals() {
     simulated_goals_.clear();
 }
 
+void AutopilotSimHarness::addSimulatedTag(uint16_t tag_id, double x, double y, double z, double roll, double pitch, double yaw, float confidence) {
+    simulated_tags_.push_back({tag_id, x, y, z, roll, pitch, yaw, confidence});
+
+    // Register tag in AutopilotNode's authoritative global survey map
+    double cy = std::cos(yaw * 0.5);
+    double sy = std::sin(yaw * 0.5);
+    double cp = std::cos(pitch * 0.5);
+    double sp = std::sin(pitch * 0.5);
+    double cr = std::cos(roll * 0.5);
+    double sr = std::sin(roll * 0.5);
+    Quatf att{
+        static_cast<float>(cr * cp * cy + sr * cp * sy),
+        static_cast<float>(sr * cp * cy - cr * sp * sy),
+        static_cast<float>(cr * sp * cy + sr * cp * sy),
+        static_cast<float>(cr * cp * sy - sr * sp * cy)
+    };
+    autopilot_.registerSurveyedTag(tag_id, {static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)}, att);
+}
+
+void AutopilotSimHarness::clearSimulatedTags() {
+    simulated_tags_.clear();
+    autopilot_.clearSurveyedTags();
+}
+
 void AutopilotSimHarness::reset(const Pose& initial_pose) {
     follower_.reset(initial_pose);
     trajectory_.clear();
@@ -45,14 +69,15 @@ void AutopilotSimHarness::reset(const Pose& initial_pose) {
 }
 
 void AutopilotSimHarness::injectVisionTelemetry(double current_time) {
-    if (!vision_enabled_ || simulated_goals_.empty()) return;
+    if (!vision_enabled_ || (simulated_goals_.empty() && simulated_tags_.empty())) return;
 
     VisionPacket v_pkt{};
     v_pkt.msg_type = MSG_TYPE_VISION;
     v_pkt.sequence_id = ++vision_seq_id_;
     v_pkt.timestamp_ns = static_cast<uint64_t>(current_time * 1e9);
-    v_pkt.num_goals_reported = static_cast<uint8_t>(std::min(simulated_goals_.size(), static_cast<size_t>(3)));
 
+    // 1. Populate goals
+    v_pkt.num_goals_reported = static_cast<uint8_t>(std::min(simulated_goals_.size(), static_cast<size_t>(3)));
     for (size_t i = 0; i < v_pkt.num_goals_reported; ++i) {
         const auto& goal = simulated_goals_[i];
         GoalMeasurement& gm = v_pkt.goals[i];
@@ -69,12 +94,53 @@ void AutopilotSimHarness::injectVisionTelemetry(double current_time) {
         gm.hypotheses[0].confidence = 1.0f;
     }
 
-    autopilot_.getEstimator().updateEstimates(v_pkt, current_time);
+    // 2. Populate fiducial tags (AprilTag / ChArUco global pose readings)
+    // When the drone's camera is within viewing range of a surveyed tag, the vision
+    // system computes the camera's world position and attitude.
+    v_pkt.num_tags_detected = 0;
+    const Pose& true_p = follower_.getTruePose();
+    for (const auto& tag : simulated_tags_) {
+        if (v_pkt.num_tags_detected >= 4) break;
+        double dx = true_p.x - tag.x;
+        double dy = true_p.y - tag.y;
+        double dz = true_p.z - tag.z;
+        double dist = std::sqrt(dx * dx + dy * dy + dz * dz);
 
-    // Keep vision timestamp fresh in autopilot to simulate active sensor heartbeat
-    {
-        std::lock_guard<std::mutex> lock(autopilot_.vision_mutex);
-        autopilot_.last_vision_time = std::chrono::steady_clock::now();
+        // Visible when within 3.5m radius of the surveyed tag
+        if (dist <= 3.5) {
+            TagMeasurement& tm = v_pkt.tags[v_pkt.num_tags_detected++];
+            tm.tag_id = tag.tag_id;
+            tm.is_valid = 1;
+            tm.camera_pos_world = {
+                static_cast<float>(true_p.x),
+                static_cast<float>(true_p.y),
+                static_cast<float>(true_p.z)
+            };
+
+            double cy = std::cos(true_p.yaw * 0.5);
+            double sy = std::sin(true_p.yaw * 0.5);
+            double cp = std::cos(true_p.pitch * 0.5);
+            double sp = std::sin(true_p.pitch * 0.5);
+            double cr = std::cos(true_p.roll * 0.5);
+            double sr = std::sin(true_p.roll * 0.5);
+            tm.camera_att_world.w = static_cast<float>(cr * cp * cy + sr * cp * sy);
+            tm.camera_att_world.x = static_cast<float>(sr * cp * cy - cr * sp * sy);
+            tm.camera_att_world.y = static_cast<float>(cr * sp * cy + sr * cp * sy);
+            tm.camera_att_world.z = static_cast<float>(cr * cp * sy - sr * sp * cy);
+            tm.confidence = tag.confidence;
+        }
+    }
+
+    // Route packet through production AutopilotNode (which processes goals and forwards tags to FCU)
+    autopilot_.handleVisionPacket(v_pkt, current_time);
+
+    // In closed-loop simulation: the simulated ArduPilot FCU fuses the external vision position
+    if (drift_correction_enabled_) {
+        for (size_t i = 0; i < v_pkt.num_tags_detected; ++i) {
+            if (v_pkt.tags[i].is_valid) {
+                follower_.correctDriftWithVision(v_pkt.tags[i]);
+            }
+        }
     }
 }
 
@@ -132,6 +198,8 @@ MissionReport AutopilotSimHarness::runUntil(double max_duration_s,
     report.rmse_tracking = follower_.getMetrics().rmse_position;
     report.max_tracking_error = follower_.getMetrics().max_tracking_error;
     report.total_distance_m = follower_.getMetrics().total_distance_traveled;
+    report.tag_readings_forwarded = autopilot_.tags_forwarded_count;
+    report.total_drift_corrected_m = follower_.getMetrics().total_drift_corrected_m;
     report.mission_completed = (report.final_state == FlightState::FLIGHT_STATE_ROTOR_STOPPED ||
                                 report.final_state == FlightState::FLIGHT_STATE_HOVER_WAIT);
 
@@ -143,7 +211,9 @@ MissionReport AutopilotSimHarness::runUntil(double max_duration_s,
         << "Final Pos: [" << report.final_true_pose.x << ", "
         << report.final_true_pose.y << ", " << report.final_true_pose.z << "] m. "
         << "Tracking RMSE: " << std::setprecision(4) << report.rmse_tracking << " m, "
-        << "Max Error: " << report.max_tracking_error << " m.";
+        << "Max Error: " << report.max_tracking_error << " m. "
+        << "Tags Forwarded: " << report.tag_readings_forwarded << ", "
+        << "Drift Corrected: " << report.total_drift_corrected_m << " m.";
     report.summary = oss.str();
 
     return report;

@@ -41,7 +41,7 @@ if [ -d "$BOARD_DIR/boot" ]; then
 fi
 
 # 3. Secure NetworkManager connection file permissions (required by NetworkManager)
-chmod 600 "$ROOTFS_DIR/etc/NetworkManager/system-connections/drone-ap.nmconnection" 2>/dev/null || true
+chmod 600 "$ROOTFS_DIR/etc/NetworkManager/system-connections/"*.nmconnection 2>/dev/null || true
 
 # 4. Hostname & Hosts File
 echo "$HOSTNAME" > "$ROOTFS_DIR/etc/hostname"
@@ -92,15 +92,36 @@ EOF
 chmod 0440 "$ROOTFS_DIR/etc/sudoers.d/010_drone-nopasswd"
 
 # 7. Enable Systemd Services inside rootfs
-echo "[INFO] Enabling drone systemd services..."
+PROFILE="${3:-bringup}"
+echo "[INFO] Enabling drone systemd services (Profile: $PROFILE)..."
 mkdir -p "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants" \
          "$ROOTFS_DIR/etc/systemd/system/basic.target.wants"
 
 ln -sf /etc/systemd/system/drone-tuning.service "$ROOTFS_DIR/etc/systemd/system/basic.target.wants/drone-tuning.service"
-ln -sf /etc/systemd/system/drone-autopilot.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/drone-autopilot.service"
-ln -sf /etc/systemd/system/drone-vision.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/drone-vision.service"
+ln -sf /etc/systemd/system/drone-mavlink-router.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/drone-mavlink-router.service"
+
+if [ "$PROFILE" = "flight" ]; then
+    echo "[INFO] Enabling autonomous flight services (autopilot & vision)..."
+    ln -sf /etc/systemd/system/drone-autopilot.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/drone-autopilot.service"
+    ln -sf /etc/systemd/system/drone-vision.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/drone-vision.service"
+else
+    echo "[INFO] Profile 'bringup' selected: Hardware Bringup Mode active."
+    echo "       MAVLink proxy & Wi-Fi AP enabled. Autopilot & Vision daemons are installed but DISABLED."
+    echo "       (Run 'sudo /opt/drone/scripts/set_profile.sh flight' to pivot to autonomous flight)."
+fi
+
 ln -sf /lib/systemd/system/NetworkManager.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/NetworkManager.service" 2>/dev/null || true
+ln -sf /lib/systemd/system/wpa_supplicant.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/wpa_supplicant.service" 2>/dev/null || true
 ln -sf /lib/systemd/system/avahi-daemon.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/avahi-daemon.service" 2>/dev/null || true
 ln -sf /lib/systemd/system/ssh.service "$ROOTFS_DIR/etc/systemd/system/multi-user.target.wants/ssh.service" 2>/dev/null || true
+
+# Prevent systemd from ever soft-blocking Wi-Fi across boots
+ln -sf /dev/null "$ROOTFS_DIR/etc/systemd/system/systemd-rfkill.service" 2>/dev/null || true
+ln -sf /dev/null "$ROOTFS_DIR/etc/systemd/system/systemd-rfkill.socket" 2>/dev/null || true
+
+# Generate SSH host keys ahead of time
+if [ -x "$ROOTFS_DIR/usr/bin/ssh-keygen" ]; then
+    chroot "$ROOTFS_DIR" ssh-keygen -A 2>/dev/null || true
+fi
 
 echo "=== [STAGE 1] Configuration complete! ==="

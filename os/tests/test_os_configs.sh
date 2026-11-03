@@ -48,9 +48,10 @@ done
 echo "3. Validating NetworkManager AP configuration..."
 NM_FILE="$OS_DIR/configs/common/etc/NetworkManager/system-connections/drone-ap.nmconnection"
 assert_success "NetworkManager config exists" test -f "$NM_FILE"
-assert_success "SSID defined as Autonomous-Drone-AP" grep -q "^ssid=Autonomous-Drone-AP" "$NM_FILE"
+assert_success "SSID defined as HEXAGON-flight-drone" grep -q "^ssid=HEXAGON-flight-drone" "$NM_FILE"
 assert_success "Mode configured as AP" grep -q "^mode=ap" "$NM_FILE"
 assert_success "WPA-PSK security enabled" grep -q "^key-mgmt=wpa-psk" "$NM_FILE"
+assert_success "WPA-PSK password configured" grep -q "^psk=rylaniscool" "$NM_FILE"
 assert_success "Static IP 192.168.4.1/24 configured" grep -q "^address1=192.168.4.1/24" "$NM_FILE"
 assert_success "Shared IPv4 method for auto-DHCP" grep -q "^method=shared" "$NM_FILE"
 
@@ -79,6 +80,19 @@ assert_success "Avahi service definition exists" test -f "$AVAHI_FILE"
 assert_success "Web UI port 8080 registered" grep -q "<port>8080</port>" "$AVAHI_FILE"
 assert_success "MAVLink UDP port 14550 registered" grep -q "<port>14550</port>" "$AVAHI_FILE"
 
+# 6b. MAVLink Proxy & Router Configuration Validation
+echo "6b. Validating MAVLink proxy configurations..."
+MAVROUTER_CONF="$OS_DIR/configs/common/etc/mavlink-router/main.conf"
+assert_success "MAVLink router config exists" test -f "$MAVROUTER_CONF"
+assert_success "Flightcontroller UART endpoint configured" grep -q "Device = /dev/flightcontroller" "$MAVROUTER_CONF"
+assert_success "Autopilot UDP endpoint configured on 14550" grep -q "Port = 14550" "$MAVROUTER_CONF"
+assert_success "Wi-Fi GCS broadcast endpoint configured" grep -q "Address = 192.168.4.255" "$MAVROUTER_CONF"
+assert_success "MAVLink launcher script executable" test -x "$OS_DIR/configs/common/opt/drone/scripts/start_mavlink_proxy.sh"
+assert_success "MAVLink python proxy script executable" test -x "$OS_DIR/configs/common/opt/drone/scripts/mavlink_proxy.py"
+assert_success "Profile switcher script executable" test -x "$OS_DIR/configs/common/opt/drone/scripts/set_profile.sh"
+assert_success "Profile switcher supports bringup mode" grep -q "bringup)" "$OS_DIR/configs/common/opt/drone/scripts/set_profile.sh"
+assert_success "Profile switcher supports flight mode" grep -q "flight)" "$OS_DIR/configs/common/opt/drone/scripts/set_profile.sh"
+
 # 7. Board-Specific Boot Configurations
 echo "7. Validating board bootloader configurations..."
 UENV_FILE="$OS_DIR/configs/radxa-zero-3w/boot/uEnv.txt"
@@ -100,8 +114,17 @@ echo "8. Validating package lists..."
 for pkg_list in "$OS_DIR"/configs/*/packages.list; do
     assert_success "Package list non-empty: $(basename "$(dirname "$pkg_list")")/$(basename "$pkg_list")" test -s "$pkg_list"
     assert_success "Contains network-manager: $(basename "$(dirname "$pkg_list")")" grep -q "^network-manager" "$pkg_list"
+    assert_success "Contains wpasupplicant: $(basename "$(dirname "$pkg_list")")" grep -q "^wpasupplicant" "$pkg_list"
     assert_success "Contains v4l-utils: $(basename "$(dirname "$pkg_list")")" grep -q "^v4l-utils" "$pkg_list"
 done
+
+# 9. Regulatory & Hardware Connectivity Validation
+echo "9. Validating wireless regulatory and USB gadget configs..."
+assert_success "wpa_supplicant.conf has US country code" grep -q "country=US" "$OS_DIR/configs/common/etc/wpa_supplicant/wpa_supplicant.conf"
+assert_success "brcmfmac.conf has US regdomain" grep -q "regdomain=US" "$OS_DIR/configs/common/etc/modprobe.d/brcmfmac.conf"
+assert_success "cmdline.txt includes cfg80211.ieee80211_regdom=US" grep -q "cfg80211.ieee80211_regdom=US" "$OS_DIR/configs/pi-zero-2w/boot/cmdline.txt"
+assert_success "USB gadget nmconnection exists" test -f "$OS_DIR/configs/common/etc/NetworkManager/system-connections/drone-usb-gadget.nmconnection"
+assert_success "USB gadget shared IP 192.168.7.1/24" grep -q "address1=192.168.7.1/24" "$OS_DIR/configs/common/etc/NetworkManager/system-connections/drone-usb-gadget.nmconnection"
 
 echo "============================================="
 echo "Total Tests: $((PASSED + FAILED)) | Passed: $PASSED | Failed: $FAILED"

@@ -1,23 +1,22 @@
 [connection]
-id=Autonomous-Drone-AP
+id=HEXAGON-flight-drone
 uuid=a1b2c3d4-e5f6-47a8-9b0c-droneap00001
 type=wifi
 interface-name=wlan0
 autoconnect=true
 autoconnect-priority=100
+permissions=
 
 [wifi]
 mode=ap
-ssid=Autonomous-Drone-AP
+ssid=HEXAGON-flight-drone
 band=bg
 channel=6
 
 [wifi-security]
 key-mgmt=wpa-psk
-psk=DronePilot123
-proto=rsn
-pairwise=ccmp
-group=ccmp
+psk=rylaniscool
+psk-flags=0
 
 [ipv4]
 method=shared

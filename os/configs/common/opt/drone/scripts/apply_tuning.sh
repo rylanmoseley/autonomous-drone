@@ -23,10 +23,17 @@ for iface in wlan0 eth0 usb0; do
     fi
 done
 
-# 3. Disable Bluetooth Coexistence Throttling if unused for flight
-if [ -d /sys/class/rfkill ]; then
-    # Keep WiFi on, power down bluetooth to avoid 2.4GHz interference
-    rfkill block bluetooth 2>/dev/null || true
+# 3. Wireless Regulatory Domain & Radio Management
+if command -v iw >/dev/null 2>&1; then
+    iw reg set US 2>/dev/null || true
+    echo "[DRONE-TUNING] Wireless regulatory domain set to US."
+fi
+
+if command -v rfkill >/dev/null 2>&1; then
+    rfkill unblock wifi 2>/dev/null || true
+    rfkill unblock wlan 2>/dev/null || true
+    rfkill unblock all 2>/dev/null || true
+    echo "[DRONE-TUNING] Wireless interfaces unblocked via rfkill."
 fi
 
 echo "[DRONE-TUNING] System performance optimization complete."

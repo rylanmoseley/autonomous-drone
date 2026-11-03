@@ -6,6 +6,7 @@ set -e
 
 TARGET="${1:-radxa}"
 ROOTFS_DIR="${2:-/tmp/drone-rootfs}"
+PROFILE="${3:-bringup}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
@@ -28,10 +29,18 @@ case "$TARGET" in
         ;;
 esac
 
-echo "=== [STAGE 2] Deploying Drone Binaries for $TARGET ==="
+echo "=== [STAGE 2] Deploying Drone Binaries for $TARGET (Profile: $PROFILE) ==="
+
+mkdir -p "$ROOTFS_DIR/opt/drone/bin"
 
 AUTOPILOT_BIN="$BUILD_DIR/autopilot/autopilot_node"
 VISION_BIN="$BUILD_DIR/vision-processing/vision_node"
+
+if [ "$PROFILE" = "bringup" ] && [ ! -f "$AUTOPILOT_BIN" ]; then
+    echo "[INFO] Bringup mode active: Hardware testing profile uses standalone MAVLink proxy."
+    echo "[INFO] Skipping flight binary compilation (daemons remain disabled)."
+    exit 0
+fi
 
 # 1. Build if binaries are not yet compiled
 if [ ! -f "$AUTOPILOT_BIN" ]; then

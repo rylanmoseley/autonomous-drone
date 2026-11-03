@@ -40,6 +40,11 @@ ROOT_OFFSET=$((ROOT_START_SECTOR * 512))
 if [ "$(id -u)" -eq 0 ] && command -v losetup >/dev/null 2>&1; then
     echo "[INFO] Using loop devices to format and populate partitions..."
     LOOP_DEV=$(losetup -Pf --show "$OUTPUT_IMG")
+    udevadm settle 2>/dev/null || sleep 1
+    if [ ! -b "${LOOP_DEV}p1" ]; then
+        partx -u "$LOOP_DEV" 2>/dev/null || true
+        sleep 1
+    fi
     
     # Format FAT32 boot
     mkfs.vfat -F 32 -n "DRONE_BOOT" "${LOOP_DEV}p1"
@@ -52,14 +57,22 @@ if [ "$(id -u)" -eq 0 ] && command -v losetup >/dev/null 2>&1; then
     mkdir -p "$MOUNT_DIR/root" "$MOUNT_DIR/boot"
     
     mount "${LOOP_DEV}p2" "$MOUNT_DIR/root"
-    mkdir -p "$MOUNT_DIR/root/boot"
-    mount "${LOOP_DEV}p1" "$MOUNT_DIR/root/boot"
+    mount "${LOOP_DEV}p1" "$MOUNT_DIR/boot"
     
     echo "[INFO] Copying rootfs into partitioned image..."
     cp -a "$ROOTFS_DIR/"* "$MOUNT_DIR/root/" 2>/dev/null || true
     
+    echo "[INFO] Populating boot partition..."
+    if [ -d "$ROOTFS_DIR/boot" ]; then
+        cp -a "$ROOTFS_DIR/boot/"* "$MOUNT_DIR/boot/" 2>/dev/null || true
+    fi
+    if [ -d "$ROOTFS_DIR/boot/firmware" ] && [ -n "$(ls -A "$ROOTFS_DIR/boot/firmware" 2>/dev/null)" ]; then
+        cp -a "$ROOTFS_DIR/boot/firmware/"* "$MOUNT_DIR/boot/" 2>/dev/null || true
+    fi
+    rm -rf "$MOUNT_DIR/boot/firmware" "$MOUNT_DIR/boot/boot" 2>/dev/null || true
+    
     sync
-    umount "$MOUNT_DIR/root/boot" || true
+    umount "$MOUNT_DIR/boot" || true
     umount "$MOUNT_DIR/root" || true
     rmdir "$MOUNT_DIR/boot" "$MOUNT_DIR/root" "$MOUNT_DIR" 2>/dev/null || true
     losetup -d "$LOOP_DEV"
