@@ -108,13 +108,56 @@ Pad Name    Connected To              Function
 ---------------------------------------------------------------------------------
 VBAT        LiPo Battery (+)          14.8V (4S) raw battery power
 GND         LiPo Battery (-)          Common ground reference
-TX2 / RX2   Radxa Zero 3W Header      MAVLink v2 telemetry (921,600 baud)
+TX2 / RX2   Companion SBC (UART)      MAVLink v2 telemetry (921,600 baud)
 TX1 / RX1   MTF-02P Optical Flow      Sensor UART datastream
 SCL / SDA   VL53L0X ToF (if I2C)      Laser rangefinder bus
 5V          Flywoo 5V/2A BEC          Regulated SBC & sensor rail
 M1 - M4     GR2004 Brushless Motors   DShot600 motor signals
 ---------------------------------------------------------------------------------
 ```
+
+### Companion SBC Wiring: Raspberry Pi Zero 2W
+
+```
+             Raspberry Pi Zero 2W 40-Pin Header
+                         (Top View)
+                           +-----+
+                    +3.3V  | 1  2|  +5.0V  --------> [FCU 5V BEC]
+  [ToF SDA]  GPIO 2 (SDA)  | 3  4|  +5.0V
+  [ToF SCL]  GPIO 3 (SCL)  | 5  6|  GND    --------> [FCU GND]
+             GPIO 4 (CLK)  | 7  8|  GPIO 14 (TX0) -> [FCU RX2 / R2]
+                      GND  | 9 10|  GPIO 15 (RX0) <- [FCU TX2 / T2]
+                  GPIO 17  |11 12|  GPIO 18
+                  GPIO 27  |13 14|  GND
+                  GPIO 22  |15 16|  GPIO 23
+                    +3.3V  |17 18|  GPIO 24
+                  GPIO 10  |19 20|  GND
+                           | ... |
+                           +-----+
+```
+
+| Pi Zero 2W Header | Physical Pin | Function | Connected To (Flywoo GOKU GN745) | Notes |
+|:---|:---:|:---|:---|:---|
+| **5V Power** | Pin 2 or 4 | +5V DC Input | **FCU 5V** (BEC Out) | Powers the Pi from flight battery BEC |
+| **Ground** | Pin 6 (or 9, 14, 20) | Ground | **FCU GND** | Common ground reference |
+| **GPIO 14 (TXD0)** | Pin 8 | UART0 TX | **FCU RX2 (R2)** | MAVLink Telemetry Pi $\to$ FCU (921,600 baud) |
+| **GPIO 15 (RXD0)** | Pin 10 | UART0 RX | **FCU TX2 (T2)** | MAVLink Telemetry FCU $\to$ Pi (921,600 baud) |
+| **GPIO 2 (SDA1)** | Pin 3 | I2C1 Data | **Sensor SDA** *(optional)* | VL53L0X ToF / I2C sensor bus |
+| **GPIO 3 (SCL1)** | Pin 5 | I2C1 Clock | **Sensor SCL** *(optional)* | VL53L0X ToF / I2C sensor bus |
+
+> [!NOTE]
+> UART TX and RX are crossed between devices:  
+> - **Pi Pin 8 (TX)** connects to **FCU RX2** (pad `R2`).  
+> - **Pi Pin 10 (RX)** connects to **FCU TX2** (pad `T2`).
+
+### Companion SBC Wiring: Radxa Zero 3W
+
+| Radxa Zero 3W Header | Physical Pin | Function | Connected To (Flywoo GOKU GN745) | Notes |
+|:---|:---:|:---|:---|:---|
+| **5V Power** | Pin 2 or 4 | +5V DC Input | **FCU 5V** | Regulated 5V from FCU BEC |
+| **Ground** | Pin 6 or 9 | Ground | **FCU GND** | Common ground |
+| **UART4_TX_M1** | Pin 16 | UART4 TX | **FCU RX2 (R2)** | `/dev/ttyS4` via `radxa-zero3-uart4-m1` |
+| **UART4_RX_M1** | Pin 18 | UART4 RX | **FCU TX2 (T2)** | `/dev/ttyS4` via `radxa-zero3-uart4-m1` |
 
 ---
 

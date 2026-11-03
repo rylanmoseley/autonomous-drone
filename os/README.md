@@ -33,10 +33,11 @@ This subproject provides the build infrastructure, board support packages, drive
 
 ### 2.3. Flight Controller Serial Telemetry
 - Persistent symlink `/dev/flightcontroller` auto-created by udev rules ([`99-drone-hardware.rules`](configs/common/etc/udev/rules.d/99-drone-hardware.rules)):
-  - Points to `/dev/ttyS4` on Radxa Zero 3W.
-  - Points to `/dev/ttyAMA0` on Raspberry Pi.
-  - Automatically claims USB virtual COM ports (`/dev/ttyACM*`).
+  - Points to `/dev/ttyS4` on Radxa Zero 3W (Header Pins 16/18).
+  - Points to `/dev/ttyAMA0` on Raspberry Pi Zero 2W (Header Pins 8/10).
+  - Automatically claims USB virtual COM ports (`/dev/ttyACM*`, `/dev/ttyUSB*`).
 - Granted `dialout` group permissions (`0666`) for non-root flight daemon execution.
+- Detailed electrical wiring diagrams and GPIO header mappings are documented in [Flight Control Wiring Guide](../flight-control/README.md#companion-sbc-wiring-raspberry-pi-zero-2w).
 
 ### 2.4. Realtime Performance & System Tuning
 - **CPU Governor**: Locked to `performance` mode at boot ([`apply_tuning.sh`](configs/common/opt/drone/scripts/apply_tuning.sh)) to prevent dynamic frequency scaling latency spikes during control loops.
