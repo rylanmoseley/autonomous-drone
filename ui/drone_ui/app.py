@@ -312,7 +312,9 @@ class MainWindow(QMainWindow):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--autopilot", metavar="HOST", help="connect to the real autopilot instead of the simulator")
+    parser.add_argument("--autopilot", metavar="HOST",
+                        help="connect to the real autopilot instead of the simulator "
+                             "(127.0.0.1 for one on this PC, 192.168.4.1 on the drone's Wi-Fi)")
     parser.add_argument("--camera", default=None,
                         help='"sim" (simulated view), "webcam", "none", or a stream URL. '
                              "Defaults to sim with the simulator and none with the autopilot.")

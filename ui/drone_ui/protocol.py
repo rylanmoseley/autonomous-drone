@@ -1,106 +1,184 @@
-"""Python mirrors of shared/include/ui_protocol.h (main branch).
+"""Python mirrors of the shared message formats in shared/include/.
 
-Keep these in sync with the C++ headers: the autopilot drops any UDP packet
-whose size doesn't exactly match sizeof() of the struct it expects.
+Keep these in sync with the C headers: the autopilot drops any UDP packet whose
+size doesn't exactly match sizeof() of the struct it expects.
+
+  common_types.h     enums, Vec3f, Quatf
+  ui_protocol.h      UICommandPacket (GUI -> autopilot), UIStatusPacket (reply)
+  telemetry_packet.h TelemetryPacket (autopilot -> GUI, ~20 Hz)
 """
 import ctypes
-import json
-import socket
+import math
+import time
+from enum import IntEnum
 
-AUTOPILOT_UI_PORT = 14552
-AUTOPILOT_LOG_PORT = 14554  # UdpTelemetryLogger in autopilot/telemetry_logger_impl.h
-MAX_GOALS = 16
-
-# Order of MissionState in autopilot/autopilot_node.h
-MISSION_STATES = ["IDLE", "TAKEOFF", "NAVIGATING", "RETURN_TO_HOME", "LANDING", "ERROR", "ESTOP"]
+AUTOPILOT_UI_PORT = 14552  # UICommandPacket in, UIStatusPacket back to the sender
+AUTOPILOT_TELEMETRY_PORT = 14554  # TelemetryPacket (and the JSON debug log) out
+MAX_GOAL_SEQUENCE_LEN = 16
 
 
-class UIGoalPose(ctypes.Structure):
+class MsgType(IntEnum):
+    NONE = 0
+    VISION = 1
+    UI_CMD = 2
+    UI_STATUS = 3
+    TELEMETRY = 4
+    LOGGER_STATUS = 5
+
+
+class UICommand(IntEnum):
+    NONE = 0  # does nothing, but the autopilot still replies with a status packet
+    ARM = 1
+    DISARM = 2
+    START_MISSION = 3
+    PAUSE_MISSION = 4
+    RESUME_MISSION = 5
+    LAND_NOW = 6
+    ESTOP = 7
+    SET_SEQUENCE = 8
+    SET_CONSTRAINTS = 9
+
+
+class MissionEndAction(IntEnum):
+    HOVER = 0
+    LAND = 1
+
+
+class FlightState(IntEnum):
+    BOOT = 0
+    STANDBY_DISARM = 1
+    ARMED = 2
+    TAKEOFF = 3
+    GOAL_SEEK = 4
+    PATH_FOLLOWING = 5
+    HOVER_WAIT = 6
+    LANDING = 7
+    ROTOR_STOPPED = 8
+    ESTOP_TRIPPED = 9
+
+
+class TrackState(IntEnum):
+    SEARCHING = 0
+    CONVERGING = 1
+    LOCKED = 2
+    OCCLUDED = 3
+
+
+class Vec3f(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float), ("z", ctypes.c_float)]
+
+
+class Quatf(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [("w", ctypes.c_float), ("x", ctypes.c_float), ("y", ctypes.c_float), ("z", ctypes.c_float)]
+
+
+class UICommandPacket(ctypes.Structure):
     _pack_ = 1
     _fields_ = [
-        ("id", ctypes.c_uint32),
-        ("x", ctypes.c_double), ("y", ctypes.c_double), ("z", ctypes.c_double),
-        ("roll", ctypes.c_double), ("pitch", ctypes.c_double), ("yaw", ctypes.c_double),
-        ("timestamp", ctypes.c_double),
-        ("confidence", ctypes.c_double),
+        ("msg_type", ctypes.c_uint8),
+        ("command_id", ctypes.c_uint32),
+        ("timestamp_ns", ctypes.c_uint64),
+        ("command", ctypes.c_uint8),
+        ("sequence_length", ctypes.c_uint8),
+        ("goal_sequence", ctypes.c_uint8 * MAX_GOAL_SEQUENCE_LEN),
+        ("end_action", ctypes.c_uint8),
+        ("hover_timeout_s", ctypes.c_float),
+        ("use_tube_constraint", ctypes.c_uint8),
+        ("tube_rail_y", ctypes.c_float),
+        ("tube_rail_z", ctypes.c_float),
     ]
 
 
-class UIGoalSequence(ctypes.Structure):
+class UIStatusPacket(ctypes.Structure):
     _pack_ = 1
     _fields_ = [
-        ("goals", UIGoalPose * MAX_GOALS),
-        # size_t in the header: 8 bytes on a 64-bit autopilot build, 4 on the 32-bit Pi
-        ("num_goals", ctypes.c_uint64),
-        ("start", ctypes.c_bool),
-        ("stop", ctypes.c_bool),
-        ("estop", ctypes.c_bool),
+        ("msg_type", ctypes.c_uint8),
+        ("sequence_id", ctypes.c_uint32),
+        ("timestamp_ns", ctypes.c_uint64),
+        ("flight_state", ctypes.c_uint8),
+        ("is_armed", ctypes.c_uint8),
+        ("estop_active", ctypes.c_uint8),
+        ("active_sequence_len", ctypes.c_uint8),
+        ("current_seq_index", ctypes.c_uint8),
+        ("current_target_shape", ctypes.c_uint8),
+        ("configured_end_action", ctypes.c_uint8),
+        ("battery_voltage", ctypes.c_float),
+        ("battery_remaining", ctypes.c_float),
+        ("active_error_flags", ctypes.c_uint32),
+        ("last_acked_cmd_id", ctypes.c_uint32),
+        ("cmd_ack_result", ctypes.c_uint8),  # 0 = success, 1 = rejected
     ]
 
 
-class UIAckPacket(ctypes.Structure):
-    _fields_ = [("received", ctypes.c_bool)]
-
-
-class UIConfigPacket(ctypes.Structure):
+class GoalTrackTelemetry(ctypes.Structure):
     _pack_ = 1
     _fields_ = [
-        ("max_velocity", ctypes.c_double),
-        ("max_vertical_velocity", ctypes.c_double),
-        ("max_yaw_rate", ctypes.c_double),
+        ("shape_type", ctypes.c_uint8),
+        ("state", ctypes.c_uint8),  # TrackState
+        ("world_position", Vec3f),
+        ("spatial_variance", ctypes.c_float),
     ]
 
 
-def build_sequence(goals, start=False, stop=False, estop=False):
-    """goals: iterable of dicts with id, x, y, z, yaw."""
-    goals = list(goals)
-    if len(goals) > MAX_GOALS:
-        raise ValueError(f"at most {MAX_GOALS} goals")
-    seq = UIGoalSequence()
-    for i, g in enumerate(goals):
-        seq.goals[i] = UIGoalPose(g["id"], g["x"], g["y"], g["z"], 0.0, 0.0, g["yaw"], 0.0, 1.0)
-    seq.num_goals = len(goals)
-    seq.start, seq.stop, seq.estop = start, stop, estop
-    return seq
+class TelemetryPacket(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("msg_type", ctypes.c_uint8),
+        ("sequence_id", ctypes.c_uint32),
+        ("timestamp_ns", ctypes.c_uint64),
+        ("drone_pos_ned", Vec3f),
+        ("drone_vel_ned", Vec3f),
+        ("drone_att_ned", Quatf),
+        ("target_pos_ned", Vec3f),
+        ("target_vel_ned", Vec3f),
+        ("goals", GoalTrackTelemetry * 3),
+        ("num_tags_in_view", ctypes.c_uint8),
+        ("tag_ids_in_view", ctypes.c_uint16 * 4),
+        ("optical_flow_quality", ctypes.c_float),
+        ("ekf_pos_variance", ctypes.c_float),
+        ("cpu_temperature_c", ctypes.c_float),
+    ]
 
 
-def build_shape_sequence(shape_ids, **flags):
-    """Goal sequence from shape ids only. The autopilot flies to where vision sees
-    each shape, so positions are left at zero."""
-    return build_sequence(
-        ({"id": s, "x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0} for s in shape_ids), **flags
-    )
+def build_command(command_id, command, shapes=(), end_action=MissionEndAction.LAND):
+    """A UICommandPacket; shapes is the goal order as ShapeType values (1-3)."""
+    shapes = [int(s) for s in shapes]
+    if len(shapes) > MAX_GOAL_SEQUENCE_LEN:
+        raise ValueError(f"at most {MAX_GOAL_SEQUENCE_LEN} goals")
+    pkt = UICommandPacket()
+    pkt.msg_type = MsgType.UI_CMD
+    pkt.command_id = command_id
+    pkt.timestamp_ns = time.monotonic_ns()
+    pkt.command = command
+    pkt.sequence_length = len(shapes)
+    for i, s in enumerate(shapes):
+        pkt.goal_sequence[i] = s
+    pkt.end_action = end_action
+    return pkt
 
 
-def parse_log(data):
-    """Decode one logger datagram (a flat JSON object) and add a readable state name."""
-    log = json.loads(data)
-    state = log.get("state")
-    if isinstance(state, int) and 0 <= state < len(MISSION_STATES):
-        log["state_name"] = MISSION_STATES[state]
-    return log
+def parse_packet(data):
+    """Decode a datagram from the autopilot into a UIStatusPacket or TelemetryPacket.
+    Returns None for anything else (e.g. the JSON debug log that shares the
+    telemetry port)."""
+    if not data:
+        return None
+    for cls, msg_type in ((UIStatusPacket, MsgType.UI_STATUS), (TelemetryPacket, MsgType.TELEMETRY)):
+        if data[0] == msg_type and len(data) == ctypes.sizeof(cls):
+            return cls.from_buffer_copy(data)
+    return None
 
 
-class AutopilotLink:
-    """UDP link to the autopilot's UI port."""
-
-    def __init__(self, host="127.0.0.1", port=AUTOPILOT_UI_PORT, ack_timeout=0.3):
-        self.addr = (host, port)
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.settimeout(ack_timeout)
-
-    def send_sequence(self, seq):
-        """Send a goal sequence; returns True if the autopilot acknowledged it."""
-        self.sock.sendto(bytes(seq), self.addr)
-        try:
-            data, _ = self.sock.recvfrom(64)
-        except (socket.timeout, ConnectionResetError):
-            return False
-        return len(data) == ctypes.sizeof(UIAckPacket) and UIAckPacket.from_buffer_copy(data).received
-
-    def send_config(self, max_velocity, max_vertical_velocity, max_yaw_rate):
-        # No ack for config packets
-        self.sock.sendto(bytes(UIConfigPacket(max_velocity, max_vertical_velocity, max_yaw_rate)), self.addr)
-
-    def close(self):
-        self.sock.close()
+def quat_to_euler_deg(q):
+    """(roll, pitch, yaw) in degrees, or None if the quaternion isn't filled in."""
+    w, x, y, z = q.w, q.x, q.y, q.z
+    norm = math.sqrt(w * w + x * x + y * y + z * z)
+    if norm < 0.5:
+        return None
+    w, x, y, z = w / norm, x / norm, y / norm, z / norm
+    roll = math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
+    pitch = math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))
+    yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    return tuple(math.degrees(a) for a in (roll, pitch, yaw))

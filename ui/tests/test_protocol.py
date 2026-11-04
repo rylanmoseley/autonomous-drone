@@ -1,59 +1,59 @@
 import ctypes
-import socket
+import re
+from pathlib import Path
+
+import pytest
 
 from drone_ui.protocol import (
-    AutopilotLink, UIAckPacket, UIConfigPacket, UIGoalPose, UIGoalSequence, build_sequence,
-    build_shape_sequence, parse_log,
+    GoalTrackTelemetry, MsgType, Quatf, TelemetryPacket, UICommand, UICommandPacket,
+    UIStatusPacket, Vec3f, build_command, parse_packet, quat_to_euler_deg,
 )
 
-
-def test_build_shape_sequence():
-    seq = build_shape_sequence([3, 1, 2], start=True)
-    assert seq.num_goals == 3
-    assert [seq.goals[i].id for i in range(3)] == [3, 1, 2]
-    assert seq.start
+SHARED = Path(__file__).resolve().parents[2] / "shared" / "include"
+C_SIZES = {"uint8_t": 1, "uint16_t": 2, "uint32_t": 4, "uint64_t": 8, "float": 4}
 
 
-def test_parse_log_names_state():
-    # Format produced by UdpTelemetryLogger::flush
-    log = parse_log(b'{"cmd_tx":1.000000,"dt":0.050000,"state":2,"telem_x":0.500000}')
-    assert log["state_name"] == "NAVIGATING"
-    assert log["cmd_tx"] == 1.0
+def c_struct_fields(name):
+    """(field, size) pairs of a packed typedef struct in shared/include, read from the
+    header itself so these tests catch any change to the C side."""
+    text = "\n".join(p.read_text() for p in SHARED.glob("*.h"))
+    text = re.sub(r"//[^\n]*", "", text)
+    m = re.search(r"typedef struct \{([^{}]*)\}\s*" + name + r"\s*;", text)
+    assert m, f"{name} not found in {SHARED}"
+    fields = []
+    for ctype, field, count in re.findall(r"(\w+)\s+(\w+)\s*(?:\[(\w+)\])?\s*;", m.group(1)):
+        size = C_SIZES.get(ctype) or sum(sz for _, sz in c_struct_fields(ctype))
+        if count:
+            n = int(count) if count.isdigit() else int(re.search(r"#define\s+" + count + r"\s+(\d+)", text).group(1))
+            size *= n
+        fields.append((field, size))
+    return fields
 
 
-def test_struct_sizes_match_64bit_autopilot():
-    # Sizes from shared/include/ui_protocol.h on a 64-bit build
-    assert ctypes.sizeof(UIGoalPose) == 4 + 8 * 8
-    assert ctypes.sizeof(UIGoalSequence) == 16 * 68 + 8 + 3
-    assert ctypes.sizeof(UIConfigPacket) == 24
-    assert ctypes.sizeof(UIAckPacket) == 1
+@pytest.mark.parametrize("cls", [UICommandPacket, UIStatusPacket, TelemetryPacket,
+                                 GoalTrackTelemetry, Vec3f, Quatf])
+def test_structs_match_c_headers(cls):
+    c_fields = c_struct_fields(cls.__name__)
+    py_fields = [(name, getattr(cls, name).size) for name, _ in cls._fields_]
+    assert py_fields == c_fields
+    assert ctypes.sizeof(cls) == sum(sz for _, sz in c_fields)
 
 
-def test_build_sequence():
-    seq = build_sequence([{"id": 3, "x": 1.5, "y": -2.0, "z": 1.0, "yaw": 0.5}], start=True)
-    assert seq.num_goals == 1
-    assert seq.start and not seq.stop and not seq.estop
-    assert (seq.goals[0].id, seq.goals[0].x, seq.goals[0].yaw) == (3, 1.5, 0.5)
+def test_build_command_sequence():
+    pkt = build_command(7, UICommand.START_MISSION, [3, 1, 2])
+    assert pkt.msg_type == MsgType.UI_CMD and pkt.command_id == 7
+    assert pkt.sequence_length == 3 and list(pkt.goal_sequence[:3]) == [3, 1, 2]
+    assert pkt.end_action == 1  # land at the end
 
 
-def test_send_sequence_gets_ack():
-    # Fake autopilot that acks like AutopilotNode::ui_loop
-    server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server.bind(("127.0.0.1", 0))
-    server.settimeout(1.0)
-    link = AutopilotLink(*server.getsockname())
-    try:
-        import threading
+def test_parse_packet_ignores_json_log():
+    status = UIStatusPacket(msg_type=MsgType.UI_STATUS, flight_state=4)
+    assert parse_packet(bytes(status)).flight_state == 4
+    assert isinstance(parse_packet(bytes(TelemetryPacket(msg_type=MsgType.TELEMETRY))), TelemetryPacket)
+    assert parse_packet(b'{"state":1,"dt":0.05}') is None
 
-        def serve():
-            data, addr = server.recvfrom(4096)
-            assert len(data) == ctypes.sizeof(UIGoalSequence)
-            server.sendto(bytes(UIAckPacket(True)), addr)
 
-        t = threading.Thread(target=serve)
-        t.start()
-        assert link.send_sequence(build_sequence([], estop=True))
-        t.join()
-    finally:
-        link.close()
-        server.close()
+def test_quaternion_to_euler():
+    assert quat_to_euler_deg(Quatf(0, 0, 0, 0)) is None  # not filled in
+    roll, pitch, yaw = quat_to_euler_deg(Quatf(0.7071068, 0, 0, 0.7071068))
+    assert abs(roll) < 1e-3 and abs(pitch) < 1e-3 and abs(yaw - 90) < 1e-3

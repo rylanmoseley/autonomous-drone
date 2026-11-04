@@ -1,8 +1,8 @@
 """Where the GUI's data comes from.
 
 SimBackend flies a pretend mission so the GUI can be demoed without hardware.
-AutopilotBackend talks to the real autopilot over UDP; anything the autopilot
-doesn't report yet stays None and the GUI shows a dash.
+AutopilotBackend talks to the real autopilot over UDP using the shared packet
+formats; anything the autopilot doesn't report stays None and shows as a dash.
 """
 import math
 import random
@@ -12,9 +12,10 @@ from dataclasses import replace
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtNetwork import QHostAddress, QUdpSocket
 
-from drone_ui.model import ACTIVE_PHASES, DroneState, LogLevel, Phase
+from drone_ui.model import ACTIVE_PHASES, DroneState, LogLevel, Phase, Shape
 from drone_ui.protocol import (
-    AUTOPILOT_LOG_PORT, AUTOPILOT_UI_PORT, AutopilotLink, build_shape_sequence, parse_log,
+    AUTOPILOT_TELEMETRY_PORT, AUTOPILOT_UI_PORT, FlightState, TelemetryPacket, TrackState,
+    UICommand, UIStatusPacket, build_command, parse_packet, quat_to_euler_deg,
 )
 
 
@@ -196,117 +197,212 @@ class SimBackend(DroneBackend):
 # --------------------------------------------------------------------------------------
 # Real autopilot
 
-# Order of MissionState in autopilot/autopilot_node.h
-AUTOPILOT_PHASES = [Phase.READY, Phase.TAKEOFF, Phase.FLYING, Phase.RETURNING, Phase.LANDING,
-                    Phase.ERROR, Phase.ESTOP]
-STALE_AFTER_S = 1.0
-
-# Logger key -> (DroneState field, scale). Today the autopilot only logs state and
-# telem_x (see AutopilotNode::run); add logger.log(...) calls there with these names
-# and the values show up in the GUI with no other changes.
-LOG_FIELDS = {
-    "telem_x": ("x", 1.0),
-    "telem_y": ("y", 1.0),
-    "telem_z": ("z", 1.0),
-    "telem_roll": ("roll", 180.0 / math.pi),  # autopilot uses radians
-    "telem_pitch": ("pitch", 180.0 / math.pi),
-    "telem_yaw": ("yaw", 180.0 / math.pi),
-    "speed": ("speed", 1.0),
-    "battery": ("battery", 1.0),
-    "rssi": ("rssi", 1),
+# FlightState -> what the GUI shows. HOVER_WAIT only happens on a pause or a HOVER end
+# action; the GUI always asks to LAND at the end, so it's shown as still flying.
+FLIGHT_PHASES = {
+    FlightState.BOOT: Phase.READY,
+    FlightState.STANDBY_DISARM: Phase.READY,
+    FlightState.ARMED: Phase.READY,
+    FlightState.TAKEOFF: Phase.TAKEOFF,
+    FlightState.GOAL_SEEK: Phase.FLYING,
+    FlightState.PATH_FOLLOWING: Phase.FLYING,
+    FlightState.HOVER_WAIT: Phase.FLYING,
+    FlightState.LANDING: Phase.LANDING,
+    FlightState.ROTOR_STOPPED: Phase.READY,
+    FlightState.ESTOP_TRIPPED: Phase.ESTOP,
 }
+POLL_MS = 250  # the autopilot only sends status as a reply, so keep asking for it
+ACK_TIMEOUT_S = 0.6
+STALE_AFTER_S = 1.0
 
 
 class AutopilotBackend(DroneBackend):
-    def __init__(self, host="127.0.0.1", port=AUTOPILOT_UI_PORT, parent=None):
+    """UICommandPackets go to the autopilot's UI port and each one is answered with a
+    UIStatusPacket. TelemetryPackets arrive on the telemetry port."""
+
+    def __init__(self, host="127.0.0.1", port=AUTOPILOT_UI_PORT,
+                 telemetry_port=AUTOPILOT_TELEMETRY_PORT, parent=None):
         super().__init__(parent)
-        self.link = AutopilotLink(host, port)
+        self.addr = (QHostAddress(host), port)
         self.state = DroneState(link_label=f"Autopilot {host}")
-        self._last_rx = 0.0
+        self._next_id = 1
+        self._pending = {}  # command_id -> (on_result, sent_at)
+        self._last_status = 0.0
+        self._last_pos = None  # (timestamp_ns, (x, y, z)) for speed when velocity is unset
         self._mission_start = None
         self._was_active = False
+        self._flight_state = None
+        self._seq_index = None
+        self._tracks = {}
 
-        self.sock = QUdpSocket(self)
-        if not self.sock.bind(QHostAddress.AnyIPv4, AUTOPILOT_LOG_PORT):
+        self.cmd_sock = QUdpSocket(self)
+        self.cmd_sock.bind(QHostAddress.AnyIPv4, 0)
+        self.cmd_sock.readyRead.connect(self._read_status)
+
+        self.telem_sock = QUdpSocket(self)
+        if not self.telem_sock.bind(QHostAddress.AnyIPv4, telemetry_port):
             QTimer.singleShot(0, lambda: self.log.emit(
-                LogLevel.ERROR, f"Can't listen for autopilot status on port {AUTOPILOT_LOG_PORT}"))
-        self.sock.readyRead.connect(self._read)
-        self.timer = QTimer(self, interval=250, timeout=self._check_link)
+                LogLevel.ERROR, f"Can't listen for telemetry on port {telemetry_port}"))
+        self.telem_sock.readyRead.connect(self._read_telemetry)
+
+        self.timer = QTimer(self, interval=POLL_MS, timeout=self._poll)
         self.timer.start()
 
+    # Commands ---------------------------------------------------------------------------
+
+    def _send(self, command, shapes=(), on_result=None):
+        cid = self._next_id
+        self._next_id += 1
+        self.cmd_sock.writeDatagram(bytes(build_command(cid, command, shapes)), *self.addr)
+        if on_result:
+            self._pending[cid] = (on_result, time.monotonic())
+        return cid
+
     def confirm_sequence(self, shapes):
-        acked = self.link.send_sequence(build_shape_sequence(shapes))
-        if acked:
-            self.state.sequence = tuple(shapes)
-            self.log.emit(LogLevel.OK, "Sequence received: " + " → ".join(s.label for s in shapes))
-        else:
-            self.log.emit(LogLevel.WARN, "Autopilot didn't answer - is it running?")
-        self.sequence_confirmed.emit(acked)
+        shapes = tuple(shapes)
+
+        def done(ok):
+            if ok:
+                self.state.sequence = shapes
+                self.log.emit(LogLevel.OK, "Sequence received: " + " → ".join(s.label for s in shapes))
+            else:
+                self.log.emit(LogLevel.WARN, "Autopilot didn't accept the order - is it running?")
+            self.sequence_confirmed.emit(ok)
+        self._send(UICommand.SET_SEQUENCE, shapes, done)
 
     def start_mission(self):
-        if self.link.send_sequence(build_shape_sequence(self.state.sequence, start=True)):
-            self.log.emit(LogLevel.OK, "Mission started")
-        else:
-            self.log.emit(LogLevel.WARN, "Start not acknowledged")
+        def done(ok):
+            self.log.emit(LogLevel.OK if ok else LogLevel.WARN,
+                          "Mission started" if ok else "Autopilot didn't accept Start")
+        # START_MISSION carries the sequence too, so the autopilot flies exactly what's shown
+        self._send(UICommand.START_MISSION, self.state.sequence, done)
 
     def emergency_stop(self):
-        acked = self.link.send_sequence(build_shape_sequence(self.state.sequence, estop=True))
-        self.log.emit(LogLevel.ERROR, "EMERGENCY STOP sent" + ("" if acked else " (no ack!)"))
+        self.log.emit(LogLevel.ERROR, "EMERGENCY STOP sent")
 
-    def _read(self):
-        while self.sock.hasPendingDatagrams():
-            try:
-                log = parse_log(self.sock.receiveDatagram().data().data())
-            except ValueError:
-                continue
-            self._last_rx = time.monotonic()
-            self.update_from_log(log)
+        def done(ok):
+            if not ok:
+                self.log.emit(LogLevel.ERROR, "Autopilot didn't confirm the emergency stop!")
+        for _ in range(3):  # UDP can drop packets; repeats are harmless
+            cid = self._send(UICommand.ESTOP)
+        self._pending[cid] = (done, time.monotonic())
 
-    def update_from_log(self, log):
-        s = self.state
-        if not s.connected:
-            self.log.emit(LogLevel.OK, "Connected to autopilot")
-        s.connected = True
-        state = log.get("state")
-        if isinstance(state, int) and 0 <= state < len(AUTOPILOT_PHASES):
-            phase = AUTOPILOT_PHASES[state]
-            if phase == Phase.READY and self._was_active:
-                phase = Phase.COMPLETE
-                self.log.emit(LogLevel.OK, "Mission complete!")
-            elif phase == Phase.READY and s.phase == Phase.COMPLETE:
-                phase = Phase.COMPLETE  # keep showing it until the next mission
-            if phase != s.phase and phase in (Phase.ERROR, Phase.ESTOP):
-                self.log.emit(LogLevel.ERROR, f"Autopilot reports {phase.value}")
-            active = phase in ACTIVE_PHASES
-            if active and self._mission_start is None:
-                self._mission_start = time.monotonic()
-            elif not active:
-                self._mission_start = None
-            self._was_active = active
-            s.phase = phase
-        if self._mission_start is not None:
-            s.mission_time = time.monotonic() - self._mission_start
+    # Incoming ---------------------------------------------------------------------------
 
-        for key, (field, scale) in LOG_FIELDS.items():
-            if key in log:
-                setattr(s, field, log[key] * scale)
-        if "goal_index" in log:
-            index = int(log["goal_index"])
-            if s.phase == Phase.FLYING and index != s.target_index and index < len(s.sequence):
-                shape = s.sequence[index]
-                self.log.emit(LogLevel.INFO, f"Navigating to {shape.label} ({index + 1}/{len(s.sequence)})")
-            s.target_index = index if s.phase == Phase.FLYING else None
-        self.state_changed.emit(replace(s))
-
-    def _check_link(self):
-        connected = time.monotonic() - self._last_rx < STALE_AFTER_S
+    def _poll(self):
+        self._send(UICommand.NONE)
+        now = time.monotonic()
+        for cid, (on_result, sent) in list(self._pending.items()):
+            if now - sent > ACK_TIMEOUT_S:
+                del self._pending[cid]
+                on_result(False)
+        connected = now - self._last_status < STALE_AFTER_S
         if connected != self.state.connected:
             self.state.connected = connected
-            if not connected:
-                self.log.emit(LogLevel.WARN, "Lost contact with autopilot")
+            self.log.emit(LogLevel.OK if connected else LogLevel.WARN,
+                          "Connected to autopilot" if connected else "Lost contact with autopilot")
             self.state_changed.emit(replace(self.state))
+
+    def _read_status(self):
+        while self.cmd_sock.hasPendingDatagrams():
+            pkt = parse_packet(self.cmd_sock.receiveDatagram().data().data())
+            if isinstance(pkt, UIStatusPacket):
+                self.handle_status(pkt)
+
+    def _read_telemetry(self):
+        while self.telem_sock.hasPendingDatagrams():
+            pkt = parse_packet(self.telem_sock.receiveDatagram().data().data())
+            if isinstance(pkt, TelemetryPacket):
+                self.handle_telemetry(pkt)
+
+    def handle_status(self, pkt):
+        s = self.state
+        self._last_status = time.monotonic()
+        if not s.connected:
+            s.connected = True
+            self.log.emit(LogLevel.OK, "Connected to autopilot")
+
+        pending = self._pending.pop(pkt.last_acked_cmd_id, None)
+        if pending:
+            pending[0](pkt.cmd_ack_result == 0)
+
+        try:
+            flight = FlightState(pkt.flight_state)
+        except ValueError:
+            flight = None
+        phase = FLIGHT_PHASES.get(flight, Phase.ERROR)
+        active = phase in ACTIVE_PHASES
+        if flight == FlightState.ROTOR_STOPPED and self._was_active:
+            phase = Phase.COMPLETE
+            self.log.emit(LogLevel.OK, "Landed safely. Mission complete! Great job!")
+        elif phase == Phase.READY and s.phase == Phase.COMPLETE:
+            phase = Phase.COMPLETE  # keep showing it until the next mission
+        if flight != self._flight_state:
+            self._log_transition(flight, pkt)
+        self._flight_state = flight
+
+        if active and self._mission_start is None:
+            self._mission_start = time.monotonic()
+        elif not active:
+            self._mission_start = None
+        self._was_active = active
+        s.phase = phase
+        s.mission_time = None if self._mission_start is None else time.monotonic() - self._mission_start
+
+        index = pkt.current_seq_index
+        if phase == Phase.FLYING and s.sequence and index != self._seq_index:
+            if self._seq_index is not None and index > self._seq_index and self._seq_index < len(s.sequence):
+                done = s.sequence[self._seq_index]
+                self.log.emit(LogLevel.OK, f"Flew through the {done.label} ({self._seq_index + 1}/{len(s.sequence)})")
+        self._seq_index = index if active else None
+        s.target_index = index if phase == Phase.FLYING and index < len(s.sequence) else None
+        s.battery = pkt.battery_remaining
+        self.state_changed.emit(replace(s))
+
+    def _log_transition(self, flight, pkt):
+        s = self.state
+        target = s.sequence[pkt.current_seq_index] if pkt.current_seq_index < len(s.sequence) else None
+        if flight == FlightState.TAKEOFF:
+            self.log.emit(LogLevel.INFO, "Taking off")
+        elif flight == FlightState.GOAL_SEEK and target:
+            self.log.emit(LogLevel.INFO, f"Looking for the {target.label}…")
+        elif flight == FlightState.PATH_FOLLOWING and target:
+            self.log.emit(LogLevel.INFO, f"Found the {target.label}! Flying to it "
+                                         f"({pkt.current_seq_index + 1}/{len(s.sequence)})")
+        elif flight == FlightState.LANDING:
+            self.log.emit(LogLevel.INFO, "Landing")
+        elif flight == FlightState.ESTOP_TRIPPED:
+            self.log.emit(LogLevel.ERROR, "Emergency stop is active - motors off")
+
+    def handle_telemetry(self, pkt):
+        s = self.state
+        p, v = pkt.drone_pos_ned, pkt.drone_vel_ned
+        s.x, s.y = p.x, p.y
+        s.z = abs(p.z)  # shown as altitude whichever way up the autopilot reports z
+        speed = math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
+        if speed == 0.0 and self._last_pos is not None:
+            # Velocity isn't filled in yet: estimate it from successive positions
+            t0, (x0, y0, z0) = self._last_pos
+            dt = (pkt.timestamp_ns - t0) / 1e9
+            if dt > 0:
+                speed = math.sqrt((p.x - x0) ** 2 + (p.y - y0) ** 2 + (p.z - z0) ** 2) / dt
+        self._last_pos = (pkt.timestamp_ns, (p.x, p.y, p.z))
+        s.speed = speed
+        euler = quat_to_euler_deg(pkt.drone_att_ned)
+        s.roll, s.pitch, s.yaw = euler if euler else (None, None, None)
+
+        for goal in pkt.goals:
+            try:
+                shape = Shape(goal.shape_type)
+            except ValueError:
+                continue
+            seen = goal.state in (TrackState.CONVERGING, TrackState.LOCKED)
+            if seen and not self._tracks.get(shape, False):
+                self.log.emit(LogLevel.INFO, f"Camera spotted the {shape.label}")
+            self._tracks[shape] = seen
+        self.state_changed.emit(replace(s))
 
     def shutdown(self):
         self.timer.stop()
-        self.sock.close()
-        self.link.close()
+        self.cmd_sock.close()
+        self.telem_sock.close()

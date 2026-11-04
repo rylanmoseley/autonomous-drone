@@ -88,31 +88,3 @@ def test_window_tracks_mission(sim):
     assert win.start_btn.isEnabled()
 
 
-def test_autopilot_backend_maps_log():
-    backend = AutopilotBackend("127.0.0.1", port=1)
-    try:
-        states = []
-        backend.state_changed.connect(states.append)
-        backend.update_from_log({"state": 2, "telem_x": 1.5})
-        assert states[-1].phase == Phase.FLYING and states[-1].x == 1.5 and states[-1].connected
-        backend.update_from_log({"state": 0})
-        assert states[-1].phase == Phase.COMPLETE
-        assert states[-1].battery is None  # not reported by the autopilot yet
-    finally:
-        backend.shutdown()
-
-
-def test_autopilot_backend_optional_fields():
-    backend = AutopilotBackend("127.0.0.1", port=1)
-    try:
-        backend.state.sequence = (Shape.TRIANGLE, Shape.CIRCLE, Shape.SQUARE)
-        logs, states = [], []
-        backend.log.connect(lambda _lvl, msg: logs.append(msg))
-        backend.state_changed.connect(states.append)
-        backend.update_from_log({"state": 2, "goal_index": 1, "telem_yaw": 3.14159265,
-                                 "battery": 81.0, "rssi": -50.0})
-        s = states[-1]
-        assert s.target_index == 1 and round(s.yaw) == 180 and s.battery == 81.0
-        assert "Navigating to Circle (2/3)" in logs
-    finally:
-        backend.shutdown()
