@@ -1,6 +1,8 @@
 #pragma once
 #include <vector>
 #include <cstddef>
+#include <cstdint>
+#include "common_types.h"
 
 struct __attribute__((packed)) Pose {
     double x, y, z;

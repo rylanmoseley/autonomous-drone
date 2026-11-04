@@ -1,0 +1,127 @@
+name: Build Drone Operating System
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target SBC hardware platform'
+        required: true
+        default: 'radxa-zero-3w'
+        type: choice
+        options:
+          - 'radxa-zero-3w'
+          - 'pi-zero-2w'
+          - 'all'
+      distro:
+        description: 'Debian base distribution'
+        required: true
+        default: 'bookworm'
+        type: choice
+        options:
+          - 'bookworm'
+          - 'trixie'
+      compress:
+        description: 'Compress finished image with xz'
+        required: true
+        default: true
+        type: boolean
+      skip_image:
+        description: 'Validate rootfs build without assembling full raw disk image'
+        required: false
+        default: false
+        type: boolean
+
+  pull_request:
+    paths:
+      - 'os/**'
+      - '.github/workflows/build-os.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate_recipes:
+    name: Validate OS Recipes & Configs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Configuration Test Suite
+        run: |
+          ./os/tests/test_os_configs.sh
+
+  build_os_image:
+    name: Build OS Image (${{ matrix.target }})
+    needs: validate_recipes
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ github.event.inputs.target == 'all' && fromJSON('["radxa-zero-3w", "pi-zero-2w"]') || fromJSON(format('["{0}"]', github.event.inputs.target)) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Toolchain & Image Building Utilities
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            debootstrap \
+            parted \
+            dosfstools \
+            e2fsprogs \
+            xz-utils \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabihf \
+            g++-arm-linux-gnueabihf
+
+          # Install QEMU user emulation supporting both Ubuntu 26 and Ubuntu 24/Debian
+          sudo apt-get install -y --no-install-recommends qemu-user-binfmt qemu-user || \
+          sudo apt-get install -y --no-install-recommends qemu-user-static || true
+
+          # Ensure static emulator symlinks exist
+          if [ ! -f /usr/bin/qemu-arm-static ]; then
+            EMU=$(which qemu-arm-static 2>/dev/null || which qemu-arm 2>/dev/null || true)
+            [ -n "$EMU" ] && sudo ln -sf "$EMU" /usr/bin/qemu-arm-static || true
+          fi
+          if [ ! -f /usr/bin/qemu-aarch64-static ]; then
+            EMU=$(which qemu-aarch64-static 2>/dev/null || which qemu-aarch64 2>/dev/null || true)
+            [ -n "$EMU" ] && sudo ln -sf "$EMU" /usr/bin/qemu-aarch64-static || true
+          fi
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: os-${{ matrix.target }}
+          max-size: 500M
+
+      - name: Build Drone Operating System
+        run: |
+          BUILD_ARGS="--target ${{ matrix.target }} --distro ${{ github.event.inputs.distro || 'bookworm' }}"
+          if [ "${{ github.event.inputs.compress }}" != "true" ]; then
+            BUILD_ARGS="$BUILD_ARGS --no-compress"
+          fi
+          if [ "${{ github.event.inputs.skip_image }}" = "true" ]; then
+            BUILD_ARGS="$BUILD_ARGS --skip-image"
+          fi
+
+          echo "Running: sudo ./os/build_os.sh $BUILD_ARGS"
+          sudo ./os/build_os.sh $BUILD_ARGS
+
+      - name: List Generated Artifacts
+        run: |
+          ls -lh os/output/ || true
+
+      - name: Upload Operating System Image
+        if: github.event.inputs.skip_image != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: drone-os-${{ matrix.target }}
+          path: |
+            os/output/drone-os-${{ matrix.target }}.*
+          if-no-files-found: error

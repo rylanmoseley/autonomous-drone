@@ -1,0 +1,26 @@
+# /etc/udev/rules.d/99-drone-hardware.rules
+# Hardware interface permissions and persistent symlinks for Autonomous Drone SBC
+
+# 1. Flight Controller Serial Telemetry
+# Radxa Zero 3W: UART4 on Pins 16 (RX) & 18 (TX) -> /dev/ttyS4
+KERNEL=="ttyS4", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"
+
+# Raspberry Pi Zero 2W: UART0 / PL011 on Pins 8 (TX) & 10 (RX) -> /dev/ttyAMA0
+KERNEL=="ttyAMA0", SYMLINK+="flightcontroller", OWNER="root", GROUP="dialout", MODE="0666"
+
+# USB Flight Controllers (Betaflight / ArduPilot / INAV Virtual COM Port)
+KERNEL=="ttyACM[0-9]*", SYMLINK+="flightcontroller_usb", OWNER="root", GROUP="dialout", MODE="0666"
+KERNEL=="ttyUSB[0-9]*", OWNER="root", GROUP="dialout", MODE="0666"
+
+# 2. Camera & V4L2 Devices (MIPI-CSI OV9281, Rockchip ISP, USB Cameras)
+KERNEL=="video[0-9]*", OWNER="root", GROUP="video", MODE="0660"
+KERNEL=="media[0-9]*", OWNER="root", GROUP="video", MODE="0660"
+KERNEL=="v4l-subdev[0-9]*", OWNER="root", GROUP="video", MODE="0660"
+
+# 3. I2C & SPI Sensors (ToF VL53L0X, Optical Flow MTF-02P)
+KERNEL=="i2c-[0-9]*", OWNER="root", GROUP="i2c", MODE="0660"
+KERNEL=="spidev[0-9]*.[0-9]*", OWNER="root", GROUP="spi", MODE="0660"
+
+# 4. GPIO & PWM Controllers
+SUBSYSTEM=="gpio", ACTION=="add", PROGRAM="/bin/sh -c 'chown -R root:dialout /sys/class/gpio && chmod -R 770 /sys/class/gpio'"
+SUBSYSTEM=="pwm", ACTION=="add", PROGRAM="/bin/sh -c 'chown -R root:dialout /sys/class/pwm && chmod -R 770 /sys/class/pwm'"

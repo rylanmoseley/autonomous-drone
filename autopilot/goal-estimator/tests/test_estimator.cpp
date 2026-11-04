@@ -4,27 +4,31 @@
 TEST(GoalEstimatorTest, UpdateAndTimeout) {
     GoalEstimator estimator(0.5, 2.0);
     
-    std::vector<VisionGoalEstimate> updates;
-    VisionGoalEstimate e1;
-    e1.goal_id = 1;
-    e1.pose = {1.0, 2.0, 3.0, 0, 0, 0, 0, 1.0};
-    e1.determinate = true;
-    updates.push_back(e1);
+    VisionPacket pkt = {};
+    pkt.msg_type = MSG_TYPE_VISION;
+    pkt.num_goals_reported = 1;
+    pkt.goals[0].shape_type = SHAPE_CIRCLE;
+    pkt.goals[0].is_detected = 1;
+    pkt.goals[0].num_hypotheses = 1;
+    pkt.goals[0].hypotheses[0].position_cam = {1.0f, 2.0f, 3.0f};
+    pkt.goals[0].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f};
+    pkt.goals[0].hypotheses[0].confidence = 1.0f;
     
-    estimator.updateEstimates(updates, 10.0);
+    estimator.updateEstimates(pkt, 10.0);
     
     auto current = estimator.getCurrentEstimates(10.5);
     ASSERT_EQ(current.size(), 1);
-    EXPECT_EQ(current[0].goal_id, 1);
-    EXPECT_DOUBLE_EQ(current[0].pose.x, 1.0);
+    EXPECT_EQ(current[0].shape_type, SHAPE_CIRCLE);
+    EXPECT_NEAR(current[0].pose.x, 1.0, 1e-5);
+    EXPECT_NEAR(current[0].pose.y, 2.0, 1e-5);
+    EXPECT_NEAR(current[0].pose.z, 3.0, 1e-5);
     
-    e1.pose.x = 3.0;
-    updates[0] = e1;
-    estimator.updateEstimates(updates, 11.0);
+    pkt.goals[0].hypotheses[0].position_cam.x = 3.0f;
+    estimator.updateEstimates(pkt, 11.0);
     
     current = estimator.getCurrentEstimates(11.5);
     ASSERT_EQ(current.size(), 1);
-    EXPECT_DOUBLE_EQ(current[0].pose.x, 2.0); 
+    EXPECT_NEAR(current[0].pose.x, 2.0, 1e-5); 
     
     current = estimator.getCurrentEstimates(14.0);
     EXPECT_EQ(current.size(), 0);

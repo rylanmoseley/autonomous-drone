@@ -15,3 +15,9 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+
+# Emulator for running cross-compiled tests
+find_program(QEMU_ARM_EMULATOR NAMES qemu-arm-static qemu-arm PATHS /usr/bin /usr/local/bin)
+if(QEMU_ARM_EMULATOR)
+    set(CMAKE_CROSSCOMPILING_EMULATOR ${QEMU_ARM_EMULATOR} -L /usr/arm-linux-gnueabihf)
+endif()

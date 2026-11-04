@@ -1,5 +1,13 @@
+# OS Build Artifacts
+os/output/
+*.img
+*.img.xz
+*.img.sha256
+*.img.xz.sha256
+
 # CMake and Build Artifacts
 build/
+build-*/
 CMakeCache.txt
 CMakeFiles/
 CMakeScripts/
