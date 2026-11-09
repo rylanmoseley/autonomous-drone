@@ -1,4 +1,6 @@
 #include "gate_detector.h"
+#include <opencv2/imgproc.hpp>
+#include <opencv2/calib3d.hpp>
 
 namespace vision {
 
@@ -65,15 +67,54 @@ std::vector<cv::Point2f> orderPentagonPoints(const std::vector<cv::Point>& pts) 
     return ordered;
 }
 
-std::string classifyShape(const std::vector<cv::Point>& contour) {
+std::string classifyShape(const cv::Mat& frame, const std::vector<cv::Point>& contour) {
     double area = cv::contourArea(contour);
-    if (area < 300) return "Unknown";
+    if (area < 25) return "Unknown";
 
     double perim = cv::arcLength(contour, true);
     if (perim == 0) return "Unknown";
 
-    double circularity = 4.0 * CV_PI * area / (perim * perim);
+    cv::Rect bbox = cv::boundingRect(contour);
+    if (bbox.width < 4 || bbox.height < 4) return "Unknown";
 
+    // Color sample to differentiate simulated/real gates
+    if (!frame.empty()) {
+        int blue_count = 0;
+        int red_count = 0;
+        int green_count = 0;
+        int total_checked = 0;
+
+        int x0 = std::max(0, bbox.x);
+        int y0 = std::max(0, bbox.y);
+        int x1 = std::min(frame.cols, bbox.x + bbox.width);
+        int y1 = std::min(frame.rows, bbox.y + bbox.height);
+
+        for (int y = y0; y < y1; y += 2) {
+            const cv::Vec3b* row = frame.ptr<cv::Vec3b>(y);
+            for (int x = x0; x < x1; x += 2) {
+                int b = row[x][0];
+                int g = row[x][1];
+                int r = row[x][2];
+                total_checked++;
+                if (b > r + 30 && b > g + 30) blue_count++;
+                else if (r > g + 30 && r > b + 30) red_count++;
+                else if (g > r + 30 && g > b + 30) green_count++;
+            }
+        }
+
+        if (blue_count >= 6 && blue_count > red_count && blue_count > green_count) {
+            return "Circle";
+        }
+        if (red_count >= 6 && red_count > blue_count && red_count > green_count) {
+            return "Triangle";
+        }
+        if (green_count >= 6 && green_count > blue_count && green_count > red_count) {
+            return "Square";
+        }
+    }
+
+    // Geometric shape discrimination fallback
+    double circularity = 4.0 * CV_PI * area / (perim * perim);
     cv::Point2f center;
     float radius;
     cv::minEnclosingCircle(contour, center, radius);
@@ -81,29 +122,29 @@ std::string classifyShape(const std::vector<cv::Point>& contour) {
     double fillRatio = (circleArea > 0) ? (area / circleArea) : 0;
 
     std::vector<cv::Point> approx;
-    cv::approxPolyDP(contour, approx, 0.02 * perim, true);
+    cv::approxPolyDP(contour, approx, 0.04 * perim, true);
     size_t n = approx.size();
 
-    // 1. Circle test
-    if (n >= 7 && circularity > 0.75 && fillRatio > 0.7) {
+    if (circularity > 0.65 && fillRatio > 0.60) {
+        return "Circle";
+    }
+    if (n == 3 || (n <= 4 && circularity < 0.65 && fillRatio < 0.55)) {
+        return "Triangle";
+    }
+    if (n == 4 || n == 5) {
+        float ar = (float)bbox.width / bbox.height;
+        if (ar > 0.75 && ar < 1.35) return "Square";
+    }
+    if (circularity > 0.55) {
         return "Circle";
     }
 
-    // 2. Polygon approximation
-    if (n == 3) {
-        return "Triangle";
-    } else if (n == 4) {
-        cv::Rect rect = cv::boundingRect(approx);
-        float ar = (float)rect.width / rect.height;
-        if (ar > 0.9 && ar < 1.1) return "Square";
-        else return "Rectangle";
-    } else if (n == 5) {
-        cv::Rect rect = cv::boundingRect(approx);
-        float ar = (float)rect.width / rect.height;
-        if (ar > 0.7 && ar < 1.3 && circularity > 0.3) return "Pentagon";
-    }
-
     return "Unknown";
+}
+
+std::string classifyShape(const std::vector<cv::Point>& contour) {
+    cv::Mat dummy;
+    return classifyShape(dummy, contour);
 }
 
 GateDetector::GateDetector(double focal_length)
@@ -130,222 +171,317 @@ GateDetector::GateDetector(double focal_length)
     };
 }
 
-GateDetectionResult GateDetector::processFrame(cv::Mat& frame, bool draw_overlay) {
-    GateDetectionResult result;
-    if (frame.empty()) return result;
+std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bool draw_overlay) {
+    std::vector<GateDetectionResult> results;
+    if (frame.empty()) return results;
+
+    bool is_sim = is_sim_ || (frame.cols == 320 && frame.rows == 240);
+    double effective_focal = is_sim ? (frame.rows / (2.0 * std::tan(35.0 * CV_PI / 180.0))) : focal_length_;
+
+    if (is_sim) {
+        // High-precision simulation gate segmentation based on distinct Three.js hoop colors:
+        // Gate 1 (Circle):   Pure Blue (0x0000ff) -> B > 65 && (B - R) > 30 && (B - G) > 30
+        // Gate 2 (Triangle): Pure Red  (0xff0000) -> R > 55 && (R - B) > 25 && (R - G) > 25
+        // Gate 3 (Square):   Pure Green(0x00ff00) -> G > 55 && (G - R) > 25 && (G - B) > 25
+
+        struct SimGateSpec {
+            std::string shape;
+            int goal_id;
+            double known_dim; // physical outer width/height in meters
+            cv::Scalar draw_color;
+        };
+
+        const std::vector<SimGateSpec> specs = {
+            {"Circle",   1, 0.500, cv::Scalar(255, 100, 0)},
+            {"Triangle", 2, 0.575, cv::Scalar(0, 0, 255)},
+            {"Square",   3, 0.414, cv::Scalar(0, 255, 0)}
+        };
+
+        cv::Mat mask_blue  = cv::Mat::zeros(frame.size(), CV_8UC1);
+        cv::Mat mask_red   = cv::Mat::zeros(frame.size(), CV_8UC1);
+        cv::Mat mask_green = cv::Mat::zeros(frame.size(), CV_8UC1);
+
+        for (int y = 0; y < frame.rows; ++y) {
+            const cv::Vec3b* ptr = frame.ptr<cv::Vec3b>(y);
+            uchar* mb = mask_blue.ptr<uchar>(y);
+            uchar* mr = mask_red.ptr<uchar>(y);
+            uchar* mg = mask_green.ptr<uchar>(y);
+            for (int x = 0; x < frame.cols; ++x) {
+                int b = ptr[x][0];
+                int g = ptr[x][1];
+                int r = ptr[x][2];
+                if (b > 65 && (b - r) > 30 && (b - g) > 30) {
+                    mb[x] = 255;
+                } else if (r > 55 && (r - b) > 25 && (r - g) > 25) {
+                    mr[x] = 255;
+                } else if (g > 55 && (g - r) > 25 && (g - b) > 25) {
+                    mg[x] = 255;
+                }
+            }
+        }
+
+        cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
+        cv::morphologyEx(mask_blue, mask_blue, cv::MORPH_CLOSE, kernel);
+        cv::morphologyEx(mask_red, mask_red, cv::MORPH_CLOSE, kernel);
+        cv::morphologyEx(mask_green, mask_green, cv::MORPH_CLOSE, kernel);
+
+        for (const auto& spec : specs) {
+            const cv::Mat& mask = (spec.shape == "Circle") ? mask_blue : ((spec.shape == "Triangle") ? mask_red : mask_green);
+            std::vector<std::vector<cv::Point>> contours;
+            cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+            int best_idx = -1;
+            double max_area = 0.0;
+            for (size_t i = 0; i < contours.size(); ++i) {
+                double a = cv::contourArea(contours[i]);
+                if (a > max_area) {
+                    max_area = a;
+                    best_idx = static_cast<int>(i);
+                }
+            }
+
+            if (best_idx < 0 || max_area < 45.0) continue;
+
+            const auto& contour = contours[best_idx];
+            cv::Rect bbox = cv::boundingRect(contour);
+
+            // Reject contours clipped by the camera frame boundaries
+            if (bbox.x <= 1 || bbox.y <= 1 ||
+                bbox.x + bbox.width >= frame.cols - 1 ||
+                bbox.y + bbox.height >= frame.rows - 1) {
+                continue;
+            }
+
+            // Aspect ratio check to reject occluded slivers
+            double aspect = static_cast<double>(bbox.width) / std::max(1, bbox.height);
+            if (aspect < 0.50 || aspect > 2.0) {
+                continue;
+            }
+
+            cv::Moments m = cv::moments(contour);
+            double cx = (m.m00 > 0) ? (m.m10 / m.m00) : (bbox.x + bbox.width / 2.0);
+            double cy = (m.m00 > 0) ? (m.m01 / m.m00) : (bbox.y + bbox.height / 2.0);
+            cv::Point center(static_cast<int>(std::round(cx)), static_cast<int>(std::round(cy)));
+
+            double gate_size_px = std::max(bbox.width, bbox.height);
+            double distance_m = calculateDistance(spec.known_dim, effective_focal, gate_size_px);
+            if (distance_m > 4.5 || distance_m < 0.2) {
+                continue; // Reject out-of-range false detections
+            }
+
+            GateDetectionResult res;
+            res.detected = true;
+            res.shape = spec.shape;
+            res.center = center;
+            res.goal_id = spec.goal_id;
+            res.bbox_size = gate_size_px;
+            res.posX_m = (cx - frame.cols / 2.0) * (distance_m / effective_focal);
+            res.posY_m = (cy - frame.rows / 2.0) * (distance_m / effective_focal);
+            res.posZ_m = distance_m;
+            res.confidence = 0.95;
+            res.is_3d = false;
+
+            if (draw_overlay) {
+                cv::drawContours(frame, contours, best_idx, spec.draw_color, 2);
+                cv::rectangle(frame, bbox, cv::Scalar(255, 255, 0), 1);
+                cv::circle(frame, center, 3, cv::Scalar(0, 0, 255), -1);
+                std::string label = spec.shape + " " + std::to_string(res.posZ_m).substr(0, 4) + "m";
+                cv::putText(frame, label, cv::Point(center.x - 25, center.y - 10),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(255, 255, 255), 1);
+            }
+
+            results.push_back(res);
+        }
+
+        return results;
+    }
+
+    double known_width = KNOWN_SQUARE_WIDTH_M;
 
     cv::Mat gray, blur, thresh;
+    if (is_sim) {
+        std::vector<cv::Mat> channels;
+        cv::split(frame, channels);
+        cv::max(channels[0], channels[1], gray);
+        cv::max(gray, channels[2], gray);
+        cv::GaussianBlur(gray, blur, cv::Size(3, 3), 0);
+        cv::Canny(blur, thresh, 25, 75);
+    } else {
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+        cv::GaussianBlur(gray, blur, cv::Size(5, 5), 0);
+        cv::Canny(blur, thresh, 30, 90);
+    }
 
-    // Camera Intrinsic Matrix & Distortion Coefficients
-    cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) <<
-        focal_length_, 0.0, frame.cols / 2.0,
-        0.0, focal_length_, frame.rows / 2.0,
-        0.0, 0.0, 1.0
-    );
-    cv::Mat distCoeffs = cv::Mat::zeros(4, 1, CV_64F);
-
-    // 1. Preprocessing (Grayscale, Blur, Canny Edge Detection)
-    cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-    cv::GaussianBlur(gray, blur, cv::Size(5, 5), 0);
-    cv::Canny(blur, thresh, 50, 150);
-
-    // Dilate to connect micro-gaps
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
     cv::dilate(thresh, thresh, kernel, cv::Point(-1, -1), 1);
 
-    // 2. Find Contours with Hierarchy
     std::vector<std::vector<cv::Point>> contours;
     std::vector<cv::Vec4i> hierarchy;
     cv::findContours(thresh, contours, hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
 
-    // 3. Gate Hole Detection (Parent/Child Hierarchy)
-    if (hierarchy.empty()) return result;
+    if (contours.empty()) return results;
 
-    for (size_t i = 0; i < contours.size(); i++) {
-        double parentArea = cv::contourArea(contours[i]);
-        if (parentArea < 3000 || parentArea > (frame.cols * frame.rows * 0.9)) continue;
+    double minArea = is_sim ? 25.0 : std::max(50.0, frame.cols * frame.rows * 0.002);
+    double maxArea = frame.cols * frame.rows * 0.95;
 
-        int childIdx = hierarchy[i][2];
-        while (childIdx != -1) {
-            double childArea = cv::contourArea(contours[childIdx]);
-            
-            if (childArea >= 1000) {
-                double holeRatio = childArea / parentArea;
-                
-                if (holeRatio >= 0.15 && holeRatio <= 0.95) {
-                    std::string shapeName = classifyShape(contours[childIdx]);
+    // Track best candidate contour per shape type ("Circle", "Triangle", "Square")
+    struct Candidate {
+        int contour_idx = -1;
+        double area = 0.0;
+        cv::Point center{0, 0};
+        cv::Rect bbox;
+    };
+    std::map<std::string, Candidate> best_by_shape;
 
-                    if (shapeName != "Unknown") {
-                        result.detected = true;
-                        result.shape = shapeName;
+    for (size_t i = 0; i < contours.size(); ++i) {
+        double area = cv::contourArea(contours[i]);
+        if (area < minArea || area > maxArea) continue;
 
-                        if (draw_overlay) {
-                            // Outer gate frame: Green, Inner hole boundary: Red
-                            cv::drawContours(frame, contours, (int)i, cv::Scalar(0, 255, 0), 2);
-                            cv::drawContours(frame, contours, childIdx, cv::Scalar(0, 0, 255), 2);
-                        }
+        std::string shape = classifyShape(frame, contours[i]);
+        if (shape == "Unknown") continue;
 
-                        cv::Moments m = cv::moments(contours[childIdx]);
-                        if (m.m00 != 0) {
-                            cv::Point center(static_cast<int>(m.m10 / m.m00), static_cast<int>(m.m01 / m.m00));
-                            result.center = center;
+        cv::Moments m = cv::moments(contours[i]);
+        if (m.m00 == 0) continue;
+        cv::Point center(static_cast<int>(m.m10 / m.m00), static_cast<int>(m.m01 / m.m00));
+        cv::Rect bbox = cv::boundingRect(contours[i]);
 
-                            if (draw_overlay) {
-                                cv::line(frame, cv::Point(center.x - 10, center.y), cv::Point(center.x + 10, center.y), cv::Scalar(0, 0, 255), 2);
-                                cv::line(frame, cv::Point(center.x, center.y - 10), cv::Point(center.x, center.y + 10), cv::Scalar(0, 0, 255), 2);
-                                cv::putText(frame, "Gate: " + shapeName, cv::Point(center.x - 30, center.y - 15), 
-                                            cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 2);
-                            }
-
-                            // Polygon approximation to extract corners for solvePnP
-                            double perim = cv::arcLength(contours[childIdx], true);
-                            std::vector<cv::Point> approx;
-                            cv::approxPolyDP(contours[childIdx], approx, 0.03 * perim, true);
-
-                            std::vector<cv::Point3f> currentObjectPoints;
-                            std::vector<cv::Point2f> currentImagePoints;
-                            float currentHalfWidth_m = static_cast<float>(KNOWN_SQUARE_WIDTH_M / 2.0);
-                            bool canSolvePnP = false;
-
-                            if (approx.size() == 4) {
-                                currentObjectPoints = square_object_points_;
-                                currentImagePoints = orderQuadPoints(approx);
-                                currentHalfWidth_m = static_cast<float>(KNOWN_SQUARE_WIDTH_M / 2.0);
-                                canSolvePnP = true;
-                                result.goal_id = 1; // Gate 1: Square
-                            } else if (approx.size() == 5) {
-                                currentObjectPoints = pentagon_object_points_;
-                                currentImagePoints = orderPentagonPoints(approx);
-                                currentHalfWidth_m = static_cast<float>(KNOWN_PENTAGON_WIDTH_M / 2.0);
-                                canSolvePnP = true;
-                                result.goal_id = 2; // Gate 2: Pentagon
-                            }
-
-                            if (canSolvePnP) {
-                                cv::Mat rvec, tvec;
-                                bool solved = cv::solvePnP(currentObjectPoints, currentImagePoints, cameraMatrix, distCoeffs, rvec, tvec);
-                                if (solved) {
-                                    result.is_3d = true;
-                                    result.confidence = 0.95;
-
-                                    // 3D Position in SI METERS
-                                    result.posX_m = tvec.at<double>(0);
-                                    result.posY_m = tvec.at<double>(1);
-                                    result.posZ_m = tvec.at<double>(2);
-
-                                    // Extract 3D Orientation (Pitch, Yaw, Roll)
-                                    cv::Mat rotMat;
-                                    cv::Rodrigues(rvec, rotMat);
-
-                                    // Radians for shared protocol
-                                    result.pitch_rad = std::atan2(-rotMat.at<double>(2, 0),
-                                        std::sqrt(rotMat.at<double>(0, 0) * rotMat.at<double>(0, 0) + rotMat.at<double>(1, 0) * rotMat.at<double>(1, 0)));
-                                    result.yaw_rad = std::atan2(rotMat.at<double>(1, 0), rotMat.at<double>(0, 0));
-                                    result.roll_rad = std::atan2(rotMat.at<double>(2, 1), rotMat.at<double>(2, 2));
-
-                                    // Degrees for display / HUD
-                                    result.pitch_deg = result.pitch_rad * (180.0 / CV_PI);
-                                    result.yaw_deg = result.yaw_rad * (180.0 / CV_PI);
-                                    result.roll_deg = result.roll_rad * (180.0 / CV_PI);
-
-                                    if (draw_overlay) {
-                                        // Draw 3D coordinate frame axes directly projected onto gate (X: Red, Y: Green, Z: Blue)
-                                        cv::drawFrameAxes(frame, cameraMatrix, distCoeffs, rvec, tvec, currentHalfWidth_m * 0.7f, 2);
-
-                                        // Display 3D telemetry in SI METERS with inch reference
-                                        std::string posText = "Pos(X,Y,Z): " + 
-                                            std::to_string(result.posX_m).substr(0, 5) + ", " + 
-                                            std::to_string(result.posY_m).substr(0, 5) + ", " + 
-                                            std::to_string(result.posZ_m).substr(0, 5) + " m (" +
-                                            std::to_string(result.posX_m * METERS_TO_INCHES).substr(0, 4) + ", " +
-                                            std::to_string(result.posY_m * METERS_TO_INCHES).substr(0, 4) + ", " +
-                                            std::to_string(result.posZ_m * METERS_TO_INCHES).substr(0, 4) + " in)";
-                                        std::string rotText = "Rot(P,Y,R): " + 
-                                            std::to_string((int)result.pitch_deg) + ", " + 
-                                            std::to_string((int)result.yaw_deg) + ", " + 
-                                            std::to_string((int)result.roll_deg) + " deg";
-
-                                        cv::putText(frame, posText, cv::Point(center.x - 70, center.y + 20), 
-                                                    cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 255, 255), 2);
-                                        cv::putText(frame, rotText, cv::Point(center.x - 70, center.y + 40), 
-                                                    cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(255, 200, 0), 2);
-                                    }
-
-                                    return result;
-                                }
-                            } else {
-                                // Fallback 1D pinhole distance for shapes without 4 or 5 corners (e.g. Circle)
-                                cv::Rect box = cv::boundingRect(contours[childIdx]);
-                                double distance_m = calculateDistance(KNOWN_SQUARE_WIDTH_M, focal_length_, box.width);
-                                result.is_3d = false;
-                                result.confidence = 0.70;
-                                result.goal_id = 3; // Gate 3: Circle / Unknown
-                                result.posX_m = (center.x - frame.cols / 2.0) * (distance_m / focal_length_);
-                                result.posY_m = (center.y - frame.rows / 2.0) * (distance_m / focal_length_);
-                                result.posZ_m = distance_m;
-                                result.pitch_rad = 0.0;
-                                result.yaw_rad = 0.0;
-                                result.roll_rad = 0.0;
-                                result.pitch_deg = 0.0;
-                                result.yaw_deg = 0.0;
-                                result.roll_deg = 0.0;
-
-                                if (draw_overlay) {
-                                    std::string distText = "Dist (1D): " + std::to_string(distance_m).substr(0, 5) + " m (" +
-                                        std::to_string(distance_m * METERS_TO_INCHES).substr(0, 4) + " in)";
-                                    cv::putText(frame, distText, cv::Point(center.x - 60, center.y + 20), 
-                                                cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(255, 100, 0), 2);
-                                }
-
-                                return result;
-                            }
-                        }
-                    }
-                }
-            }
-            childIdx = hierarchy[childIdx][0];
+        if (best_by_shape.find(shape) == best_by_shape.end() || area > best_by_shape[shape].area) {
+            best_by_shape[shape] = Candidate{static_cast<int>(i), area, center, bbox};
         }
     }
 
-    return result;
+    // Camera matrix for solvePnP if needed
+    double camData[9] = {
+        effective_focal, 0.0, frame.cols / 2.0,
+        0.0, effective_focal, frame.rows / 2.0,
+        0.0, 0.0, 1.0
+    };
+    cv::Mat cameraMatrix = cv::Mat(3, 3, CV_64F, camData).clone();
+    cv::Mat distCoeffs = cv::Mat::zeros(4, 1, CV_64F);
+
+    // Shapes in mission priority order: Circle (1), Triangle (2), Square (3)
+    std::vector<std::string> priority_shapes = {"Circle", "Triangle", "Square"};
+    for (const auto& sh : priority_shapes) {
+        auto it = best_by_shape.find(sh);
+        if (it == best_by_shape.end()) continue;
+
+        const auto& cand = it->second;
+        GateDetectionResult res;
+        res.detected = true;
+        res.shape = sh;
+        res.center = cand.center;
+        res.goal_id = (sh == "Circle") ? 1 : ((sh == "Triangle") ? 2 : 3);
+
+        double gate_size_px = std::max(cand.bbox.width, cand.bbox.height);
+        double distance_m = calculateDistance(known_width, effective_focal, gate_size_px);
+
+        res.posX_m = (cand.center.x - frame.cols / 2.0) * (distance_m / effective_focal);
+        res.posY_m = (cand.center.y - frame.rows / 2.0) * (distance_m / effective_focal);
+        res.posZ_m = distance_m;
+        res.confidence = 0.90;
+        res.is_3d = false;
+        res.bbox_size = gate_size_px;
+
+        // Try solvePnP for real/non-sim camera or polygons
+        if (!is_sim && cand.contour_idx >= 0) {
+            double perim = cv::arcLength(contours[cand.contour_idx], true);
+            std::vector<cv::Point> approx;
+            cv::approxPolyDP(contours[cand.contour_idx], approx, 0.03 * perim, true);
+            if (approx.size() == 4) {
+                auto objPts = square_object_points_;
+                auto imgPts = orderQuadPoints(approx);
+                cv::Mat rvec, tvec;
+                if (cv::solvePnP(objPts, imgPts, cameraMatrix, distCoeffs, rvec, tvec)) {
+                    res.is_3d = true;
+                    res.confidence = 0.95;
+                    res.posX_m = tvec.at<double>(0);
+                    res.posY_m = tvec.at<double>(1);
+                    res.posZ_m = tvec.at<double>(2);
+                    cv::Mat rotMat;
+                    cv::Rodrigues(rvec, rotMat);
+                    res.pitch_rad = std::atan2(-rotMat.at<double>(2, 0),
+                        std::sqrt(rotMat.at<double>(0, 0) * rotMat.at<double>(0, 0) + rotMat.at<double>(1, 0) * rotMat.at<double>(1, 0)));
+                    res.yaw_rad = std::atan2(rotMat.at<double>(1, 0), rotMat.at<double>(0, 0));
+                    res.roll_rad = std::atan2(rotMat.at<double>(2, 1), rotMat.at<double>(2, 2));
+                    res.pitch_deg = res.pitch_rad * (180.0 / CV_PI);
+                    res.yaw_deg = res.yaw_rad * (180.0 / CV_PI);
+                    res.roll_deg = res.roll_rad * (180.0 / CV_PI);
+                }
+            }
+        }
+
+        if (draw_overlay) {
+            if (cand.contour_idx >= 0) {
+                cv::Scalar col = (sh == "Circle") ? cv::Scalar(255, 100, 0) : ((sh == "Triangle") ? cv::Scalar(0, 0, 255) : cv::Scalar(0, 255, 0));
+                cv::drawContours(frame, contours, cand.contour_idx, col, 2);
+            }
+            cv::rectangle(frame, cand.bbox, cv::Scalar(255, 255, 0), 1);
+            cv::circle(frame, cand.center, 3, cv::Scalar(0, 0, 255), -1);
+            std::string label = sh + " " + std::to_string(res.posZ_m).substr(0, 4) + "m";
+            cv::putText(frame, label, cv::Point(cand.center.x - 25, cand.center.y - 10),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(255, 255, 255), 1);
+        }
+
+        results.push_back(res);
+    }
+
+    return results;
 }
 
-VisionPacket GateDetector::toVisionPacket(const GateDetectionResult& result, uint32_t sequence_id, uint64_t timestamp_ns) {
+GateDetectionResult GateDetector::processFrame(cv::Mat& frame, bool draw_overlay) {
+    auto results = detectAllGates(frame, draw_overlay);
+    if (!results.empty()) {
+        return results[0];
+    }
+    return GateDetectionResult{};
+}
+
+VisionPacket GateDetector::toVisionPacket(const std::vector<GateDetectionResult>& results, uint32_t sequence_id, uint64_t timestamp_ns) {
     VisionPacket packet{};
     packet.msg_type = MSG_TYPE_VISION;
     packet.sequence_id = sequence_id;
     packet.timestamp_ns = timestamp_ns;
-    packet.error_state = result.detected ? VISION_ERR_NONE : VISION_ERR_FRAME_DROPPED;
+    packet.error_state = results.empty() ? VISION_ERR_FRAME_DROPPED : VISION_ERR_NONE;
     packet.num_tags_detected = 0;
+    packet.num_goals_reported = static_cast<uint8_t>(std::min((size_t)3, results.size()));
 
-    if (result.detected) {
-        packet.num_goals_reported = 1;
-        GoalMeasurement& gm = packet.goals[0];
-
-        if (result.shape == "Circle") {
+    for (uint8_t i = 0; i < packet.num_goals_reported; ++i) {
+        const auto& res = results[i];
+        GoalMeasurement& gm = packet.goals[i];
+        if (res.shape == "Circle") {
             gm.shape_type = SHAPE_CIRCLE;
-        } else if (result.shape == "Triangle") {
+        } else if (res.shape == "Triangle") {
             gm.shape_type = SHAPE_TRIANGLE;
         } else {
             gm.shape_type = SHAPE_SQUARE;
         }
-
         gm.is_detected = 1;
-        gm.centroid.u = static_cast<float>(result.center.x);
-        gm.centroid.v = static_cast<float>(result.center.y);
-        gm.contour_area = 0.0f;
+        gm.centroid.u = static_cast<float>(res.center.x);
+        gm.centroid.v = static_cast<float>(res.center.y);
+        gm.contour_area = static_cast<float>(res.bbox_size);
         gm.num_hypotheses = 1;
 
         PoseHypothesis& hyp = gm.hypotheses[0];
-        hyp.position_cam.x = static_cast<float>(result.posX_m);
-        hyp.position_cam.y = static_cast<float>(result.posY_m);
-        hyp.position_cam.z = static_cast<float>(result.posZ_m);
-        hyp.orientation_cam = eulerToQuaternion(result.roll_rad, result.pitch_rad, result.yaw_rad);
-        hyp.confidence = static_cast<float>(result.confidence);
-    } else {
-        packet.num_goals_reported = 0;
+        hyp.position_cam.x = static_cast<float>(res.posX_m);
+        hyp.position_cam.y = static_cast<float>(res.posY_m);
+        hyp.position_cam.z = static_cast<float>(res.posZ_m);
+        hyp.orientation_cam = eulerToQuaternion(res.roll_rad, res.pitch_rad, res.yaw_rad);
+        hyp.confidence = static_cast<float>(res.confidence);
     }
+    return packet;
+}
 
+VisionPacket GateDetector::toVisionPacket(const GateDetectionResult& result, uint32_t sequence_id, uint64_t timestamp_ns) {
+    if (result.detected) {
+        return toVisionPacket(std::vector<GateDetectionResult>{result}, sequence_id, timestamp_ns);
+    }
+    VisionPacket packet{};
+    packet.msg_type = MSG_TYPE_VISION;
+    packet.sequence_id = sequence_id;
+    packet.timestamp_ns = timestamp_ns;
+    packet.error_state = VISION_ERR_FRAME_DROPPED;
+    packet.num_tags_detected = 0;
+    packet.num_goals_reported = 0;
     return packet;
 }
 

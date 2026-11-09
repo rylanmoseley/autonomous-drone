@@ -21,6 +21,8 @@ _deps/
 *.map
 *.o
 *.a
+autopilot_node_bin
+vision_node
 
 # ESP-IDF specific
 sdkconfig

@@ -88,38 +88,41 @@ def main():
     try:
         sock_gcs_cmd.bind(("0.0.0.0", args.gcs_port))
         bound_gcs = True
-        print(f"  Wi-Fi GCS Inbound   <- 0.0.0.0:{args.gcs_port} (Standard GCS port)")
+        print(f"  Wi-Fi GCS Inbound   <- 0.0.0.0:{args.gcs_port} (Standard GCS port)", flush=True)
     except Exception:
         try:
             sock_gcs_cmd.bind(("0.0.0.0", args.gcs_in_port))
             bound_gcs = True
-            print(f"  Wi-Fi GCS Inbound   <- 0.0.0.0:{args.gcs_in_port} (Fallback GCS port)")
+            print(f"  Wi-Fi GCS Inbound   <- 0.0.0.0:{args.gcs_in_port} (Fallback GCS port)", flush=True)
         except Exception as e:
-            print(f"[MAVLINK-PROXY] Notice: GCS inbound port bind error: {e}", file=sys.stderr)
+            print(f"[MAVLINK-PROXY] Notice: GCS inbound port bind error: {e}", file=sys.stderr, flush=True)
     sock_gcs_cmd.setblocking(False)
 
-    print(f"[MAVLINK-PROXY] Starting MAVLink Proxy...")
-    print(f"  Autopilot Telemetry -> {args.ap_rx_ip}:{args.ap_rx_port}")
-    print(f"  Autopilot Commands  <- 127.0.0.1:{args.ap_tx_port}")
-    print(f"  Wi-Fi GCS Broadcast -> {args.gcs_broadcast_ip}:{args.gcs_port}")
-    print(f"  Wi-Fi GCS Inbound   <- 0.0.0.0:{args.gcs_in_port}")
+    print(f"[MAVLINK-PROXY] Starting MAVLink Proxy...", flush=True)
+    print(f"  Autopilot Telemetry -> {args.ap_rx_ip}:{args.ap_rx_port}", flush=True)
+    print(f"  Autopilot Commands  <- 127.0.0.1:{args.ap_tx_port}", flush=True)
+    print(f"  Wi-Fi GCS Broadcast -> {args.gcs_broadcast_ip}:{args.gcs_port}", flush=True)
+    print(f"  Wi-Fi GCS Inbound   <- 0.0.0.0:{args.gcs_in_port}", flush=True)
 
     last_gcs_client = None
+    bytes_rx_serial = 0
+    bytes_tx_serial = 0
+    last_stats_time = time.time()
 
     while True:
         port_path = find_serial_port(args.serial)
         if not port_path:
-            print(f"[MAVLINK-PROXY] Waiting for serial port ({args.serial})...")
+            print(f"[MAVLINK-PROXY] Waiting for serial port ({args.serial})...", flush=True)
             time.sleep(2)
             continue
 
-        print(f"[MAVLINK-PROXY] Connecting to {port_path} at {args.baud} baud...")
+        print(f"[MAVLINK-PROXY] Connecting to {port_path} at {args.baud} baud...", flush=True)
         handle, is_pyserial = open_serial(port_path, args.baud)
         if handle is None:
             time.sleep(2)
             continue
 
-        print(f"[MAVLINK-PROXY] Serial port {port_path} connected. Routing active.")
+        print(f"[MAVLINK-PROXY] Serial port {port_path} connected. Routing active.", flush=True)
         serial_fd = handle.fileno() if is_pyserial else handle
 
         try:
@@ -129,6 +132,13 @@ def main():
                     rlist.append(sock_gcs_cmd)
 
                 readable, _, _ = select.select(rlist, [], [], 1.0)
+
+                # Periodic status log
+                now = time.time()
+                if now - last_stats_time >= 10.0:
+                    last_stats_time = now
+                    gcs_str = f"{last_gcs_client[0]}:{last_gcs_client[1]}" if last_gcs_client else "none"
+                    print(f"[MAVLINK-PROXY] Link stats: RX from FCU: {bytes_rx_serial} bytes | TX to FCU: {bytes_tx_serial} bytes | Active GCS: {gcs_str}", flush=True)
 
                 # 1. FCU Serial -> UDP (Autopilot & GCS)
                 if serial_fd in readable:
@@ -141,6 +151,7 @@ def main():
                             data = b""
 
                     if data:
+                        bytes_rx_serial += len(data)
                         # Forward to Autopilot daemon
                         try:
                             udp_out.sendto(data, (args.ap_rx_ip, args.ap_rx_port))
@@ -161,13 +172,14 @@ def main():
                                 pass
                     elif not is_pyserial and data == b"":
                         # EOF / device unplugged
-                        print(f"[MAVLINK-PROXY] Serial port disconnected.")
+                        print(f"[MAVLINK-PROXY] Serial port disconnected.", flush=True)
                         break
 
                 # 2. Autopilot Commands -> FCU Serial
                 if sock_ap_cmd in readable:
                     cmd_data, _ = sock_ap_cmd.recvfrom(4096)
                     if cmd_data:
+                        bytes_tx_serial += len(cmd_data)
                         if is_pyserial:
                             handle.write(cmd_data)
                             handle.flush()
@@ -179,6 +191,7 @@ def main():
                     gcs_data, gcs_addr = sock_gcs_cmd.recvfrom(4096)
                     if gcs_data:
                         last_gcs_client = gcs_addr
+                        bytes_tx_serial += len(gcs_data)
                         if is_pyserial:
                             handle.write(gcs_data)
                             handle.flush()

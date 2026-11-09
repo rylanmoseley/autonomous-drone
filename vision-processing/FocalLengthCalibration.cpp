@@ -1,6 +1,8 @@
 #include <iostream>
 #include <vector>
 #include <opencv2/opencv.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/highgui.hpp>
 
 // --- Configuration ---
 // Adjust these to match the real-world object you are holding up for calibration!

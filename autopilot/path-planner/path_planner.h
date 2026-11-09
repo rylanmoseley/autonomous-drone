@@ -26,6 +26,11 @@ public:
         std::lock_guard<std::mutex> lock(cfg_mutex_);
         config_ = new_cfg;
     }
+    void reset() {
+        vx_ = 0.0;
+        vy_ = 0.0;
+        vz_ = 0.0;
+    }
 
 private:
     PlannerConfig config_;

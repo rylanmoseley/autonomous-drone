@@ -42,9 +42,15 @@ fi
 
 # 3. Fallback to built-in zero-dependency Python proxy
 echo "[MAVLINK-ROUTER] Launching built-in Python MAVLink proxy..."
-exec python3 "$SCRIPT_DIR/mavlink_proxy.py" \
+export PYTHONUNBUFFERED=1
+
+# Read baud rate from main.conf if available, default to 921600
+BAUD_RATE=$(awk -F= '/^[[:space:]]*Baud[[:space:]]*=/ {gsub(/[ \t]/, "", $2); print $2}' /etc/mavlink-router/main.conf 2>/dev/null || echo "921600")
+[ -z "$BAUD_RATE" ] && BAUD_RATE=921600
+
+exec python3 -u "$SCRIPT_DIR/mavlink_proxy.py" \
     --serial /dev/flightcontroller \
-    --baud 921600 \
+    --baud "$BAUD_RATE" \
     --ap-rx-ip 127.0.0.1 \
     --ap-rx-port 14550 \
     --ap-tx-port 14551 \

@@ -77,6 +77,13 @@ void AutopilotSimHarness::injectVisionTelemetry(double current_time) {
     v_pkt.timestamp_ns = static_cast<uint64_t>(current_time * 1e9);
 
     // 1. Populate goals
+    const Pose& true_p = follower_.getTruePose();
+    double cos_yaw = std::cos(true_p.yaw);
+    double sin_yaw = std::sin(true_p.yaw);
+    double cam_x = true_p.x + 0.18 * cos_yaw;
+    double cam_y = true_p.y + 0.18 * sin_yaw;
+    double cam_z = true_p.z + 0.04;
+
     v_pkt.num_goals_reported = static_cast<uint8_t>(std::min(simulated_goals_.size(), static_cast<size_t>(3)));
     for (size_t i = 0; i < v_pkt.num_goals_reported; ++i) {
         const auto& goal = simulated_goals_[i];
@@ -84,12 +91,27 @@ void AutopilotSimHarness::injectVisionTelemetry(double current_time) {
         gm.shape_type = goal.shape_type;
         gm.is_detected = 1;
         gm.num_hypotheses = 1;
-        gm.hypotheses[0].position_cam = {static_cast<float>(goal.x), static_cast<float>(goal.y), static_cast<float>(goal.z)};
+
+        double dx = goal.x - cam_x;
+        double dy = goal.y - cam_y;
+        double dz = goal.z - cam_z;
+
+        double fwd = dx * cos_yaw + dy * sin_yaw;
+        double lat = -(dy * cos_yaw - dx * sin_yaw); // +x_cam is right, +y_world is left
+
+        gm.hypotheses[0].position_cam = {
+            static_cast<float>(lat),
+            static_cast<float>(-dz),
+            static_cast<float>(fwd)
+        };
+        double rel_yaw = goal.yaw - true_p.yaw;
+        while (rel_yaw > M_PI) rel_yaw -= 2.0 * M_PI;
+        while (rel_yaw < -M_PI) rel_yaw += 2.0 * M_PI;
         gm.hypotheses[0].orientation_cam = {
-            static_cast<float>(std::cos(goal.yaw * 0.5)),
+            static_cast<float>(std::cos(rel_yaw * 0.5)),
             0.0f,
             0.0f,
-            static_cast<float>(std::sin(goal.yaw * 0.5))
+            static_cast<float>(std::sin(rel_yaw * 0.5))
         };
         gm.hypotheses[0].confidence = 1.0f;
     }
@@ -98,7 +120,6 @@ void AutopilotSimHarness::injectVisionTelemetry(double current_time) {
     // When the drone's camera is within viewing range of a surveyed tag, the vision
     // system computes the camera's world position and attitude.
     v_pkt.num_tags_detected = 0;
-    const Pose& true_p = follower_.getTruePose();
     for (const auto& tag : simulated_tags_) {
         if (v_pkt.num_tags_detected >= 4) break;
         double dx = true_p.x - tag.x;
@@ -148,11 +169,13 @@ void AutopilotSimHarness::step(double dt) {
     double wall_time = std::chrono::duration<double>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
+    Pose feedback = follower_.getFeedbackPose();
+    autopilot_.updateTelemetry(feedback);
+
     // 1. Inject vision updates
     injectVisionTelemetry(wall_time);
 
     // 2. Autopilot ticks given the noisy follower feedback pose
-    Pose feedback = follower_.getFeedbackPose();
     FlightCommand cmd = autopilot_.tick(feedback, dt);
 
     // 3. Follower responds kinematically to the flight command setpoints

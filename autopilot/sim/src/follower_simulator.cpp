@@ -151,9 +151,13 @@ void FcuFollowerSimulator::step(const FlightCommand& cmd, double dt) {
     double yaw_rate = clamp(dyaw / tau_yaw, -config_.max_yaw_rate, config_.max_yaw_rate);
     true_pose_.yaw = wrapAnglePi(true_pose_.yaw + yaw_rate * dt);
 
-    // Roll and pitch tilted kinematically with acceleration for realism
-    true_pose_.pitch = clamp(vx_ / 9.81, -0.35, 0.35);
-    true_pose_.roll  = clamp(-vy_ / 9.81, -0.35, 0.35);
+    // Roll and pitch tilted kinematically with acceleration for realism in body frame
+    double c_yaw = std::cos(true_pose_.yaw);
+    double s_yaw = std::sin(true_pose_.yaw);
+    double v_fwd = vx_ * c_yaw + vy_ * s_yaw;
+    double v_right = vx_ * s_yaw - vy_ * c_yaw;
+    true_pose_.pitch = clamp(v_fwd / 9.81, -0.35, 0.35);
+    true_pose_.roll  = clamp(v_right / 9.81, -0.35, 0.35);
 
     // 6. Imputed Noise Generation
     double noise_x = 0.0;

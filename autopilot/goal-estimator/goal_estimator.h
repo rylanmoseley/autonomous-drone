@@ -23,9 +23,12 @@ public:
     void updateEstimates(const std::vector<GoalMeasurement>& measurements, double current_time);
     std::vector<TrackedGoal> getCurrentEstimates(double current_time);
     std::vector<GoalTrackTelemetry> getTelemetry(double current_time);
+    bool getLastKnownEstimate(uint8_t shape_type, TrackedGoal& out_goal);
+    void reset();
 
 private:
     std::map<int, TrackedGoal> tracked_goals_;
+    std::map<int, TrackedGoal> last_known_goals_;
     std::mutex mutex_;
     double alpha_;
     double timeout_sec_;

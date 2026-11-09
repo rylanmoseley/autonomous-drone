@@ -5,6 +5,8 @@
 #include <cmath>
 #include <algorithm>
 #include <opencv2/opencv.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/calib3d.hpp>
 #include "vision_packet.h"
 
 namespace vision {
@@ -51,7 +53,8 @@ std::vector<cv::Point2f> orderQuadPoints(const std::vector<cv::Point>& pts);
 // Order 5 pentagon corners clockwise matching the 3D model (starting at Top Peak ~ -90 deg)
 std::vector<cv::Point2f> orderPentagonPoints(const std::vector<cv::Point>& pts);
 
-// Advanced classification using Circularity, Fill Ratio, and aspect ratio checks
+// Advanced classification using Circularity, Fill Ratio, aspect ratio and color checks
+std::string classifyShape(const cv::Mat& frame, const std::vector<cv::Point>& contour);
 std::string classifyShape(const std::vector<cv::Point>& contour);
 
 // Gate detection and 6-DoF estimation result
@@ -78,6 +81,7 @@ struct GateDetectionResult {
     double confidence{0.0};
     bool is_3d{false}; // true if solved via solvePnP, false if fallback 1D
     int goal_id{0};    // 1 for Square, 2 for Pentagon, 3 for Circle, etc.
+    double bbox_size{0.0};
 };
 
 class GateDetector {
@@ -86,12 +90,18 @@ public:
 
     // Process a single frame and populate detection results
     GateDetectionResult processFrame(cv::Mat& frame, bool draw_overlay = true);
+    std::vector<GateDetectionResult> detectAllGates(cv::Mat& frame, bool draw_overlay = true);
+
+    void setSimMode(bool sim) { is_sim_ = sim; }
+    bool isSimMode() const { return is_sim_; }
 
     // Helper to package result into canonical VisionPacket struct
     static VisionPacket toVisionPacket(const GateDetectionResult& result, uint32_t sequence_id = 0, uint64_t timestamp_ns = 0);
+    static VisionPacket toVisionPacket(const std::vector<GateDetectionResult>& results, uint32_t sequence_id = 0, uint64_t timestamp_ns = 0);
 
 private:
     double focal_length_;
+    bool is_sim_{false};
     std::vector<cv::Point3f> square_object_points_;
     std::vector<cv::Point3f> pentagon_object_points_;
 };

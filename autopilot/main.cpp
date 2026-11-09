@@ -10,7 +10,7 @@ void handle_sigint(int) {
     }
 }
 
-int main(int argc, char** argv) {
+int main(int /*argc*/, char** /*argv*/) {
     AutopilotNode node;
     node_ptr = &node;
     signal(SIGINT, handle_sigint);

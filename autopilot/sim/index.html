@@ -106,6 +106,21 @@
             <button onclick="updateVisionGoals()" style="background: #28a745;">Update Gate World</button>
         </div>
 
+        <!-- AprilTag Fiducials Setup -->
+        <div class="panel">
+            <h3>Surveyed AprilTags (Fiducials)</h3>
+            <div id="tags-list"></div>
+            <button onclick="updateVisionTags()" style="background: #17a2b8;">Update AprilTags</button>
+        </div>
+
+        <!-- Goal Filter & Memory Panel -->
+        <div class="panel">
+            <h3>Goal Filter & Memory (Belief State)</h3>
+            <div id="estimator-status-list">
+                <div style="font-size: 12px; color: #6c757d;">Awaiting estimator telemetry...</div>
+            </div>
+        </div>
+
         <!-- Mission Sequence -->
         <div class="panel">
             <h3>Autonomous Mission</h3>
@@ -145,9 +160,16 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script>
         let shapes = {
-            triangle: { id: 2, shape: 2, x: 2.5, y: 0.0, z: 1.2, yaw: 0.0, color: 0xff0000, segments: 3 },
-            square:   { id: 3, shape: 3, x: 4.0, y: 0.4, z: 1.0, yaw: 0.0, color: 0x00ff00, segments: 4 },
-            circle:   { id: 1, shape: 1, x: 1.2, y: -0.4, z: 1.0, yaw: 0.0, color: 0x0000ff, segments: 32 }
+            circle:   { id: 1, shape: 1, x: 1.5, y: -0.4, z: 1.0, yaw: 0.0, color: 0x0000ff, segments: 32, radius: 0.22 },
+            triangle: { id: 2, shape: 2, x: 3.0, y: 0.0, z: 1.2, yaw: 0.0, color: 0xff0000, segments: 3,  radius: 0.35 },
+            square:   { id: 3, shape: 3, x: 4.5, y: 0.4, z: 1.0, yaw: 0.0, color: 0x00ff00, segments: 4,  radius: 0.25 }
+        };
+
+        let tags = {
+            tag1: { id: 1, label: "Gate 1 Entrance Marker", x: 1.5, y: -0.3, z: 1.0, yaw: 0.0, size: 0.16 },
+            tag2: { id: 2, label: "Gate 2 Center Pylon", x: 3.0, y: 0.2, z: 1.2, yaw: 0.262, size: 0.16 },
+            tag3: { id: 3, label: "Gate 3 Exit Marker", x: 4.5, y: -0.1, z: 1.0, yaw: -0.175, size: 0.16 },
+            tag4: { id: 4, label: "Arena Perimeter Anchor", x: 0.0, y: 2.0, z: 0.5, yaw: 1.571, size: 0.20 }
         };
 
         const shapesList = document.getElementById("shapes-list");
@@ -166,9 +188,64 @@
             shapesList.appendChild(div);
         });
 
+        const tagsList = document.getElementById("tags-list");
+        if (tagsList) {
+            Object.entries(tags).forEach(([name, t]) => {
+                const div = document.createElement("div");
+                div.className = "shape-row";
+                div.innerHTML = `
+                    <strong style="font-size: 13px; color: #17a2b8;">Tag ${t.id}: ${t.label}</strong>
+                    <div class="shape-inputs">
+                        X:<input type="number" step="0.1" value="${t.x}" id="${name}-x">
+                        Y:<input type="number" step="0.1" value="${t.y}" id="${name}-y">
+                        Z:<input type="number" step="0.1" value="${t.z}" id="${name}-z">
+                        Yaw:<input type="number" step="0.1" value="${t.yaw}" id="${name}-yaw">
+                    </div>
+                `;
+                tagsList.appendChild(div);
+            });
+        }
+
         let ws = null;
         let latestDetections = [];
+        let latestTagDetections = [];
+        let latestEstimates = [];
         let latestCollision = null;
+
+        function renderEstimatorSidebar(estimates) {
+            const container = document.getElementById("estimator-status-list");
+            if (!container) return;
+            const shapeNames = { 1: "Circle (Gate 1)", 2: "Triangle (Gate 2)", 3: "Square (Gate 3)" };
+            const stateColors = {
+                0: { bg: "#e2e3e5", color: "#383d41", border: "#d6d8db", label: "SEARCHING" },
+                1: { bg: "#fff3cd", color: "#856404", border: "#ffeeba", label: "CONVERGING" },
+                2: { bg: "#d4edda", color: "#155724", border: "#c3e6cb", label: "LOCKED" },
+                3: { bg: "#d1ecf1", color: "#0c5460", border: "#bee5eb", label: "OCCLUDED (MEMORY)" }
+            };
+
+            let html = "";
+            estimates.forEach(e => {
+                const name = shapeNames[e.shape] || `Shape ${e.shape}`;
+                const sc = stateColors[e.state] || stateColors[0];
+                const confPercent = Math.round(e.confidence * 100);
+                const posStr = e.state !== 0 ? `(${e.x.toFixed(2)}, ${e.y.toFixed(2)}, ${e.z.toFixed(2)})` : "Unobserved";
+                const ageStr = (e.state === 3 && e.age < 900) ? ` | age: ${e.age.toFixed(1)}s` : "";
+
+                html += `
+                    <div style="margin-bottom: 6px; padding: 6px 8px; border-radius: 6px; background: ${sc.bg}; border: 1px solid ${sc.border}; font-size: 11px; color: ${sc.color};">
+                        <div style="display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 2px;">
+                            <span>${name}</span>
+                            <span>${e.state_name} (${confPercent}% conf)</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-family: monospace; font-size: 10px;">
+                            <span>Est: ${posStr}</span>
+                            <span>&sigma;²: ${e.variance.toFixed(3)}${ageStr}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
 
         function connectWebSocket() {
             const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -192,6 +269,8 @@
             ws.onopen = () => {
                 console.log("Connected to simulation server at", wsUrl);
                 sendFollowerConfig();
+                updateVisionGoals();
+                updateVisionTags();
             };
 
             ws.onmessage = (event) => {
@@ -199,9 +278,10 @@
                     const data = JSON.parse(event.data);
                     if (data.drone && drone) {
                         drone.position.set(data.drone.x, data.drone.z, -data.drone.y);
+                        drone.rotation.order = 'YZX';
                         drone.rotation.y = data.drone.yaw;
-                        drone.rotation.x = data.drone.pitch || 0;
-                        drone.rotation.z = data.drone.roll || 0;
+                        drone.rotation.z = -(data.drone.pitch || 0);
+                        drone.rotation.x = data.drone.roll || 0;
                     }
                     if (data.feedback && feedbackMarker) {
                         feedbackMarker.position.set(data.feedback.x, data.feedback.z, -data.feedback.y);
@@ -223,6 +303,13 @@
                     if (data.detections) {
                         latestDetections = data.detections;
                     }
+                    if (data.tag_detections) {
+                        latestTagDetections = data.tag_detections;
+                    }
+                    if (data.estimator) {
+                        latestEstimates = data.estimator;
+                        renderEstimatorSidebar(data.estimator);
+                    }
                     if (data.collision) {
                         latestCollision = data.collision;
                     }
@@ -239,17 +326,29 @@
                                 startBtn.innerText = "Crash / E-Stop";
                                 startBtn.style.background = "#dc3545";
                             }
-                        } else if (data.autopilot_connected) {
-                            statusBox.innerHTML = '<span style="color:#28a745;">&#9679;</span> AUTOPILOT ACTIVE (Port 14551)';
-                            statusBox.style.background = "#d4edda";
-                            statusBox.style.color = "#155724";
                         } else if (data.status_text) {
                             const txt = data.status_text;
                             statusBox.innerHTML = txt;
-                            if (txt.includes("SEARCH")) {
+                            if (txt.includes("STANDBY") || txt.includes("Ready")) {
+                                statusBox.style.background = "#e2e3e5";
+                                statusBox.style.color = "#383d41";
+                                if (startBtn) {
+                                    startBtn.innerText = "Start Mission";
+                                    startBtn.style.background = "#28a745";
+                                    startBtn.style.color = "#fff";
+                                }
+                            } else if (txt.includes("SEARCH")) {
                                 statusBox.style.background = "#fff3cd";
                                 statusBox.style.color = "#856404";
-                                if (startBtn) { startBtn.innerText = "Searching Target..."; startBtn.style.background = "#ffc107"; startBtn.style.color = "#212529"; }
+                                if (startBtn) { 
+                                    if (txt.includes("Stale") || txt.includes("Oriented")) {
+                                        startBtn.innerText = "Localizing Search...";
+                                    } else {
+                                        startBtn.innerText = "Searching Target...";
+                                    }
+                                    startBtn.style.background = "#ffc107";
+                                    startBtn.style.color = "#212529";
+                                }
                             } else if (txt.includes("AVOID")) {
                                 statusBox.style.background = "#ffe8d6";
                                 statusBox.style.color = "#b05206";
@@ -266,11 +365,19 @@
                                 statusBox.style.background = "#d4edda";
                                 statusBox.style.color = "#155724";
                                 if (startBtn) { startBtn.innerText = "Mission Complete"; startBtn.style.background = "#28a745"; startBtn.style.color = "#fff"; }
+                            } else if (txt.includes("RUNNING")) {
+                                statusBox.style.background = "#d4edda";
+                                statusBox.style.color = "#155724";
+                                if (startBtn) { startBtn.innerText = "Mission Running"; startBtn.style.background = "#17a2b8"; startBtn.style.color = "#fff"; }
                             } else {
                                 statusBox.style.background = "#e9ecef";
                                 statusBox.style.color = "#495057";
                                 if (startBtn) { startBtn.innerText = "Start Mission"; startBtn.style.background = "#28a745"; startBtn.style.color = "#fff"; }
                             }
+                        } else if (data.autopilot_connected) {
+                            statusBox.innerHTML = '<span style="color:#28a745;">&#9679;</span> AUTOPILOT ACTIVE (Port 14551)';
+                            statusBox.style.background = "#d4edda";
+                            statusBox.style.color = "#155724";
                         }
                     }
                 } catch (e) {
@@ -318,6 +425,12 @@
         }
 
         function resetSim() {
+            const btn = document.getElementById("btn-start");
+            if (btn) {
+                btn.innerText = "Start Mission";
+                btn.style.background = "#28a745";
+                btn.style.color = "#fff";
+            }
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: "reset_sim" }));
             }
@@ -344,6 +457,26 @@
                 ws.send(JSON.stringify({ type: "update_goals", goals: goalsArray }));
             }
             updateThreeJsHoops();
+        }
+
+        function updateVisionTags() {
+            Object.keys(tags).forEach(name => {
+                const elX = document.getElementById(`${name}-x`);
+                const elY = document.getElementById(`${name}-y`);
+                const elZ = document.getElementById(`${name}-z`);
+                const elYaw = document.getElementById(`${name}-yaw`);
+                if (elX) tags[name].x = parseFloat(elX.value);
+                if (elY) tags[name].y = parseFloat(elY.value);
+                if (elZ) tags[name].z = parseFloat(elZ.value);
+                if (elYaw) tags[name].yaw = parseFloat(elYaw.value);
+            });
+            const tagsArray = Object.values(tags).map(t => ({
+                id: t.id, label: t.label, x: t.x, y: t.y, z: t.z, yaw: t.yaw, size: t.size
+            }));
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "update_tags", tags: tagsArray }));
+            }
+            updateThreeJsTags();
         }
 
         function emergencyStop() {
@@ -394,16 +527,27 @@
         const grid = new THREE.GridHelper(20, 20, 0x444466, 0x222233);
         scene.add(grid);
 
-        // Drone True Model (Green body with cross arms)
+        // Drone True Model (Micro-racing drone scale: 12cm arm span, matching 0.06m physical collision radius)
         const drone = new THREE.Group();
-        const bodyGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.05, 16);
+        drone.rotation.order = 'YZX';
+        const bodyGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.02, 16);
         const bodyMat = new THREE.MeshStandardMaterial({ color: 0x28a745, roughness: 0.3 });
         drone.add(new THREE.Mesh(bodyGeo, bodyMat));
 
-        const armGeo = new THREE.BoxGeometry(0.35, 0.02, 0.02);
+        const armGeo = new THREE.BoxGeometry(0.12, 0.008, 0.008);
         const armMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
         const arm1 = new THREE.Mesh(armGeo, armMat); arm1.rotation.y = Math.PI / 4; drone.add(arm1);
         const arm2 = new THREE.Mesh(armGeo, armMat); arm2.rotation.y = -Math.PI / 4; drone.add(arm2);
+
+        // Rotor discs at arm tips (matching 12cm micro-drone scale)
+        const propGeo = new THREE.CylinderGeometry(0.024, 0.024, 0.002, 12);
+        const propMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.4 });
+        const pr = 0.042;
+        [[pr, pr], [pr, -pr], [-pr, pr], [-pr, -pr]].forEach(([px, pz]) => {
+            const prop = new THREE.Mesh(propGeo, propMat);
+            prop.position.set(px, 0.012, pz);
+            drone.add(prop);
+        });
 
         // FPV Camera mounted at the front nose of the drone, facing forward (+X direction)
         const droneCamera = new THREE.PerspectiveCamera(70, 320 / 240, 0.05, 20);
@@ -412,11 +556,13 @@
         drone.add(droneCamera);
 
         // Visualized Camera Frustum Cone (70 deg FOV)
+        // Apex starts at the camera lens (X=0.18), expanding forward into the world
         const fovGeo = new THREE.ConeGeometry(1.2, 2.5, 4, 1, true);
         const fovMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, wireframe: true, transparent: true, opacity: 0.15 });
         const fovCone = new THREE.Mesh(fovGeo, fovMat);
-        fovCone.rotation.z = -Math.PI / 2;
-        fovCone.position.set(1.25, 0.04, 0);
+        fovCone.rotation.z = Math.PI / 2;
+        fovCone.rotation.x = Math.PI / 4;
+        fovCone.position.set(1.43, 0.04, 0);
         drone.add(fovCone);
 
         scene.add(drone);
@@ -434,7 +580,7 @@
         scene.add(targetMarker);
 
         // PiP Camera Renderer
-        const pipRenderer = new THREE.WebGLRenderer({ antialias: true });
+        const pipRenderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
         pipRenderer.setSize(320, 240);
         document.getElementById("pip-three").appendChild(pipRenderer.domElement);
 
@@ -452,15 +598,29 @@
             hoopMeshes = [];
             nogoMeshes = [];
             Object.values(shapes).forEach(s => {
-                const geometry = new THREE.TorusGeometry(0.20, 0.03, 16, s.segments);
+                const geometry = new THREE.TorusGeometry(s.radius || 0.20, 0.03, 16, s.segments);
+                if (s.segments === 3) {
+                    geometry.rotateZ(Math.PI / 2);
+                } else if (s.segments === 4) {
+                    geometry.rotateZ(Math.PI / 4);
+                }
                 const material = new THREE.MeshStandardMaterial({ color: s.color, roughness: 0.4 });
                 const torus = new THREE.Mesh(geometry, material);
                 torus.position.set(s.x, s.z, -s.y);
-                if (s.segments === 4) torus.rotation.z = Math.PI / 4;
                 torus.rotation.y = s.yaw + Math.PI / 2;
                 torus.userData = { id: s.id, shape: s.shape };
                 scene.add(torus);
                 hoopMeshes.push(torus);
+
+                // Vertical mounting pylon from ground to hoop base
+                const hoopBottomY = s.z - (s.segments === 3 ? 0.205 : (s.segments === 4 ? 0.207 : 0.25));
+                const poleHeight = Math.max(0.1, hoopBottomY);
+                const poleGeo = new THREE.CylinderGeometry(0.015, 0.015, poleHeight, 12);
+                const poleMat = new THREE.MeshStandardMaterial({ color: 0x555566, roughness: 0.6 });
+                const pole = new THREE.Mesh(poleGeo, poleMat);
+                pole.position.set(s.x, poleHeight / 2, -s.y);
+                scene.add(pole);
+                hoopMeshes.push(pole);
 
                 // No-Go Zone Keep-Out Boundary (0.55m buffer cylinder around physical gate)
                 const nogoGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.60, 20, 1, true);
@@ -472,22 +632,195 @@
                 nogoMeshes.push(nogo);
             });
         }
+
+        let tagMeshes = [];
+
+        function createAprilTagTexture(id) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+
+            // White quiet zone margin
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, 128, 128);
+
+            // Outer solid black border (10px margin)
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(10, 10, 108, 108);
+
+            // Inner white background (22px margin)
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(22, 22, 84, 84);
+
+            // 6x6 AprilTag data grid (each block is 14x14px from (22, 22))
+            const seed = (id * 9301 + 49297) % 233280;
+            for (let r = 0; r < 6; r++) {
+                for (let c = 0; c < 6; c++) {
+                    const val = ((seed >> (r * 6 + c % 16)) ^ (id * (r + 2) * (c + 3))) & 1;
+                    ctx.fillStyle = val ? '#000000' : '#ffffff';
+                    ctx.fillRect(22 + c * 14, 22 + r * 14, 14, 14);
+                }
+            }
+
+            // High-contrast center ID badge
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+            ctx.fillRect(44, 48, 40, 32);
+            ctx.strokeStyle = '#00e5ff';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(44, 48, 40, 32);
+            ctx.fillStyle = '#00e5ff';
+            ctx.font = 'bold 20px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${id}`, 64, 64);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.LinearFilter;
+            return texture;
+        }
+
+        function createTagLabelSprite(text) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+            if (ctx.roundRect) {
+                ctx.roundRect(4, 4, 248, 56, 8);
+                ctx.fill();
+            } else {
+                ctx.fillRect(4, 4, 248, 56);
+            }
+            ctx.strokeStyle = '#00e5ff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 18px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 128, 32);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.scale.set(0.40, 0.10, 1.0);
+            return sprite;
+        }
+
+        function updateThreeJsTags() {
+            tagMeshes.forEach(m => scene.remove(m));
+            tagMeshes = [];
+
+            Object.values(tags).forEach(t => {
+                const tagGroup = new THREE.Group();
+                const sz = t.size || 0.16;
+
+                // Ground Stand Pole
+                const postGeo = new THREE.CylinderGeometry(0.012, 0.015, t.z, 12);
+                const postMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.6, roughness: 0.4 });
+                const post = new THREE.Mesh(postGeo, postMat);
+                post.position.set(0, -t.z / 2, 0);
+                tagGroup.add(post);
+
+                // Floor Base Ring
+                const baseGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.015, 16);
+                const baseMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6 });
+                const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+                baseMesh.position.set(0, -t.z + 0.0075, 0);
+                tagGroup.add(baseMesh);
+
+                // Backing Mount Plate
+                const backGeo = new THREE.BoxGeometry(sz + 0.02, sz + 0.02, 0.008);
+                const backMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 });
+                const backPlate = new THREE.Mesh(backGeo, backMat);
+                tagGroup.add(backPlate);
+
+                // AprilTag Face
+                const tagGeo = new THREE.PlaneGeometry(sz, sz);
+                const tagMat = new THREE.MeshBasicMaterial({ 
+                    map: createAprilTagTexture(t.id),
+                    side: THREE.FrontSide
+                });
+                const tagFace = new THREE.Mesh(tagGeo, tagMat);
+                tagFace.position.set(0, 0, 0.005);
+                tagGroup.add(tagFace);
+
+                // Surveyed Fiducial Tri-Axis Helper (Red=X, Green=Y, Blue=Z)
+                const axes = new THREE.AxesHelper(0.12);
+                axes.position.set(0, 0, 0.006);
+                tagGroup.add(axes);
+
+                // Floating Survey Billboard Label
+                const labelSprite = createTagLabelSprite(`TAG ${t.id} (${sz}m)`);
+                labelSprite.position.set(0, sz / 2 + 0.08, 0);
+                tagGroup.add(labelSprite);
+
+                // Position and orientation in Three.js space:
+                tagGroup.position.set(t.x, t.z, -t.y);
+                tagGroup.rotation.y = (t.yaw || 0) - Math.PI / 2;
+                tagGroup.userData = { id: t.id, isTag: true };
+
+                scene.add(tagGroup);
+                tagMeshes.push(tagGroup);
+            });
+        }
         
         updateVisionGoals();
+        updateVisionTags();
+
+        let pipFrameCount = 0;
 
         function updateVision() {
-            // Temporarily hide drone body, frustum cone, and tracking markers so FPV camera only sees world & gates
+            // Temporarily hide drone body, frustum cone, and tracking markers
             drone.visible = false;
             if (fovCone) fovCone.visible = false;
             if (feedbackMarker) feedbackMarker.visible = false;
             if (targetMarker) targetMarker.visible = false;
 
+            // HIDE RED ZONES (No-Go Keep-Out Zones) in the FPV camera view
+            nogoMeshes.forEach(m => m.visible = false);
+
+            // HIDE synthetic debug helpers on tags (AxesHelper and billboard label sprites)
+            tagMeshes.forEach(tg => {
+                tg.children.forEach(c => {
+                    if (c instanceof THREE.AxesHelper || c instanceof THREE.Sprite) {
+                        c.visible = false;
+                    }
+                });
+            });
+
+            // Clean physical camera rendering
             pipRenderer.render(scene, droneCamera);
 
+            // Restore visibility for main 3D arena visualizer
             drone.visible = true;
             if (fovCone) fovCone.visible = true;
             if (feedbackMarker) feedbackMarker.visible = true;
             if (targetMarker) targetMarker.visible = true;
+            nogoMeshes.forEach(m => m.visible = true);
+            tagMeshes.forEach(tg => {
+                tg.children.forEach(c => {
+                    if (c instanceof THREE.AxesHelper || c instanceof THREE.Sprite) {
+                        c.visible = true;
+                    }
+                });
+            });
+
+            // Pipe clean PiP camera view into backend vision processing script (~15-20 FPS)
+            pipFrameCount++;
+            if (pipFrameCount % 2 === 0 && ws && ws.readyState === WebSocket.OPEN) {
+                try {
+                    const frameJpeg = pipRenderer.domElement.toDataURL("image/jpeg", 0.80);
+                    ws.send(JSON.stringify({
+                        type: "pip_frame",
+                        frame: frameJpeg
+                    }));
+                } catch (e) {
+                    // ignore dropped frame
+                }
+            }
 
             // Render FPV HUD reticle and dynamic vision detection bounding boxes
             const canvas = document.getElementById("pip-overlay");
@@ -546,22 +879,72 @@
                     });
                 }
 
+                // AprilTag detections gathered by vision
+                if (latestTagDetections && latestTagDetections.length > 0) {
+                    latestTagDetections.forEach(td => {
+                        const cx = td.u;
+                        const cy = td.v;
+                        const sz = td.box_size || 35;
+                        const hs = sz / 2;
+                        const cl = Math.min(8, hs * 0.4);
+
+                        // Cyan corner brackets
+                        ctx.strokeStyle = "#00e5ff";
+                        ctx.lineWidth = 2.0;
+                        ctx.beginPath();
+                        ctx.moveTo(cx - hs, cy - hs + cl); ctx.lineTo(cx - hs, cy - hs); ctx.lineTo(cx - hs + cl, cy - hs);
+                        ctx.moveTo(cx + hs - cl, cy - hs); ctx.lineTo(cx + hs, cy - hs); ctx.lineTo(cx + hs, cy - hs + cl);
+                        ctx.moveTo(cx - hs, cy + hs - cl); ctx.lineTo(cx - hs, cy + hs); ctx.lineTo(cx - hs + cl, cy + hs);
+                        ctx.moveTo(cx + hs - cl, cy + hs); ctx.lineTo(cx + hs, cy + hs); ctx.lineTo(cx + hs, cy + hs - cl);
+                        ctx.stroke();
+
+                        // Centroid dot
+                        ctx.fillStyle = "#00e5ff";
+                        ctx.fillRect(cx - 2, cy - 2, 4, 4);
+
+                        // Tag label badge
+                        ctx.font = "10px monospace";
+                        ctx.fillStyle = "rgba(0,0,0,0.75)";
+                        ctx.fillRect(cx - hs, cy - hs - 15, 96, 13);
+                        ctx.fillStyle = "#00e5ff";
+                        ctx.fillText(`[TAG ${td.id}] ${td.dist}m`, cx - hs + 2, cy - hs - 4);
+                    });
+                }
+
                 // FPV HUD status text
                 ctx.font = "11px monospace";
                 ctx.fillStyle = "rgba(0, 255, 120, 0.9)";
                 ctx.fillText("CAM 0: FPV NOSE FORWARD", 10, 18);
                 if (latestDetections && latestDetections.length > 0) {
                     ctx.fillStyle = "#00ff66";
-                    ctx.fillText(`LOCK: ${latestDetections.length} TARGET(S) IN FOV`, 10, 32);
+                    ctx.fillText(`LOCK: ${latestDetections.length} GATE(S) IN FOV`, 10, 32);
                 } else {
                     ctx.fillStyle = "#ffc107";
-                    ctx.fillText("SEARCH: NO TARGET IN FOV", 10, 32);
+                    ctx.fillText("SEARCH: NO GATE IN FOV", 10, 32);
+                }
+
+                let hudY = 46;
+                if (latestTagDetections && latestTagDetections.length > 0) {
+                    ctx.fillStyle = "#00e5ff";
+                    ctx.fillText(`FIDUCIALS: ${latestTagDetections.length} APRILTAG(S) TRACKED`, 10, hudY);
+                    hudY += 14;
+                }
+
+                if (latestEstimates && latestEstimates.length > 0) {
+                    const estSummary = latestEstimates.map(e => {
+                        const sShort = e.state === 2 ? "LOCK" : (e.state === 3 ? "MEM" : (e.state === 1 ? "CONV" : "SRCH"));
+                        const sName = e.shape === 1 ? "C" : (e.shape === 2 ? "T" : "S");
+                        return `${sName}:${sShort}(${Math.round(e.confidence*100)}%)`;
+                    }).join(" ");
+                    ctx.fillStyle = "#ffb74d";
+                    ctx.fillText(`FILTER/MEM: ${estSummary}`, 10, hudY);
+                    hudY += 14;
                 }
 
                 if (latestCollision && latestCollision.collision) {
                     ctx.fillStyle = "#ff3333";
                     ctx.font = "bold 12px monospace";
-                    ctx.fillText("ALERT: COLLISION DETECTED!", 10, 48);
+                    ctx.fillText("ALERT: COLLISION DETECTED!", 10, hudY);
                 }
             }
         }

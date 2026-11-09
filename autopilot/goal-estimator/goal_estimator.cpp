@@ -25,12 +25,23 @@ void GoalEstimator::updateEstimates(const std::vector<GoalMeasurement>& measurem
 
         const auto& hyp = gm.hypotheses[0];
         Vec3f pos = hyp.position_cam;
+
+        // Bounded arena gate check
+        if (pos.z < 0.70f || pos.z > 1.50f || pos.x < 0.2f || pos.x > 6.0f) {
+            continue;
+        }
+
         Quatf q = hyp.orientation_cam;
         double yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
 
         int key = gm.shape_type;
         auto it = tracked_goals_.find(key);
         if (it != tracked_goals_.end()) {
+            // Reject wild jumps if track is already determinate
+            if (it->second.determinate && (std::abs(pos.z - it->second.pose.z) > 0.40 || std::abs(pos.x - it->second.pose.x) > 1.20)) {
+                continue;
+            }
+
             it->second.pose.x = alpha_ * pos.x + (1.0 - alpha_) * it->second.pose.x;
             it->second.pose.y = alpha_ * pos.y + (1.0 - alpha_) * it->second.pose.y;
             it->second.pose.z = alpha_ * pos.z + (1.0 - alpha_) * it->second.pose.z;
@@ -46,6 +57,7 @@ void GoalEstimator::updateEstimates(const std::vector<GoalMeasurement>& measurem
             it->second.last_update_time = current_time;
             it->second.determinate = true;
             it->second.state = TRACK_STATE_LOCKED;
+            last_known_goals_[key] = it->second;
         } else {
             TrackedGoal tg;
             tg.shape_type = gm.shape_type;
@@ -59,8 +71,19 @@ void GoalEstimator::updateEstimates(const std::vector<GoalMeasurement>& measurem
             tg.determinate = true;
             tg.last_update_time = current_time;
             tracked_goals_[key] = tg;
+            last_known_goals_[key] = tg;
         }
     }
+}
+
+bool GoalEstimator::getLastKnownEstimate(uint8_t shape_type, TrackedGoal& out_goal) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = last_known_goals_.find(shape_type);
+    if (it != last_known_goals_.end()) {
+        out_goal = it->second;
+        return true;
+    }
+    return false;
 }
 
 std::vector<TrackedGoal> GoalEstimator::getCurrentEstimates(double current_time) {
@@ -91,9 +114,22 @@ std::vector<GoalTrackTelemetry> GoalEstimator::getTelemetry(double current_time)
             gtt.world_position = {(float)it->second.pose.x, (float)it->second.pose.y, (float)it->second.pose.z};
             gtt.spatial_variance = it->second.spatial_variance;
         } else {
-            gtt.state = TRACK_STATE_SEARCHING;
+            auto lk = last_known_goals_.find(shapes[i]);
+            if (lk != last_known_goals_.end()) {
+                gtt.state = TRACK_STATE_OCCLUDED;
+                gtt.world_position = {(float)lk->second.pose.x, (float)lk->second.pose.y, (float)lk->second.pose.z};
+                gtt.spatial_variance = 0.05f;
+            } else {
+                gtt.state = TRACK_STATE_SEARCHING;
+            }
         }
         result.push_back(gtt);
     }
     return result;
+}
+
+void GoalEstimator::reset() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    tracked_goals_.clear();
+    last_known_goals_.clear();
 }

@@ -62,10 +62,13 @@ public:
     
     bool new_goal = false;
     int goal_phase = 0;
+    int align_ticks = 0;
     double approach_dx = 0.0;
     double approach_dy = 0.0;
     double approach_dz = 0.0;
     double transit_yaw = 0.0;
+    Pose active_target_pose = {};
+    bool has_active_target = false;
     
     std::chrono::steady_clock::time_point last_vision_time;
     std::mutex vision_mutex;
@@ -74,6 +77,14 @@ public:
     uint32_t tags_received_count{0};
     uint32_t tags_forwarded_count{0};
     TagMeasurement last_tag_measurement{};
+
+    Pose last_current_pose_{0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+    mutable std::mutex pose_mutex_;
+
+    void updateTelemetry(const Pose& pose) {
+        std::lock_guard<std::mutex> lock(pose_mutex_);
+        last_current_pose_ = pose;
+    }
 
     // Authoritative global tag survey map owned by the Autopilot
     std::map<uint16_t, SurveyedTagPose> surveyed_tags_;
