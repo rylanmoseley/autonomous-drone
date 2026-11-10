@@ -96,6 +96,8 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
             has_active_target = false;
             goal_phase = 0;
             align_ticks = 0;
+            standoff_ticks = 0;
+            seek_ticks = 0;
             active_target_pose = {};
             estimator.reset();
             planner.reset();
@@ -109,6 +111,8 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
             has_active_target = false;
             goal_phase = 0;
             align_ticks = 0;
+            standoff_ticks = 0;
+            seek_ticks = 0;
             active_target_pose = {};
             estimator.reset();
             planner.reset();
@@ -125,6 +129,14 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
             memcpy(goal_sequence, pkt.goal_sequence, sizeof(goal_sequence));
             configured_end_action = pkt.end_action;
             hover_timeout_s = pkt.hover_timeout_s;
+            new_goal = true;
+            has_active_target = false;
+            goal_phase = 0;
+            align_ticks = 0;
+            standoff_ticks = 0;
+            seek_ticks = 0;
+            active_target_pose = {};
+            estimator.reset();
             break;
         case UI_CMD_SET_CONSTRAINTS:
             use_tube_constraint = pkt.use_tube_constraint;
@@ -279,7 +291,7 @@ void AutopilotNode::handleVisionPacket(const VisionPacket& pkt, double current_t
             double world_z = cam_z + z_cam * fwd_z + x_cam * right_z + y_cam * down_z;
 
             // Plausibility check: gates in the arena safety cage are strictly bounded
-            if (world_z > 1.50 || world_z < 0.70 || z_cam > 4.5 || z_cam < 0.25 || world_x > 6.0 || world_x < 0.2) {
+            if (world_z > 2.30 || world_z < 0.20 || z_cam > 5.5 || z_cam < 0.20 || world_x > 8.0 || world_x < -2.0 || std::abs(world_y) > 4.0) {
                 gm.is_detected = 0;
                 continue;
             }
@@ -375,6 +387,7 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
             if (planner.has_arrived(current_pose, takeoff_target)) {
                 state = FlightState::FLIGHT_STATE_PATH_FOLLOWING;
                 new_goal = true;
+                last_completed_goal_pose_ = {current_pose.x, current_pose.y, takeoff_z, 0, 0, current_pose.yaw, 0, 1.0};
             }
             break;
         }
@@ -418,11 +431,33 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     double hoop_nx = cos(raw_target.yaw);
                     double hoop_ny = sin(raw_target.yaw);
                     if (new_goal) {
-                        double dx = raw_target.x - current_pose.x;
-                        double dy = raw_target.y - current_pose.y;
-                        if (dx * hoop_nx + dy * hoop_ny > 0) { approach_dx = hoop_nx; approach_dy = hoop_ny; }
-                        else { approach_dx = -hoop_nx; approach_dy = -hoop_ny; }
-                        new_goal = false; goal_phase = 0;
+                        double seq_dx = raw_target.x - last_completed_goal_pose_.x;
+                        double seq_dy = raw_target.y - last_completed_goal_pose_.y;
+                        if (std::hypot(seq_dx, seq_dy) < 0.15) {
+                            seq_dx = raw_target.x - current_pose.x;
+                            seq_dy = raw_target.y - current_pose.y;
+                        }
+                        double dot_seq = seq_dx * hoop_nx + seq_dy * hoop_ny;
+                        if (dot_seq >= 0.0) {
+                            approach_dx = hoop_nx;
+                            approach_dy = hoop_ny;
+                        } else {
+                            approach_dx = -hoop_nx;
+                            approach_dy = -hoop_ny;
+                        }
+                        double a_norm = std::hypot(approach_dx, approach_dy);
+                        if (a_norm > 1e-4) {
+                            approach_dx /= a_norm;
+                            approach_dy /= a_norm;
+                        } else {
+                            approach_dx = 1.0;
+                            approach_dy = 0.0;
+                        }
+                        new_goal = false;
+                        goal_phase = 0;
+                        standoff_ticks = 0;
+                        align_ticks = 0;
+                        seek_ticks = 0;
                     }
                     Pose adjusted_target = raw_target;
                     
@@ -445,18 +480,20 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     }
 
                     if (goal_phase == 0) {
+                        standoff_ticks++;
                         adjusted_target.x = raw_target.x - approach_dx * 0.70;
                         adjusted_target.y = raw_target.y - approach_dy * 0.70;
+                        adjusted_target.z = raw_target.z;
                         adjusted_target.yaw = atan2(approach_dy, approach_dx);
                         planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
-                        cmd.target_x = adjusted_target.x + apf_vx * 0.1;
-                        cmd.target_y = adjusted_target.y + apf_vy * 0.1;
+                        cmd.target_x = adjusted_target.x;
+                        cmd.target_y = adjusted_target.y;
                         cmd.target_z = adjusted_target.z;
                         cmd.target_yaw = adjusted_target.yaw;
-                        double standoff_dist = std::sqrt((adjusted_target.x - current_pose.x) * (adjusted_target.x - current_pose.x) +
-                                                         (adjusted_target.y - current_pose.y) * (adjusted_target.y - current_pose.y) +
-                                                         (adjusted_target.z - current_pose.z) * (adjusted_target.z - current_pose.z));
-                        if (standoff_dist < 0.12) {
+                        double standoff_dist = std::hypot(adjusted_target.x - current_pose.x,
+                                                          adjusted_target.y - current_pose.y,
+                                                          adjusted_target.z - current_pose.z);
+                        if (standoff_dist < 0.15 || (standoff_dist < 0.25 && standoff_ticks > 25)) {
                             goal_phase = 1;
                             align_ticks = 0;
                         }
@@ -464,47 +501,67 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         align_ticks++;
                         adjusted_target.x = raw_target.x - approach_dx * 0.70;
                         adjusted_target.y = raw_target.y - approach_dy * 0.70;
+                        adjusted_target.z = raw_target.z;
                         adjusted_target.yaw = atan2(approach_dy, approach_dx);
-                        planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
+                        planner.plan(current_pose, adjusted_target, dt, 0.0, 0.0);
                         cmd.target_x = adjusted_target.x;
                         cmd.target_y = adjusted_target.y;
                         cmd.target_z = adjusted_target.z;
                         cmd.target_yaw = adjusted_target.yaw;
+
                         double dyaw = adjusted_target.yaw - current_pose.yaw;
                         while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
                         while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
-                        double lat_err = std::hypot(current_pose.y - raw_target.y, current_pose.z - raw_target.z);
-                        if (std::abs(dyaw) < 0.05 && (lat_err < 0.018 || (align_ticks > 30 && lat_err < 0.035))) {
+
+                        // Lateral error perpendicular to the approach corridor normal
+                        double delta_x = current_pose.x - adjusted_target.x;
+                        double delta_y = current_pose.y - adjusted_target.y;
+                        double e_perp = -delta_x * approach_dy + delta_y * approach_dx;
+                        double e_z = current_pose.z - raw_target.z;
+                        double lat_err = std::hypot(e_perp, e_z);
+                        double e_along = delta_x * approach_dx + delta_y * approach_dy;
+
+                        // Require hold for at least 6 ticks (~300ms) to ensure lateral and angular momentum has settled
+                        bool tight_aligned = (align_ticks >= 6 && std::abs(dyaw) < 0.08 && lat_err < 0.045 && std::abs(e_along) < 0.20);
+                        bool relaxed_aligned = (align_ticks > 25 && std::abs(dyaw) < 0.12 && lat_err < 0.07);
+                        bool watchdog_aligned = (align_ticks > 50 && std::abs(dyaw) < 0.20 && lat_err < 0.12);
+                        bool force_punch = (align_ticks > 75);
+
+                        if (tight_aligned || relaxed_aligned || watchdog_aligned || force_punch) {
                             goal_phase = 2;
                             align_ticks = 0;
                         }
                     } else {
-                        // Traversal punch: steadily advance along normal corridor while clamping Y and Z dead-center
-                        double traverse_dist = (current_pose.x - raw_target.x) * approach_dx;
-                        double step_fwd = std::min(0.70, traverse_dist + 0.35);
+                        // Traversal punch: steadily advance along normal corridor while keeping cross-track centered
+                        double dot_fwd = (current_pose.x - raw_target.x) * approach_dx +
+                                         (current_pose.y - raw_target.y) * approach_dy;
+                        double step_fwd = std::min(0.60, std::max(-0.25, dot_fwd + 0.35));
 
                         cmd.target_x = raw_target.x + approach_dx * step_fwd;
-                        cmd.target_y = raw_target.y;
+                        cmd.target_y = raw_target.y + approach_dy * step_fwd;
                         cmd.target_z = raw_target.z;
                         cmd.target_yaw = atan2(approach_dy, approach_dx);
 
-                        Pose traverse_target = {raw_target.x + approach_dx * 0.70, raw_target.y, raw_target.z, 0, 0, cmd.target_yaw, 0, 1.0};
+                        Pose traverse_target = {raw_target.x + approach_dx * 0.60,
+                                                raw_target.y + approach_dy * 0.60,
+                                                raw_target.z, 0, 0, cmd.target_yaw, 0, 1.0};
                         planner.plan(current_pose, traverse_target, dt, 0.0, 0.0);
 
-                        if ((approach_dx > 0 && current_pose.x >= raw_target.x + 0.60) ||
-                            (approach_dx < 0 && current_pose.x <= raw_target.x - 0.60) ||
-                            planner.has_arrived(current_pose, traverse_target)) {
+                        if (dot_fwd >= 0.50 || planner.has_arrived(current_pose, traverse_target)) {
+                            last_completed_goal_pose_ = raw_target;
                             current_seq_index++;
                             new_goal = true;
                             has_active_target = false;
                             goal_phase = 0;
                             align_ticks = 0;
+                            standoff_ticks = 0;
                         }
                     }
                 } else {
                     // Search behavior: orient and localize search using stale estimate if available
                     state = FlightState::FLIGHT_STATE_GOAL_SEEK;
                     cmd.enable = true;
+                    seek_ticks++;
 
                     TrackedGoal stale_goal;
                     bool has_stale = estimator.getLastKnownEstimate(target_shape, stale_goal);
@@ -513,12 +570,11 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         // 1. Orient toward stale estimate
                         double dx = stale_goal.pose.x - current_pose.x;
                         double dy = stale_goal.pose.y - current_pose.y;
-                        double dist = std::sqrt(dx * dx + dy * dy);
-                        double bearing = std::atan2(dy, dx);
-                        cmd.target_yaw = bearing;
+                        double dist = std::hypot(dx, dy);
 
                         // 2. Localize search toward vantage standoff position (1.1m from goal)
                         if (dist > 1.2) {
+                            cmd.target_yaw = std::atan2(dy, dx);
                             cmd.target_x = stale_goal.pose.x - 1.1 * (dx / dist);
                             cmd.target_y = stale_goal.pose.y - 1.1 * (dy / dist);
                             cmd.target_z = stale_goal.pose.z;
@@ -526,13 +582,24 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                             cmd.target_x = current_pose.x;
                             cmd.target_y = current_pose.y;
                             cmd.target_z = stale_goal.pose.z;
+                            if (seek_ticks > 25) {
+                                // Search sweep: oscillate +-23 deg around target bearing to sweep camera FOV across gate
+                                double base_yaw = std::atan2(dy, dx);
+                                cmd.target_yaw = base_yaw + 0.40 * std::sin((seek_ticks - 25) * 0.15);
+                            } else {
+                                cmd.target_yaw = std::atan2(dy, dx);
+                            }
+                            if (seek_ticks > 120) {
+                                // Stale estimate no longer valid; clear and expand search
+                                estimator.clearGoal(target_shape);
+                            }
                         }
                     } else {
                         // Fallback: hover and spin to find the goal
                         cmd.target_x = current_pose.x;
                         cmd.target_y = current_pose.y;
                         cmd.target_z = current_pose.z;
-                        cmd.target_yaw = current_pose.yaw + 1.0;
+                        cmd.target_yaw = current_pose.yaw + 1.2 * dt;
                     }
 
                     planner.plan(current_pose, {cmd.target_x, cmd.target_y, cmd.target_z, 0, 0, cmd.target_yaw, 0, 1.0}, dt);

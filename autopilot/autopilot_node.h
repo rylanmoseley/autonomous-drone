@@ -63,6 +63,8 @@ public:
     bool new_goal = false;
     int goal_phase = 0;
     int align_ticks = 0;
+    int standoff_ticks = 0;
+    int seek_ticks = 0;
     double approach_dx = 0.0;
     double approach_dy = 0.0;
     double approach_dz = 0.0;
@@ -79,6 +81,7 @@ public:
     TagMeasurement last_tag_measurement{};
 
     Pose last_current_pose_{0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+    Pose last_completed_goal_pose_{0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
     mutable std::mutex pose_mutex_;
 
     void updateTelemetry(const Pose& pose) {

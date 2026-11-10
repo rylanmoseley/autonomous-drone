@@ -122,20 +122,28 @@ std::string classifyShape(const cv::Mat& frame, const std::vector<cv::Point>& co
     double fillRatio = (circleArea > 0) ? (area / circleArea) : 0;
 
     std::vector<cv::Point> approx;
-    cv::approxPolyDP(contour, approx, 0.04 * perim, true);
+    cv::approxPolyDP(contour, approx, 0.03 * perim, true);
     size_t n = approx.size();
 
-    if (circularity > 0.65 && fillRatio > 0.60) {
+    // 1. Polygon approximation
+    if (n == 3) {
+        return "Triangle";
+    } else if (n == 4) {
+        float ar = (float)bbox.width / bbox.height;
+        if (ar >= 0.85 && ar <= 1.15) return "Square";
+        else return "Rectangle";
+    } else if (n == 5) {
+        float ar = (float)bbox.width / bbox.height;
+        if (ar > 0.7 && ar < 1.3 && circularity > 0.6) return "Pentagon";
+    }
+
+    if (n >= 6 && circularity > 0.65 && fillRatio > 0.60) {
         return "Circle";
     }
-    if (n == 3 || (n <= 4 && circularity < 0.65 && fillRatio < 0.55)) {
+    if (n <= 4 && circularity < 0.65 && fillRatio < 0.55) {
         return "Triangle";
     }
-    if (n == 4 || n == 5) {
-        float ar = (float)bbox.width / bbox.height;
-        if (ar > 0.75 && ar < 1.35) return "Square";
-    }
-    if (circularity > 0.55) {
+    if (circularity > 0.55 && fillRatio > 0.50) {
         return "Circle";
     }
 
@@ -193,7 +201,7 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
 
         const std::vector<SimGateSpec> specs = {
             {"Circle",   1, 0.500, cv::Scalar(255, 100, 0)},
-            {"Triangle", 2, 0.575, cv::Scalar(0, 0, 255)},
+            {"Triangle", 2, 0.666, cv::Scalar(0, 0, 255)},
             {"Square",   3, 0.414, cv::Scalar(0, 255, 0)}
         };
 
@@ -246,15 +254,19 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
             cv::Rect bbox = cv::boundingRect(contour);
 
             // Reject contours clipped by the camera frame boundaries
-            if (bbox.x <= 1 || bbox.y <= 1 ||
-                bbox.x + bbox.width >= frame.cols - 1 ||
-                bbox.y + bbox.height >= frame.rows - 1) {
+            if (bbox.x <= 4 || bbox.y <= 4 ||
+                bbox.x + bbox.width >= frame.cols - 4 ||
+                bbox.y + bbox.height >= frame.rows - 4) {
                 continue;
             }
 
-            // Aspect ratio check to reject occluded slivers
+            // Aspect ratio check to reject occluded slivers or partially cut off contours
             double aspect = static_cast<double>(bbox.width) / std::max(1, bbox.height);
-            if (aspect < 0.50 || aspect > 2.0) {
+            if (spec.shape == "Triangle") {
+                if (aspect < 0.85 || aspect > 1.45) continue;
+            } else if (spec.shape == "Square") {
+                if (aspect < 0.80 || aspect > 1.25) continue;
+            } else if (aspect < 0.70 || aspect > 1.40) {
                 continue;
             }
 
@@ -277,6 +289,10 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
             res.bbox_size = gate_size_px;
             res.posX_m = (cx - frame.cols / 2.0) * (distance_m / effective_focal);
             res.posY_m = (cy - frame.rows / 2.0) * (distance_m / effective_focal);
+            if (spec.shape == "Triangle") {
+                // Compensate for upright triangle geometry where bbox / perimeter centroid is shifted above aperture center
+                res.posY_m += 0.088;
+            }
             res.posZ_m = distance_m;
             res.confidence = 0.95;
             res.is_3d = false;

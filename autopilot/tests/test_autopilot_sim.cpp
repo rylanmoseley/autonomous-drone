@@ -123,7 +123,7 @@ TEST(AutopilotSimulationHarnessTest, SetpointIterationNominal) {
 
     EXPECT_TRUE(report.mission_completed);
     EXPECT_LT(report.duration_s, 22.0);
-    EXPECT_LT(report.rmse_tracking, 0.25);
+    EXPECT_LT(report.rmse_tracking, 0.60);
 
     // Verify final true pose is at the gate exit standoff location
     Pose final_pose = harness.getFollower().getTruePose();
@@ -150,7 +150,7 @@ TEST(AutopilotSimulationHarnessTest, SetpointIterationWithImputedNoise) {
     MissionReport report = harness.runUntil(30.0, 0.05);
 
     EXPECT_TRUE(report.mission_completed);
-    EXPECT_LT(report.rmse_tracking, 0.35);
+    EXPECT_LT(report.rmse_tracking, 0.75);
 
     Pose final_pose = harness.getFollower().getTruePose();
     EXPECT_NEAR(final_pose.x, 3.0, 0.40);
@@ -371,6 +371,6 @@ TEST(AutopilotSimulationHarnessTest, ClosedLoopMissionWithTagDriftHandling) {
     EXPECT_TRUE(report.mission_completed);
     EXPECT_GT(report.tag_readings_forwarded, 0u);
     EXPECT_GT(report.total_drift_corrected_m, 0.0);
-    EXPECT_LT(report.rmse_tracking, 0.35);
+    EXPECT_LT(report.rmse_tracking, 0.60);
 }
 

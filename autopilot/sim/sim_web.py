@@ -514,6 +514,10 @@ def evaluate_camera_tags(true_x, true_y, true_z, true_yaw, tags):
         meas_y = ty + random.gauss(0, noise_pos)
         meas_z = tz + random.gauss(0, noise_pos * 0.5)
         meas_yaw = tyaw + random.gauss(0, 0.015)
+        meas_cam_x = cam_x + random.gauss(0, noise_pos)
+        meas_cam_y = cam_y + random.gauss(0, noise_pos)
+        meas_cam_z = cam_z + random.gauss(0, noise_pos * 0.5)
+        meas_cam_yaw = true_yaw + random.gauss(0, 0.015)
         conf = max(0.50, min(0.99, 1.0 - (dist / 6.00) * 0.35))
 
         tag_detections.append({
@@ -524,6 +528,10 @@ def evaluate_camera_tags(true_x, true_y, true_z, true_yaw, tags):
             "y": meas_y,
             "z": meas_z,
             "yaw": meas_yaw,
+            "cam_x": meas_cam_x,
+            "cam_y": meas_cam_y,
+            "cam_z": meas_cam_z,
+            "cam_yaw": meas_cam_yaw,
             "conf": round(conf, 2),
             "u": u,
             "v": v,
@@ -879,8 +887,8 @@ def vision_thread():
                 tm = pkt.tags[i]
                 tm.tag_id = int(td["id"])
                 tm.is_valid = 1
-                tm.camera_pos_world = Vec3f(float(td["x"]), float(td["y"]), float(td["z"]))
-                yaw = float(td.get("yaw", 0.0))
+                tm.camera_pos_world = Vec3f(float(td.get("cam_x", td["x"])), float(td.get("cam_y", td["y"])), float(td.get("cam_z", td["z"])))
+                yaw = float(td.get("cam_yaw", td.get("yaw", 0.0)))
                 tm.camera_att_world = Quatf(math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0))
                 tm.confidence = float(td.get("conf", 0.95))
             for i in range(len(tag_dets), 4):
@@ -1064,6 +1072,21 @@ async def handler(websocket):
             elif msg_type == "update_goals":
                 with state_lock:
                     vision_goals = data["goals"]
+                try:
+                    cmd = UICommandPacket()
+                    cmd.msg_type = 2
+                    cmd_counter += 1
+                    cmd.command_id = cmd_counter
+                    cmd.timestamp_ns = int(time.time() * 1e9)
+                    cmd.command = 4 # UI_CMD_SET_SEQUENCE
+                    cmd.sequence_length = min(len(vision_goals), 16)
+                    for i, g in enumerate(vision_goals[:16]):
+                        cmd.goal_sequence[i] = g.get("shape", g.get("id", i + 1))
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    sock.sendto(bytes(cmd), ("127.0.0.1", 14552))
+                    sock.close()
+                except Exception:
+                    pass
 
             elif msg_type == "update_tags":
                 with state_lock:

@@ -91,7 +91,7 @@ void FcuFollowerSimulator::step(const FlightCommand& cmd, double dt) {
         // E-Stop: Cut motors immediately, drop to ground
         vx_ = 0.0;
         vy_ = 0.0;
-        vz_ = -9.81 * dt; // Gravity drop
+        vz_ -= 9.81 * dt; // Gravity drop
         true_pose_.z = std::max(0.0, true_pose_.z + vz_ * dt);
         feedback_pose_ = true_pose_;
         metrics_.recordSample(999.0, dt, false);

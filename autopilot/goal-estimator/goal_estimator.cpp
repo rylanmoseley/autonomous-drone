@@ -25,33 +25,39 @@ void GoalEstimator::updateEstimates(const std::vector<GoalMeasurement>& measurem
 
         const auto& hyp = gm.hypotheses[0];
         Vec3f pos = hyp.position_cam;
-
-        // Bounded arena gate check
-        if (pos.z < 0.70f || pos.z > 1.50f || pos.x < 0.2f || pos.x > 6.0f) {
-            continue;
-        }
-
         Quatf q = hyp.orientation_cam;
         double yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
 
         int key = gm.shape_type;
         auto it = tracked_goals_.find(key);
         if (it != tracked_goals_.end()) {
-            // Reject wild jumps if track is already determinate
-            if (it->second.determinate && (std::abs(pos.z - it->second.pose.z) > 0.40 || std::abs(pos.x - it->second.pose.x) > 1.20)) {
-                continue;
+            bool timed_out = (current_time - it->second.last_update_time > timeout_sec_);
+            if (timed_out) {
+                it->second.pose.x = pos.x;
+                it->second.pose.y = pos.y;
+                it->second.pose.z = pos.z;
+                it->second.pose.yaw = yaw;
+            } else {
+                // Spatial outlier rejection: if position jumps by > 0.35m from converged track, discard corrupted outlier
+                double dx = pos.x - it->second.pose.x;
+                double dy = pos.y - it->second.pose.y;
+                double dz = pos.z - it->second.pose.z;
+                double jump = std::sqrt(dx*dx + dy*dy + dz*dz);
+                if (jump > 0.35 && it->second.state == TRACK_STATE_LOCKED) {
+                    continue;
+                }
+
+                it->second.pose.x = alpha_ * pos.x + (1.0 - alpha_) * it->second.pose.x;
+                it->second.pose.y = alpha_ * pos.y + (1.0 - alpha_) * it->second.pose.y;
+                it->second.pose.z = alpha_ * pos.z + (1.0 - alpha_) * it->second.pose.z;
+
+                double dyaw = yaw - it->second.pose.yaw;
+                while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
+                while (dyaw < -M_PI) dyaw -= 2.0 * M_PI;
+                it->second.pose.yaw += alpha_ * dyaw;
+                while (it->second.pose.yaw > M_PI) it->second.pose.yaw -= 2.0 * M_PI;
+                while (it->second.pose.yaw < -M_PI) it->second.pose.yaw += 2.0 * M_PI;
             }
-
-            it->second.pose.x = alpha_ * pos.x + (1.0 - alpha_) * it->second.pose.x;
-            it->second.pose.y = alpha_ * pos.y + (1.0 - alpha_) * it->second.pose.y;
-            it->second.pose.z = alpha_ * pos.z + (1.0 - alpha_) * it->second.pose.z;
-
-            double dyaw = yaw - it->second.pose.yaw;
-            while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
-            while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
-            it->second.pose.yaw += alpha_ * dyaw;
-            while (it->second.pose.yaw > M_PI) it->second.pose.yaw -= 2.0 * M_PI;
-            while (it->second.pose.yaw < -M_PI) it->second.pose.yaw += 2.0 * M_PI;
 
             it->second.pose.confidence = hyp.confidence;
             it->second.last_update_time = current_time;
@@ -126,6 +132,12 @@ std::vector<GoalTrackTelemetry> GoalEstimator::getTelemetry(double current_time)
         result.push_back(gtt);
     }
     return result;
+}
+
+void GoalEstimator::clearGoal(uint8_t shape_type) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    tracked_goals_.erase(shape_type);
+    last_known_goals_.erase(shape_type);
 }
 
 void GoalEstimator::reset() {
