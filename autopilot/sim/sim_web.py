@@ -540,7 +540,20 @@ def evaluate_camera_tags(true_x, true_y, true_z, true_yaw, tags):
 
     return tag_detections
 
+def dist_to_segment_2d(pu, pw, ax, ay, bx, by):
+    vx = bx - ax
+    vy = by - ay
+    l2 = vx*vx + vy*vy
+    if l2 < 1e-8:
+        return math.hypot(pu - ax, pw - ay)
+    t = max(0.0, min(1.0, ((pu - ax)*vx + (pw - ay)*vy) / l2))
+    return math.hypot(pu - (ax + t * vx), pw - (ay + t * vy))
+
 def check_collision(px, py, pz, pyaw, goals):
+    drone_radius = 0.06
+    tube_radius = 0.03
+    collision_dist = tube_radius + drone_radius # 0.09m
+
     for g in goals:
         gx, gy, gz = float(g["x"]), float(g["y"]), float(g["z"])
         gyaw = float(g.get("yaw", 0.0))
@@ -553,25 +566,54 @@ def check_collision(px, py, pz, pyaw, goals):
         gnx = math.cos(gyaw)
         gny = math.sin(gyaw)
         h = rx * gnx + ry * gny # axial distance along normal
-        rho = math.sqrt(max(0.0, rx*rx + ry*ry + rz*rz - h*h)) # radial distance from center
+        u = -rx * gny + ry * gnx # horizontal distance in hoop plane
+        w = rz # vertical distance in hoop plane
 
-        # Gate hoop rim clipping check:
-        # Physical hoop centerline to aperture sides:
-        # Circle (1): R = 0.22m, tube r = 0.03m
-        # Triangle (2): R_side = 0.175m (0.35m * cos(60 deg)), tube r = 0.03m
-        # Square (3): R_side = 0.177m (0.25m * cos(45 deg)), tube r = 0.03m
-        # Drone physical collision radius ~0.06m.
-        # Collision occurs if 3D distance to the ring tube centerline < 0.09m (tube radius 0.03m + drone radius 0.06m):
-        r_centerline = 0.22 if shape_type == 1 else (0.175 if shape_type == 2 else 0.177)
-        d_ring = math.sqrt((rho - r_centerline)**2 + h**2)
-        if d_ring < 0.09:
-            return True, f"Clipped Gate {shape_type} hoop rim! (radial: {rho:.2f}m)"
+        # 1. Circle (shape 1): Torus R = 0.22m, tube = 0.03m
+        if shape_type == 1:
+            rho = math.hypot(u, w)
+            d_2d = abs(rho - 0.22)
+            d_tube = math.hypot(d_2d, h)
+            if d_tube < collision_dist:
+                return True, f"Clipped Gate 1 hoop rim! (d={d_tube:.2f}m, radial: {rho:.2f}m)"
+            # Pylon extends below bottom of hoop: w < -0.25m
+            if w < -0.25 and pz >= 0.0:
+                dist_pylon = math.hypot(rx, ry)
+                if dist_pylon < (0.015 + drone_radius):
+                    return True, "Collided with Gate 1 pylon!"
 
-        # Gate base/pylon below the hoop:
-        # Pylon cylinder extends vertically below hoop at (gx, gy) with radius ~0.04m + drone radius 0.06m:
-        dist_pylon_2d = math.sqrt(rx*rx + ry*ry)
-        if rz < -0.17 and pz >= 0.0 and dist_pylon_2d < 0.10:
-            return True, f"Collided with Gate {shape_type} pylon!"
+        # 2. Triangle (shape 2): Equilateral triangle, R = 0.35m, apex UP
+        elif shape_type == 2:
+            # Vertices: Apex at (0, 0.35), Bottom-Left at (-0.3031, -0.175), Bottom-Right at (+0.3031, -0.175)
+            d_base = dist_to_segment_2d(u, w, -0.30311, -0.175, 0.30311, -0.175)
+            d_left = dist_to_segment_2d(u, w, -0.30311, -0.175, 0.0, 0.35)
+            d_right = dist_to_segment_2d(u, w, 0.30311, -0.175, 0.0, 0.35)
+            d_2d = min(d_base, d_left, d_right)
+            d_tube = math.hypot(d_2d, h)
+            if d_tube < collision_dist:
+                return True, f"Clipped Gate 2 hoop rim! (d={d_tube:.2f}m, in-plane: {d_2d:.2f}m)"
+            # Pylon extends below bottom of base: w < -0.205m
+            if w < -0.205 and pz >= 0.0:
+                dist_pylon = math.hypot(rx, ry)
+                if dist_pylon < (0.015 + drone_radius):
+                    return True, "Collided with Gate 2 pylon!"
+
+        # 3. Square (shape 3): Upright square, half-width L = 0.1768m
+        elif shape_type == 3:
+            L = 0.17678
+            d_top = dist_to_segment_2d(u, w, -L, L, L, L)
+            d_bot = dist_to_segment_2d(u, w, -L, -L, L, -L)
+            d_left = dist_to_segment_2d(u, w, -L, -L, -L, L)
+            d_right = dist_to_segment_2d(u, w, L, -L, L, L)
+            d_2d = min(d_top, d_bot, d_left, d_right)
+            d_tube = math.hypot(d_2d, h)
+            if d_tube < collision_dist:
+                return True, f"Clipped Gate 3 hoop rim! (d={d_tube:.2f}m, in-plane: {d_2d:.2f}m)"
+            # Pylon extends below bottom edge: w < -0.207m
+            if w < -0.207 and pz >= 0.0:
+                dist_pylon = math.hypot(rx, ry)
+                if dist_pylon < (0.015 + drone_radius):
+                    return True, "Collided with Gate 3 pylon!"
 
     return False, ""
 
@@ -613,6 +655,7 @@ def step_fcu(dt=0.05, last_cmd=None, now=None):
             collision_state["object"] = hit_msg
             collision_state["time"] = now
             mission_status_text = f"CRASH: {hit_msg}"
+            print(f"[SIM] CRASH: {hit_msg} at drone pos=({follower.true_x:.3f}, {follower.true_y:.3f}, {follower.true_z:.3f})")
             active_cmd = FlightCommand(follower.true_x, follower.true_y, max(0.0, follower.true_z - 0.2), follower.true_yaw, False, True)
 
     follower.step(active_cmd, dt)

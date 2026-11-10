@@ -510,10 +510,17 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         cmd.target_y = adjusted_target.y;
                         cmd.target_z = adjusted_target.z;
                         cmd.target_yaw = adjusted_target.yaw;
-                        double standoff_dist = std::hypot(adjusted_target.x - current_pose.x,
-                                                          adjusted_target.y - current_pose.y,
-                                                          adjusted_target.z - current_pose.z);
-                        if (standoff_dist < 0.18 || (standoff_dist < 0.30 && standoff_ticks > 20)) {
+
+                        double delta_x = current_pose.x - adjusted_target.x;
+                        double delta_y = current_pose.y - adjusted_target.y;
+                        double delta_z = current_pose.z - adjusted_target.z;
+                        double standoff_dist = std::hypot(delta_x, delta_y, delta_z);
+                        double lat_offset = std::hypot(-delta_x * approach_dy + delta_y * approach_dx, delta_z);
+
+                        if (standoff_dist < 0.20 && lat_offset < 0.08) {
+                            goal_phase = 1;
+                            align_ticks = 0;
+                        } else if (standoff_ticks > 35 && standoff_dist < 0.35 && lat_offset < 0.12) {
                             goal_phase = 1;
                             align_ticks = 0;
                         }
@@ -542,12 +549,11 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         double e_along = delta_x * approach_dx + delta_y * approach_dy;
 
                         // Require hold for at least 6 ticks (~300ms) to ensure lateral and angular momentum has settled
-                        bool tight_aligned = (align_ticks >= 6 && std::abs(dyaw) < 0.08 && lat_err < 0.045 && std::abs(e_along) < 0.20);
-                        bool relaxed_aligned = (align_ticks > 25 && std::abs(dyaw) < 0.12 && lat_err < 0.07);
-                        bool watchdog_aligned = (align_ticks > 40 && std::abs(dyaw) < 0.20 && lat_err < 0.12);
-                        bool force_punch = (align_ticks > 60);
+                        bool tight_aligned = (align_ticks >= 6 && std::abs(dyaw) < 0.06 && lat_err < 0.035 && std::abs(e_along) < 0.20);
+                        bool relaxed_aligned = (align_ticks > 20 && std::abs(dyaw) < 0.08 && lat_err < 0.050);
+                        bool watchdog_aligned = (align_ticks > 40 && std::abs(dyaw) < 0.12 && lat_err < 0.065);
 
-                        if (tight_aligned || relaxed_aligned || watchdog_aligned || force_punch) {
+                        if (tight_aligned || relaxed_aligned || watchdog_aligned) {
                             goal_phase = 2;
                             align_ticks = 0;
                         }
