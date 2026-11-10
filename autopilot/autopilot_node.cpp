@@ -456,31 +456,19 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         if (tube_rail_z != 0.0f) raw_target.z = std::abs(tube_rail_z);
                     }
                     
-                    double hoop_nx = cos(raw_target.yaw);
-                    double hoop_ny = sin(raw_target.yaw);
-                    if (new_goal) {
-                        double seq_dx = raw_target.x - last_completed_goal_pose_.x;
-                        double seq_dy = raw_target.y - last_completed_goal_pose_.y;
-                        if (std::hypot(seq_dx, seq_dy) < 0.15 || current_seq_index == 0) {
-                            seq_dx = hoop_nx;
-                            seq_dy = hoop_ny;
-                        }
-                        double dot_seq = seq_dx * hoop_nx + seq_dy * hoop_ny;
-                        if (dot_seq >= 0.0) {
-                            approach_dx = hoop_nx;
-                            approach_dy = hoop_ny;
-                        } else {
-                            approach_dx = -hoop_nx;
-                            approach_dy = -hoop_ny;
-                        }
-                        double a_norm = std::hypot(approach_dx, approach_dy);
+                    if (goal_phase < 2) {
+                        double hoop_nx = cos(raw_target.yaw);
+                        double hoop_ny = sin(raw_target.yaw);
+                        double a_norm = std::hypot(hoop_nx, hoop_ny);
                         if (a_norm > 1e-4) {
-                            approach_dx /= a_norm;
-                            approach_dy /= a_norm;
+                            approach_dx = hoop_nx / a_norm;
+                            approach_dy = hoop_ny / a_norm;
                         } else {
                             approach_dx = 1.0;
                             approach_dy = 0.0;
                         }
+                    }
+                    if (new_goal) {
                         new_goal = false;
                         goal_phase = 0;
                         standoff_ticks = 0;
@@ -513,24 +501,42 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         adjusted_target.y = raw_target.y - approach_dy * 0.75;
                         adjusted_target.z = raw_target.z;
                         adjusted_target.yaw = atan2(approach_dy, approach_dx);
+
+                        // If drone is behind the gate (along gate normal corridor), route safely around the gate frame
+                        double dot_fwd = (current_pose.x - raw_target.x) * approach_dx +
+                                         (current_pose.y - raw_target.y) * approach_dy;
+                        if (dot_fwd > -0.20) {
+                            double perp_dx = -approach_dy;
+                            double perp_dy = approach_dx;
+                            double lat = (current_pose.x - raw_target.x) * perp_dx +
+                                         (current_pose.y - raw_target.y) * perp_dy;
+                            double side_sign = (lat >= 0.0) ? 1.0 : -1.0;
+                            adjusted_target.x = raw_target.x + perp_dx * (side_sign * 0.65) - approach_dx * 0.35;
+                            adjusted_target.y = raw_target.y + perp_dy * (side_sign * 0.65) - approach_dy * 0.35;
+                        }
+
                         planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
                         cmd.target_x = adjusted_target.x;
                         cmd.target_y = adjusted_target.y;
                         cmd.target_z = adjusted_target.z;
                         cmd.target_yaw = adjusted_target.yaw;
 
-                        double delta_x = current_pose.x - adjusted_target.x;
-                        double delta_y = current_pose.y - adjusted_target.y;
-                        double delta_z = current_pose.z - adjusted_target.z;
+                        double true_standoff_x = raw_target.x - approach_dx * 0.75;
+                        double true_standoff_y = raw_target.y - approach_dy * 0.75;
+                        double delta_x = current_pose.x - true_standoff_x;
+                        double delta_y = current_pose.y - true_standoff_y;
+                        double delta_z = current_pose.z - raw_target.z;
                         double standoff_dist = std::hypot(delta_x, delta_y, delta_z);
                         double lat_offset = std::hypot(-delta_x * approach_dy + delta_y * approach_dx, delta_z);
 
-                        if (standoff_dist < 0.20 && lat_offset < 0.08) {
-                            goal_phase = 1;
-                            align_ticks = 0;
-                        } else if (standoff_ticks > 35 && standoff_dist < 0.35 && lat_offset < 0.12) {
-                            goal_phase = 1;
-                            align_ticks = 0;
+                        if (dot_fwd <= -0.20) {
+                            if (standoff_dist < 0.20 && lat_offset < 0.08) {
+                                goal_phase = 1;
+                                align_ticks = 0;
+                            } else if (standoff_ticks > 35 && standoff_dist < 0.35 && lat_offset < 0.12) {
+                                goal_phase = 1;
+                                align_ticks = 0;
+                            }
                         }
                     } else if (goal_phase == 1) {
                         align_ticks++;
@@ -607,18 +613,33 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         if (norm_len < 1e-3) { gn_x = 1.0; gn_y = 0.0; }
                         else { gn_x /= norm_len; gn_y /= norm_len; }
 
+                        // Check if drone is behind the gate entrance plane
+                        double dot_fwd_seek = (current_pose.x - stale_goal.pose.x) * gn_x +
+                                              (current_pose.y - stale_goal.pose.y) * gn_y;
+
                         // Standoff position in front of the gate entrance
                         double standoff_x = stale_goal.pose.x - gn_x * 0.75;
                         double standoff_y = stale_goal.pose.y - gn_y * 0.75;
                         double standoff_z = stale_goal.pose.z;
+
+                        if (dot_fwd_seek > -0.20) {
+                            // Drone is behind or level with the gate; steer around the outside frame
+                            double perp_x = -gn_y;
+                            double perp_y = gn_x;
+                            double lat_off = (current_pose.x - stale_goal.pose.x) * perp_x +
+                                             (current_pose.y - stale_goal.pose.y) * perp_y;
+                            double side_sign = (lat_off >= 0.0) ? 1.0 : -1.0;
+                            standoff_x = stale_goal.pose.x + perp_x * (side_sign * 0.65) - gn_x * 0.35;
+                            standoff_y = stale_goal.pose.y + perp_y * (side_sign * 0.65) - gn_y * 0.35;
+                        }
 
                         double dist_to_standoff = std::hypot(current_pose.x - standoff_x,
                                                              current_pose.y - standoff_y);
                         double dist_to_goal = std::hypot(current_pose.x - stale_goal.pose.x,
                                                          current_pose.y - stale_goal.pose.y);
 
-                        // If close to standoff (< 0.60m) or within proximity (< 1.2m), adopt target!
-                        if (dist_to_standoff < 0.60 || dist_to_goal < 1.2) {
+                        // If close to standoff (< 0.60m) or within proximity in front (< 1.2m), adopt target!
+                        if (dist_to_standoff < 0.60 || (dist_to_goal < 1.2 && dot_fwd_seek <= -0.20)) {
                             active_target_pose = stale_goal.pose;
                             has_active_target = true;
                             state = FlightState::FLIGHT_STATE_PATH_FOLLOWING;
@@ -627,7 +648,12 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                             standoff_ticks = 0;
                             seek_ticks = 0;
                             new_goal = true;
-                            cmd = planner.plan(current_pose, active_target_pose, dt);
+                            Pose standoff_target = stale_goal.pose;
+                            standoff_target.x = stale_goal.pose.x - gn_x * 0.75;
+                            standoff_target.y = stale_goal.pose.y - gn_y * 0.75;
+                            standoff_target.z = stale_goal.pose.z;
+                            standoff_target.yaw = std::atan2(gn_y, gn_x);
+                            cmd = planner.plan(current_pose, standoff_target, dt);
                             return cmd;
                         } else {
                             // Fly toward the standoff position in front of the gate entrance

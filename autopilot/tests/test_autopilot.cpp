@@ -229,3 +229,73 @@ TEST(AutopilotTest, RetainGoalsWhenNewDataSent) {
     EXPECT_TRUE(next_cmd.enable);
     EXPECT_GT(next_cmd.target_x, 3.0);
 }
+
+TEST(AutopilotTest, TraversalStrictlyAlongGateNormalRegardlessOfStartingPose) {
+    AutopilotNode node;
+
+    // Mission with 2 gates arranged in reverse spatial order (Gate 1 at X=3.0, Gate 2 at X=1.5)
+    // Both gates have yaw = 0.0 (normal vector points in +X direction)
+    UICommandPacket cmd_pkt = {};
+    cmd_pkt.msg_type = MSG_TYPE_UI_CMD;
+    cmd_pkt.command = UI_CMD_START_MISSION;
+    cmd_pkt.sequence_length = 2;
+    cmd_pkt.goal_sequence[0] = SHAPE_CIRCLE;
+    cmd_pkt.goal_sequence[1] = SHAPE_TRIANGLE;
+    cmd_pkt.end_action = MISSION_END_HOVER;
+    node.handleCommand(cmd_pkt);
+
+    // Starting pose is at X=4.0 (BEHIND Gate 1 at X=3.0)
+    Pose current = {4.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
+    double dt = 0.05;
+
+    VisionPacket v_pkt = {};
+    v_pkt.msg_type = MSG_TYPE_VISION;
+    v_pkt.num_goals_reported = 2;
+
+    v_pkt.goals[0].shape_type = SHAPE_CIRCLE;
+    v_pkt.goals[0].is_detected = 1;
+    v_pkt.goals[0].num_hypotheses = 1;
+    v_pkt.goals[0].hypotheses[0].position_cam = {3.0f, 0.0f, 1.0f};
+    v_pkt.goals[0].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f}; // yaw = 0.0
+    v_pkt.goals[0].hypotheses[0].confidence = 1.0f;
+
+    v_pkt.goals[1].shape_type = SHAPE_TRIANGLE;
+    v_pkt.goals[1].is_detected = 1;
+    v_pkt.goals[1].num_hypotheses = 1;
+    v_pkt.goals[1].hypotheses[0].position_cam = {1.5f, 0.0f, 1.0f};
+    v_pkt.goals[1].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f}; // yaw = 0.0
+    v_pkt.goals[1].hypotheses[0].confidence = 1.0f;
+
+    // Takeoff to PATH_FOLLOWING
+    node.getEstimator().updateEstimates(v_pkt, 1.0);
+    node.tick(current, dt); // Takeoff -> PATH_FOLLOWING
+    node.tick(current, dt); // Executes PATH_FOLLOWING for Gate 1
+
+    // Gate 1 entrance standoff is at X = 3.0 - 0.75 = 2.25
+    // Normal approach must be strictly +X (dx=1.0, dy=0.0), regardless of starting at X=4.0
+    EXPECT_NEAR(node.approach_dx, 1.0, 1e-3);
+    EXPECT_NEAR(node.approach_dy, 0.0, 1e-3);
+
+    // Run kinematic mock until Gate 1 is completed and Gate 2 is targeted
+    int ticks = 0;
+    while (node.current_seq_index == 0 && ticks < 200) {
+        node.getEstimator().updateEstimates(v_pkt, 1.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    EXPECT_EQ(node.current_seq_index, 1u);
+
+    // Now targeting Gate 2 (Triangle at X=1.5).
+    // Gate 2 is behind Gate 1 (X=1.5 < 3.0).
+    // In old code, seq_dx = 1.5 - 3.0 = -1.5, causing dot_seq < 0, flipping approach_dx to -1.0.
+    // In new code, starting pose is irrelevant: Gate 2 normal is yaw=0 -> approach_dx = +1.0!
+    EXPECT_NEAR(node.approach_dx, 1.0, 1e-3);
+    EXPECT_NEAR(node.approach_dy, 0.0, 1e-3);
+}
