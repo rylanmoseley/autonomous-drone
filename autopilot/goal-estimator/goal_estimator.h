@@ -30,6 +30,7 @@ public:
 private:
     std::map<int, TrackedGoal> tracked_goals_;
     std::map<int, TrackedGoal> last_known_goals_;
+    std::map<int, int> outlier_jump_counts_;
     std::mutex mutex_;
     double alpha_;
     double timeout_sec_;

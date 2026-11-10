@@ -38,30 +38,41 @@ void GoalEstimator::updateEstimates(const std::vector<GoalMeasurement>& measurem
                 it->second.pose.z = pos.z;
                 it->second.pose.yaw = yaw;
             } else {
-                // Spatial outlier rejection: if position jumps by > 0.35m from converged track, discard corrupted outlier
+                // Spatial outlier rejection: if position jumps by > 0.35m from converged track, discard single-frame glitch.
+                // However, if >= 3 consecutive frames consistently report the new location, the goal has legitimately moved!
                 double dx = pos.x - it->second.pose.x;
                 double dy = pos.y - it->second.pose.y;
                 double dz = pos.z - it->second.pose.z;
                 double jump = std::sqrt(dx*dx + dy*dy + dz*dz);
                 if (jump > 0.35 && it->second.state == TRACK_STATE_LOCKED) {
-                    continue;
+                    outlier_jump_counts_[key]++;
+                    if (outlier_jump_counts_[key] < 3) {
+                        continue;
+                    }
+                    // 3 consecutive frames confirm the goal was moved: adopt new position immediately!
+                    it->second.pose.x = pos.x;
+                    it->second.pose.y = pos.y;
+                    it->second.pose.z = pos.z;
+                    it->second.pose.yaw = yaw;
+                    outlier_jump_counts_[key] = 0;
+                } else {
+                    outlier_jump_counts_[key] = 0;
+                    double eff_alpha = alpha_;
+                    if (it->second.state == TRACK_STATE_LOCKED && hyp.confidence < 0.85f) {
+                        eff_alpha = alpha_ * 0.25; // Damp updates from marginal or edge-clipped contours
+                    }
+
+                    it->second.pose.x = eff_alpha * pos.x + (1.0 - eff_alpha) * it->second.pose.x;
+                    it->second.pose.y = eff_alpha * pos.y + (1.0 - eff_alpha) * it->second.pose.y;
+                    it->second.pose.z = eff_alpha * pos.z + (1.0 - eff_alpha) * it->second.pose.z;
+
+                    double dyaw = yaw - it->second.pose.yaw;
+                    while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
+                    while (dyaw < -M_PI) dyaw -= 2.0 * M_PI;
+                    it->second.pose.yaw += alpha_ * dyaw;
+                    while (it->second.pose.yaw > M_PI) it->second.pose.yaw -= 2.0 * M_PI;
+                    while (it->second.pose.yaw < -M_PI) it->second.pose.yaw += 2.0 * M_PI;
                 }
-
-                double eff_alpha = alpha_;
-                if (it->second.state == TRACK_STATE_LOCKED && hyp.confidence < 0.85f) {
-                    eff_alpha = alpha_ * 0.25; // Damp updates from marginal or edge-clipped contours
-                }
-
-                it->second.pose.x = eff_alpha * pos.x + (1.0 - eff_alpha) * it->second.pose.x;
-                it->second.pose.y = eff_alpha * pos.y + (1.0 - eff_alpha) * it->second.pose.y;
-                it->second.pose.z = eff_alpha * pos.z + (1.0 - eff_alpha) * it->second.pose.z;
-
-                double dyaw = yaw - it->second.pose.yaw;
-                while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
-                while (dyaw < -M_PI) dyaw -= 2.0 * M_PI;
-                it->second.pose.yaw += alpha_ * dyaw;
-                while (it->second.pose.yaw > M_PI) it->second.pose.yaw -= 2.0 * M_PI;
-                while (it->second.pose.yaw < -M_PI) it->second.pose.yaw += 2.0 * M_PI;
             }
 
             it->second.pose.confidence = hyp.confidence;
@@ -149,4 +160,5 @@ void GoalEstimator::reset() {
     std::lock_guard<std::mutex> lock(mutex_);
     tracked_goals_.clear();
     last_known_goals_.clear();
+    outlier_jump_counts_.clear();
 }

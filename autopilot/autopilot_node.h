@@ -80,7 +80,7 @@ public:
     uint32_t tags_forwarded_count{0};
     TagMeasurement last_tag_measurement{};
 
-    Pose last_current_pose_{0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+    Pose last_current_pose_{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0};
     Pose last_completed_goal_pose_{0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
     mutable std::mutex pose_mutex_;
 

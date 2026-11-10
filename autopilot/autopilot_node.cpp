@@ -105,7 +105,11 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
         case UI_CMD_START_MISSION:
             is_armed = 1;
             estop_active = 0;
-            state = FlightState::FLIGHT_STATE_TAKEOFF;
+            if (state == FlightState::FLIGHT_STATE_HOVER_WAIT && last_current_pose_.z > 0.4) {
+                state = FlightState::FLIGHT_STATE_PATH_FOLLOWING;
+            } else {
+                state = FlightState::FLIGHT_STATE_TAKEOFF;
+            }
             current_seq_index = 0;
             new_goal = true;
             has_active_target = false;
@@ -114,7 +118,7 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
             standoff_ticks = 0;
             seek_ticks = 0;
             active_target_pose = {};
-            estimator.reset();
+            // Preserve estimator goal positions so drone knows where targets are!
             planner.reset();
             active_sequence_len = pkt.sequence_length;
             memcpy(goal_sequence, pkt.goal_sequence, sizeof(goal_sequence));
@@ -129,6 +133,10 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
             memcpy(goal_sequence, pkt.goal_sequence, sizeof(goal_sequence));
             configured_end_action = pkt.end_action;
             hover_timeout_s = pkt.hover_timeout_s;
+            current_seq_index = 0;
+            if (is_armed && (state == FlightState::FLIGHT_STATE_HOVER_WAIT || state == FlightState::FLIGHT_STATE_PATH_FOLLOWING || state == FlightState::FLIGHT_STATE_GOAL_SEEK)) {
+                state = (last_current_pose_.z > 0.4) ? FlightState::FLIGHT_STATE_PATH_FOLLOWING : FlightState::FLIGHT_STATE_TAKEOFF;
+            }
             new_goal = true;
             has_active_target = false;
             goal_phase = 0;
@@ -136,7 +144,7 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
             standoff_ticks = 0;
             seek_ticks = 0;
             active_target_pose = {};
-            estimator.reset();
+            // Preserve estimator goal positions so drone knows where targets are!
             break;
         case UI_CMD_SET_CONSTRAINTS:
             use_tube_constraint = pkt.use_tube_constraint;
@@ -453,9 +461,9 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     if (new_goal) {
                         double seq_dx = raw_target.x - last_completed_goal_pose_.x;
                         double seq_dy = raw_target.y - last_completed_goal_pose_.y;
-                        if (std::hypot(seq_dx, seq_dy) < 0.15) {
-                            seq_dx = raw_target.x - current_pose.x;
-                            seq_dy = raw_target.y - current_pose.y;
+                        if (std::hypot(seq_dx, seq_dy) < 0.15 || current_seq_index == 0) {
+                            seq_dx = hoop_nx;
+                            seq_dy = hoop_ny;
                         }
                         double dot_seq = seq_dx * hoop_nx + seq_dy * hoop_ny;
                         if (dot_seq >= 0.0) {
@@ -593,27 +601,42 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     bool has_stale = estimator.getLastKnownEstimate(target_shape, stale_goal);
 
                     if (has_stale) {
-                        // 1. Orient toward stale estimate
-                        double dx = stale_goal.pose.x - current_pose.x;
-                        double dy = stale_goal.pose.y - current_pose.y;
-                        double dist = std::hypot(dx, dy);
+                        double gn_x = std::cos(stale_goal.pose.yaw);
+                        double gn_y = std::sin(stale_goal.pose.yaw);
+                        double norm_len = std::hypot(gn_x, gn_y);
+                        if (norm_len < 1e-3) { gn_x = 1.0; gn_y = 0.0; }
+                        else { gn_x /= norm_len; gn_y /= norm_len; }
 
-                        // 2. If close (< 1.5m), adopt as active target and resume path following!
-                        if (dist < 1.5) {
+                        // Standoff position in front of the gate entrance
+                        double standoff_x = stale_goal.pose.x - gn_x * 0.75;
+                        double standoff_y = stale_goal.pose.y - gn_y * 0.75;
+                        double standoff_z = stale_goal.pose.z;
+
+                        double dist_to_standoff = std::hypot(current_pose.x - standoff_x,
+                                                             current_pose.y - standoff_y);
+                        double dist_to_goal = std::hypot(current_pose.x - stale_goal.pose.x,
+                                                         current_pose.y - stale_goal.pose.y);
+
+                        // If close to standoff (< 0.60m) or within proximity (< 1.2m), adopt target!
+                        if (dist_to_standoff < 0.60 || dist_to_goal < 1.2) {
                             active_target_pose = stale_goal.pose;
                             has_active_target = true;
                             state = FlightState::FLIGHT_STATE_PATH_FOLLOWING;
                             goal_phase = 0;
                             align_ticks = 0;
+                            standoff_ticks = 0;
                             seek_ticks = 0;
                             new_goal = true;
                             cmd = planner.plan(current_pose, active_target_pose, dt);
                             return cmd;
                         } else {
-                            cmd.target_yaw = std::atan2(dy, dx);
-                            cmd.target_x = stale_goal.pose.x - 1.1 * (dx / dist);
-                            cmd.target_y = stale_goal.pose.y - 1.1 * (dy / dist);
-                            cmd.target_z = stale_goal.pose.z;
+                            // Fly toward the standoff position in front of the gate entrance
+                            cmd.target_x = standoff_x;
+                            cmd.target_y = standoff_y;
+                            cmd.target_z = standoff_z;
+                            // Orient toward the goal so the camera acquires it along the flight path
+                            cmd.target_yaw = std::atan2(stale_goal.pose.y - current_pose.y,
+                                                        stale_goal.pose.x - current_pose.x);
                         }
                     } else {
                         // Fallback: smooth scan sweep to acquire initial lock on the goal

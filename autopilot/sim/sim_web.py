@@ -1121,7 +1121,7 @@ async def handler(websocket):
                     cmd_counter += 1
                     cmd.command_id = cmd_counter
                     cmd.timestamp_ns = int(time.time() * 1e9)
-                    cmd.command = 4 # UI_CMD_SET_SEQUENCE
+                    cmd.command = 8 # UI_CMD_SET_SEQUENCE (8)
                     cmd.sequence_length = min(len(vision_goals), 16)
                     for i, g in enumerate(vision_goals[:16]):
                         cmd.goal_sequence[i] = g.get("shape", g.get("id", i + 1))

@@ -162,3 +162,70 @@ TEST(AutopilotTest, AutopilotNodePreloadedWithCompiledTags) {
     EXPECT_FALSE(node.hasSurveyedTag(1));
     EXPECT_FALSE(node.hasSurveyedTag(5));
 }
+
+TEST(AutopilotTest, RetainGoalsWhenNewDataSent) {
+    AutopilotNode node;
+    
+    UICommandPacket cmd_pkt = {};
+    cmd_pkt.msg_type = MSG_TYPE_UI_CMD;
+    cmd_pkt.command = UI_CMD_START_MISSION;
+    cmd_pkt.sequence_length = 3;
+    cmd_pkt.goal_sequence[0] = SHAPE_CIRCLE;
+    cmd_pkt.goal_sequence[1] = SHAPE_TRIANGLE;
+    cmd_pkt.goal_sequence[2] = SHAPE_SQUARE;
+    cmd_pkt.end_action = MISSION_END_HOVER;
+    node.handleCommand(cmd_pkt);
+
+    Pose current = {0.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
+    double dt = 0.05;
+
+    uint8_t shapes[3] = {SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE};
+    float goal_x[3] = {1.5f, 3.0f, 4.5f};
+    float goal_y[3] = {-0.4f, 0.0f, 0.4f};
+    float goal_z[3] = {1.0f, 1.2f, 1.0f};
+
+    for (int step = 0; step < 10; ++step) {
+        VisionPacket v_pkt = {};
+        v_pkt.msg_type = MSG_TYPE_VISION;
+        v_pkt.num_goals_reported = 3;
+        for (int i = 0; i < 3; ++i) {
+            v_pkt.goals[i].shape_type = shapes[i];
+            v_pkt.goals[i].is_detected = 1;
+            v_pkt.goals[i].num_hypotheses = 1;
+            v_pkt.goals[i].hypotheses[0].position_cam = {goal_x[i], goal_y[i], goal_z[i]};
+            v_pkt.goals[i].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f};
+            v_pkt.goals[i].hypotheses[0].confidence = 0.95f;
+        }
+        double now = 100.0 + step * dt;
+        node.getEstimator().updateEstimates(v_pkt, now);
+        node.tick(current, dt);
+    }
+
+    // Verify all 3 goals are in memory
+    TrackedGoal g_circle, g_tri, g_sq;
+    EXPECT_TRUE(node.getEstimator().getLastKnownEstimate(SHAPE_CIRCLE, g_circle));
+    EXPECT_TRUE(node.getEstimator().getLastKnownEstimate(SHAPE_TRIANGLE, g_tri));
+    EXPECT_TRUE(node.getEstimator().getLastKnownEstimate(SHAPE_SQUARE, g_sq));
+
+    // Upload new mission sequence: Square -> Circle
+    UICommandPacket new_data_pkt = {};
+    new_data_pkt.msg_type = MSG_TYPE_UI_CMD;
+    new_data_pkt.command = UI_CMD_SET_SEQUENCE;
+    new_data_pkt.sequence_length = 2;
+    new_data_pkt.goal_sequence[0] = SHAPE_SQUARE;
+    new_data_pkt.goal_sequence[1] = SHAPE_CIRCLE;
+    new_data_pkt.end_action = MISSION_END_HOVER;
+    node.handleCommand(new_data_pkt);
+
+    // Goal memory must be retained
+    TrackedGoal g_check;
+    EXPECT_TRUE(node.getEstimator().getLastKnownEstimate(SHAPE_CIRCLE, g_check));
+    EXPECT_NEAR(g_check.pose.x, 1.5, 0.1);
+    EXPECT_TRUE(node.getEstimator().getLastKnownEstimate(SHAPE_SQUARE, g_check));
+    EXPECT_NEAR(g_check.pose.x, 4.5, 0.1);
+
+    // Drone targets the new sequence goal (Square)
+    FlightCommand next_cmd = node.tick(current, dt);
+    EXPECT_TRUE(next_cmd.enable);
+    EXPECT_GT(next_cmd.target_x, 3.0);
+}
