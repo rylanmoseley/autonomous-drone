@@ -123,6 +123,16 @@ std::vector<TrackedGoal> GoalEstimator::getCurrentEstimates(double current_time)
     return result;
 }
 
+std::vector<TrackedGoal> GoalEstimator::getAllKnownGoals() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<TrackedGoal> result;
+    result.reserve(last_known_goals_.size());
+    for (const auto& kv : last_known_goals_) {
+        result.push_back(kv.second);
+    }
+    return result;
+}
+
 std::vector<GoalTrackTelemetry> GoalEstimator::getTelemetry(double current_time) {
     std::lock_guard<std::mutex> lock(mutex_);
     std::vector<GoalTrackTelemetry> result;

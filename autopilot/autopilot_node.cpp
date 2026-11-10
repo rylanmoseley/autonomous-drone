@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstring>
+#include <set>
 
 AutopilotNode::AutopilotNode()
     : fcu(14550, "127.0.0.1", 14551),
@@ -356,6 +357,104 @@ void AutopilotNode::vision_loop() {
     }
 }
 
+void AutopilotNode::computeNonTargetRepulsion(
+    const Pose& current_pose,
+    uint8_t target_shape,
+    double des_vx,
+    double des_vy,
+    double& out_apf_vx,
+    double& out_apf_vy,
+    double& out_offset_x,
+    double& out_offset_y) {
+    out_apf_vx = 0.0;
+    out_apf_vy = 0.0;
+    out_offset_x = 0.0;
+    out_offset_y = 0.0;
+
+    struct ObstacleInfo {
+        double x;
+        double y;
+        double z;
+        uint8_t shape_type;
+    };
+    std::vector<ObstacleInfo> obstacles;
+    std::set<uint8_t> seen_shapes;
+
+    // 1. All known goals from GoalEstimator (retains all shapes seen so far)
+    std::vector<TrackedGoal> known_goals = estimator.getAllKnownGoals();
+    for (const auto& g : known_goals) {
+        if (g.shape_type == target_shape) continue;
+        obstacles.push_back({g.pose.x, g.pose.y, g.pose.z, g.shape_type});
+        seen_shapes.insert(g.shape_type);
+    }
+
+    // 2. Preloaded surveyed tags for gates not yet tracked by GoalEstimator
+    {
+        std::lock_guard<std::mutex> lock(tag_map_mutex_);
+        for (const auto& kv : surveyed_tags_) {
+            uint16_t tag_id = kv.first;
+            uint8_t shape = (tag_id >= 1 && tag_id <= 3) ? static_cast<uint8_t>(tag_id) : SHAPE_NONE;
+            if (shape == target_shape) continue;
+            if (shape != SHAPE_NONE && seen_shapes.count(shape)) continue;
+            obstacles.push_back({kv.second.world_pos.x, kv.second.world_pos.y, kv.second.world_pos.z, shape});
+        }
+    }
+
+    const double R_nogo = 0.55;       // Visual No-Go boundary cylinder (0.55m)
+    const double R_influence = 0.70;  // Repulsion influence zone (0.70m)
+
+    for (const auto& obs : obstacles) {
+        // Height check: gate structure and pylon extend from ground z=0 to obs.z + 0.35m
+        if (current_pose.z > obs.z + 0.40) continue;
+
+        double dx = current_pose.x - obs.x;
+        double dy = current_pose.y - obs.y;
+        double dist_2d = std::hypot(dx, dy);
+
+        if (dist_2d >= R_influence) continue;
+
+        if (dist_2d < 0.01) {
+            dx = 1.0; dy = 0.0; dist_2d = 1.0;
+        }
+
+        // Penetration ratio: 0.0 at R_influence, 1.0 at R_nogo, >1.0 inside boundary
+        double pen = (R_influence - dist_2d) / (R_influence - R_nogo);
+        pen = std::max(0.0, std::min(2.5, pen));
+
+        // Unit radial vector pointing away from obstacle center
+        double ux = dx / dist_2d;
+        double uy = dy / dist_2d;
+
+        // Cross product with desired travel direction to determine detour side
+        double cross = dx * des_vy - dy * des_vx;
+        double side = (std::abs(cross) > 1e-3) ? ((cross >= 0.0) ? 1.0 : -1.0) : ((dy >= 0.0) ? 1.0 : -1.0);
+
+        // Tangential unit vector around obstacle
+        double vx = -side * uy;
+        double vy = side * ux;
+
+        // Combined repulsive + tangential direction
+        double dir_x = ux * 0.70 + vx * 0.70;
+        double dir_y = uy * 0.70 + vy * 0.70;
+        double dir_norm = std::hypot(dir_x, dir_y);
+        if (dir_norm > 1e-4) {
+            dir_x /= dir_norm;
+            dir_y /= dir_norm;
+        }
+
+        out_apf_vx += dir_x * pen * 2.5;
+        out_apf_vy += dir_y * pen * 2.5;
+        out_offset_x += dir_x * pen * 0.45;
+        out_offset_y += dir_y * pen * 0.45;
+    }
+
+    double tot_off = std::hypot(out_offset_x, out_offset_y);
+    if (tot_off > 1.2) {
+        out_offset_x = (out_offset_x / tot_off) * 1.2;
+        out_offset_y = (out_offset_y / tot_off) * 1.2;
+    }
+}
+
 FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
     updateTelemetry(current_pose);
     FlightCommand cmd = {};
@@ -476,24 +575,6 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         seek_ticks = 0;
                     }
                     Pose adjusted_target = raw_target;
-                    
-                    // APF obstacle avoidance from other detected shapes (No-Go Keep-Out Zones)
-                    double apf_vx = 0.0, apf_vy = 0.0;
-                    for (const auto& other_tg : ests) {
-                        if (other_tg.shape_type == target_shape) continue;
-                        double gx = other_tg.pose.x; double gy = other_tg.pose.y; double gz = other_tg.pose.z;
-                        double dx = current_pose.x - gx; double dy = current_pose.y - gy; double dz = current_pose.z - gz;
-                        double dist_3d = std::sqrt(dx*dx + dy*dy + dz*dz);
-                        double dist_2d = std::sqrt(dx*dx + dy*dy);
-                        if (dist_3d < 0.42) {
-                            if (dist_2d < 0.001) { dx = 1.0; dy = 0.0; dist_2d = 1.0; }
-                            double force = (0.42 - dist_3d) * 8.0;
-                            apf_vx += (dx / dist_2d) * force;
-                            apf_vy += (dy / dist_2d) * force;
-                            apf_vx += -(dy / dist_2d) * force * 0.8; // Tangential deflection around obstacle cylinder
-                            apf_vy += (dx / dist_2d) * force * 0.8;
-                        }
-                    }
 
                     if (goal_phase == 0) {
                         standoff_ticks++;
@@ -502,7 +583,7 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         adjusted_target.z = raw_target.z;
                         adjusted_target.yaw = atan2(approach_dy, approach_dx);
 
-                        // If drone is behind the gate (along gate normal corridor), route safely around the gate frame
+                        // If drone is behind the target gate (along gate normal corridor), route safely around the gate frame
                         double dot_fwd = (current_pose.x - raw_target.x) * approach_dx +
                                          (current_pose.y - raw_target.y) * approach_dy;
                         if (dot_fwd > -0.20) {
@@ -515,17 +596,25 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                             adjusted_target.y = raw_target.y + perp_dy * (side_sign * 0.65) - approach_dy * 0.35;
                         }
 
+                        // Repulsion avoidance from non-target goals (No-Go Keep-Out Zones)
+                        double des_vx = adjusted_target.x - current_pose.x;
+                        double des_vy = adjusted_target.y - current_pose.y;
+                        double apf_vx = 0.0, apf_vy = 0.0, apf_off_x = 0.0, apf_off_y = 0.0;
+                        computeNonTargetRepulsion(current_pose, target_shape, des_vx, des_vy,
+                                                  apf_vx, apf_vy, apf_off_x, apf_off_y);
+
+                        adjusted_target.x += apf_off_x;
+                        adjusted_target.y += apf_off_y;
+
                         planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
                         cmd.target_x = adjusted_target.x;
                         cmd.target_y = adjusted_target.y;
                         cmd.target_z = adjusted_target.z;
                         cmd.target_yaw = adjusted_target.yaw;
 
-                        double true_standoff_x = raw_target.x - approach_dx * 0.75;
-                        double true_standoff_y = raw_target.y - approach_dy * 0.75;
-                        double delta_x = current_pose.x - true_standoff_x;
-                        double delta_y = current_pose.y - true_standoff_y;
-                        double delta_z = current_pose.z - raw_target.z;
+                        double delta_x = current_pose.x - adjusted_target.x;
+                        double delta_y = current_pose.y - adjusted_target.y;
+                        double delta_z = current_pose.z - adjusted_target.z;
                         double standoff_dist = std::hypot(delta_x, delta_y, delta_z);
                         double lat_offset = std::hypot(-delta_x * approach_dy + delta_y * approach_dx, delta_z);
 
@@ -544,7 +633,14 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         adjusted_target.y = raw_target.y - approach_dy * 0.75;
                         adjusted_target.z = raw_target.z;
                         adjusted_target.yaw = atan2(approach_dy, approach_dx);
-                        planner.plan(current_pose, adjusted_target, dt, 0.0, 0.0);
+
+                        double apf_vx = 0.0, apf_vy = 0.0, apf_off_x = 0.0, apf_off_y = 0.0;
+                        computeNonTargetRepulsion(current_pose, target_shape, 0.0, 0.0,
+                                                  apf_vx, apf_vy, apf_off_x, apf_off_y);
+                        adjusted_target.x += apf_off_x;
+                        adjusted_target.y += apf_off_y;
+
+                        planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
                         cmd.target_x = adjusted_target.x;
                         cmd.target_y = adjusted_target.y;
                         cmd.target_z = adjusted_target.z;
@@ -657,8 +753,14 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                             return cmd;
                         } else {
                             // Fly toward the standoff position in front of the gate entrance
-                            cmd.target_x = standoff_x;
-                            cmd.target_y = standoff_y;
+                            double des_vx = standoff_x - current_pose.x;
+                            double des_vy = standoff_y - current_pose.y;
+                            double apf_vx = 0.0, apf_vy = 0.0, apf_off_x = 0.0, apf_off_y = 0.0;
+                            computeNonTargetRepulsion(current_pose, target_shape, des_vx, des_vy,
+                                                      apf_vx, apf_vy, apf_off_x, apf_off_y);
+
+                            cmd.target_x = standoff_x + apf_off_x;
+                            cmd.target_y = standoff_y + apf_off_y;
                             cmd.target_z = standoff_z;
                             // Orient toward the goal so the camera acquires it along the flight path
                             cmd.target_yaw = std::atan2(stale_goal.pose.y - current_pose.y,
@@ -666,8 +768,12 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         }
                     } else {
                         // Fallback: smooth scan sweep to acquire initial lock on the goal
-                        cmd.target_x = current_pose.x;
-                        cmd.target_y = current_pose.y;
+                        double apf_vx = 0.0, apf_vy = 0.0, apf_off_x = 0.0, apf_off_y = 0.0;
+                        computeNonTargetRepulsion(current_pose, target_shape, 0.0, 0.0,
+                                                  apf_vx, apf_vy, apf_off_x, apf_off_y);
+
+                        cmd.target_x = current_pose.x + apf_off_x;
+                        cmd.target_y = current_pose.y + apf_off_y;
                         cmd.target_z = current_pose.z;
                         cmd.target_yaw = current_pose.yaw + 0.35 * dt;
                     }

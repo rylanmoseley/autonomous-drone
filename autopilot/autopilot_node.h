@@ -118,4 +118,13 @@ public:
     }
     GoalEstimator& getEstimator() { return estimator; }
     FlightCommand tick(const Pose& current_pose, double dt);
+    void computeNonTargetRepulsion(
+        const Pose& current_pose,
+        uint8_t target_shape,
+        double des_vx,
+        double des_vy,
+        double& out_apf_vx,
+        double& out_apf_vy,
+        double& out_offset_x,
+        double& out_offset_y);
 };

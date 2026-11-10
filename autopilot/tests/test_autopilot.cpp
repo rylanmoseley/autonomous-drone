@@ -299,3 +299,67 @@ TEST(AutopilotTest, TraversalStrictlyAlongGateNormalRegardlessOfStartingPose) {
     EXPECT_NEAR(node.approach_dx, 1.0, 1e-3);
     EXPECT_NEAR(node.approach_dy, 0.0, 1e-3);
 }
+
+TEST(AutopilotTest, NonTargetGoalRepulsionZoneDeflection) {
+    AutopilotNode node;
+
+    // Mission sequence: Target is Square (shape 3)
+    UICommandPacket cmd_pkt = {};
+    cmd_pkt.msg_type = MSG_TYPE_UI_CMD;
+    cmd_pkt.command = UI_CMD_START_MISSION;
+    cmd_pkt.sequence_length = 1;
+    cmd_pkt.goal_sequence[0] = SHAPE_SQUARE;
+    cmd_pkt.end_action = MISSION_END_HOVER;
+    node.handleCommand(cmd_pkt);
+
+    // Drone position at takeoff
+    Pose current = {0.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
+    double dt = 0.05;
+
+    // Target goal (Square) at (3.5, 0.0, 1.0), yaw = 0
+    // Non-target obstacle goal (Circle) at (1.8, 0.05, 1.0), directly in the flight corridor!
+    VisionPacket v_pkt = {};
+    v_pkt.msg_type = MSG_TYPE_VISION;
+    v_pkt.num_goals_reported = 2;
+
+    v_pkt.goals[0].shape_type = SHAPE_CIRCLE; // Non-target obstacle
+    v_pkt.goals[0].is_detected = 1;
+    v_pkt.goals[0].num_hypotheses = 1;
+    v_pkt.goals[0].hypotheses[0].position_cam = {1.8f, 0.05f, 1.0f};
+    v_pkt.goals[0].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f};
+    v_pkt.goals[0].hypotheses[0].confidence = 0.95f;
+
+    v_pkt.goals[1].shape_type = SHAPE_SQUARE; // Target goal
+    v_pkt.goals[1].is_detected = 1;
+    v_pkt.goals[1].num_hypotheses = 1;
+    v_pkt.goals[1].hypotheses[0].position_cam = {3.5f, 0.0f, 1.0f};
+    v_pkt.goals[1].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f};
+    v_pkt.goals[1].hypotheses[0].confidence = 0.95f;
+
+    // Update estimates so both goals are known
+    node.getEstimator().updateEstimates(v_pkt, 1.0);
+
+    // First tick takeoff -> PATH_FOLLOWING
+    node.tick(current, dt);
+
+    // Place drone near the non-target obstacle: X = 1.3, Y = 0.0
+    // Desired path without repulsion would be straight along Y = 0.0, which clips Circle at (1.8, 0.05)
+    current.x = 1.3;
+    current.y = 0.0;
+    current.z = 1.0;
+
+    // Even if Circle is now out of camera view (simulated by is_detected = 0 for Circle)
+    v_pkt.goals[0].is_detected = 0;
+    node.getEstimator().updateEstimates(v_pkt, 1.1);
+
+    // Tick the node. Repulsion from Circle must actively deflect the commanded target in -Y
+    FlightCommand cmd = node.tick(current, dt);
+    EXPECT_TRUE(cmd.enable);
+
+    // Commanded target must be deflected laterally away from Circle (Y < -0.15)
+    EXPECT_LT(cmd.target_y, -0.15);
+
+    // Verify distance from commanded waypoint to the obstacle center is safely outside the physical frame
+    double dist_cmd_to_obs = std::hypot(cmd.target_x - 1.8, cmd.target_y - 0.05);
+    EXPECT_GE(dist_cmd_to_obs, 0.50);
+}
