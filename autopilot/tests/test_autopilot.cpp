@@ -118,20 +118,21 @@ TEST(AutopilotTest, CompileTimeSurveyedTagMap) {
     const auto* tag1 = findCompiledSurveyedTag(1);
     ASSERT_NE(tag1, nullptr);
     EXPECT_EQ(tag1->tag_id, 1);
-    EXPECT_FLOAT_EQ(tag1->world_pos.x, 1.5f);
-    EXPECT_FLOAT_EQ(tag1->world_pos.y, -0.3f);
-    EXPECT_FLOAT_EQ(tag1->world_pos.z, 1.0f);
+    EXPECT_FLOAT_EQ(tag1->world_pos.x, 1.0f);
+    EXPECT_FLOAT_EQ(tag1->world_pos.y, -0.8f);
+    EXPECT_FLOAT_EQ(tag1->world_pos.z, 0.4f);
     EXPECT_FLOAT_EQ(tag1->size_m, 0.16f);
-    EXPECT_STREQ(tag1->label, "Gate 1 Entrance Marker");
+    EXPECT_STREQ(tag1->label, "Infield Navigation Anchor");
 
     const auto* tag4 = findCompiledSurveyedTag(4);
     ASSERT_NE(tag4, nullptr);
     EXPECT_EQ(tag4->tag_id, 4);
-    EXPECT_FLOAT_EQ(tag4->world_pos.y, 2.0f);
-    EXPECT_FLOAT_EQ(tag4->world_pos.z, 0.5f);
-    // 90 deg yaw quaternion: w=0.7071, z=0.7071
-    EXPECT_NEAR(tag4->world_att.w, 0.7071f, 1e-3);
-    EXPECT_NEAR(tag4->world_att.z, 0.7071f, 1e-3);
+    EXPECT_FLOAT_EQ(tag4->world_pos.x, 1.8f);
+    EXPECT_FLOAT_EQ(tag4->world_pos.y, 2.2f);
+    EXPECT_FLOAT_EQ(tag4->world_pos.z, 0.6f);
+    // -30 deg yaw quaternion: w=0.9659, z=-0.2588
+    EXPECT_NEAR(tag4->world_att.w, 0.9659f, 1e-3);
+    EXPECT_NEAR(tag4->world_att.z, -0.2588f, 1e-3);
 
     // Non-existent tag returns nullptr
     EXPECT_EQ(findCompiledSurveyedTag(999), nullptr);
@@ -149,9 +150,9 @@ TEST(AutopilotTest, AutopilotNodePreloadedWithCompiledTags) {
 
     SurveyedTagPose tag1{};
     EXPECT_TRUE(node.getSurveyedTag(1, tag1));
-    EXPECT_FLOAT_EQ(tag1.world_pos.x, 1.5f);
-    EXPECT_FLOAT_EQ(tag1.world_pos.y, -0.3f);
-    EXPECT_FLOAT_EQ(tag1.world_pos.z, 1.0f);
+    EXPECT_FLOAT_EQ(tag1.world_pos.x, 1.0f);
+    EXPECT_FLOAT_EQ(tag1.world_pos.y, -0.8f);
+    EXPECT_FLOAT_EQ(tag1.world_pos.z, 0.4f);
 
     // Dynamic runtime additions or overrides can still be registered
     node.registerSurveyedTag(5, {10.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, 0.25f);

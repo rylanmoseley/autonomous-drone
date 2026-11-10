@@ -320,9 +320,9 @@ class FollowerSimulator:
 follower = FollowerSimulator()
 state_lock = threading.Lock()
 vision_goals = [
-    {"id": 1, "shape": 1, "x": 1.5, "y": -0.4, "z": 1.0, "yaw": 0.0},
-    {"id": 2, "shape": 2, "x": 3.0, "y": 0.0, "z": 1.2, "yaw": 0.0},
-    {"id": 3, "shape": 3, "x": 4.5, "y": 0.4, "z": 1.0, "yaw": 0.0}
+    {"id": 1, "shape": 1, "x": 2.5, "y": -1.3, "z": 1.0, "yaw": 0.0},
+    {"id": 2, "shape": 2, "x": 2.5, "y": 0.0, "z": 1.2, "yaw": 0.0},
+    {"id": 3, "shape": 3, "x": 2.5, "y": 1.3, "z": 1.0, "yaw": 0.0}
 ]
 
 TAGS_JSON_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "surveyed_tags.json")
@@ -352,10 +352,10 @@ def load_default_surveyed_tags():
             print(f"Error loading {TAGS_JSON_PATH}: {e}")
     if not tags:
         tags = [
-            {"id": 1, "label": "Gate 1 Entrance Marker", "x": 1.5, "y": -0.3, "z": 1.0, "yaw": 0.0, "pitch": 0.0, "roll": 0.0, "size": 0.16, "confidence": 0.95},
-            {"id": 2, "label": "Gate 2 Center Pylon", "x": 3.0, "y": 0.2, "z": 1.2, "yaw": math.radians(15.0), "pitch": 0.0, "roll": 0.0, "size": 0.16, "confidence": 0.95},
-            {"id": 3, "label": "Gate 3 Exit Marker", "x": 4.5, "y": -0.1, "z": 1.0, "yaw": math.radians(-10.0), "pitch": 0.0, "roll": 0.0, "size": 0.16, "confidence": 0.95},
-            {"id": 4, "label": "Arena Perimeter Anchor", "x": 0.0, "y": 2.0, "z": 0.5, "yaw": math.radians(90.0), "pitch": 0.0, "roll": 0.0, "size": 0.20, "confidence": 0.95}
+            {"id": 1, "label": "Infield Navigation Anchor", "x": 1.0, "y": -0.8, "z": 0.4, "yaw": 0.0, "pitch": 0.0, "roll": 0.0, "size": 0.16, "confidence": 0.95},
+            {"id": 2, "label": "West Perimeter Landmark", "x": 2.2, "y": -2.2, "z": 0.8, "yaw": math.radians(30.0), "pitch": 0.0, "roll": 0.0, "size": 0.16, "confidence": 0.95},
+            {"id": 3, "label": "Far Outfield Landmark", "x": 4.2, "y": -0.5, "z": 1.0, "yaw": math.radians(180.0), "pitch": 0.0, "roll": 0.0, "size": 0.16, "confidence": 0.95},
+            {"id": 4, "label": "East Perimeter Landmark", "x": 1.8, "y": 2.2, "z": 0.6, "yaw": math.radians(-30.0), "pitch": 0.0, "roll": 0.0, "size": 0.20, "confidence": 0.95}
         ]
     return tags
 

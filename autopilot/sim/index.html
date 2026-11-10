@@ -160,16 +160,16 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script>
         let shapes = {
-            circle:   { id: 1, shape: 1, x: 1.5, y: -0.4, z: 1.0, yaw: 0.0, color: 0x0000ff, segments: 32, radius: 0.22 },
-            triangle: { id: 2, shape: 2, x: 3.0, y: 0.0, z: 1.2, yaw: 0.0, color: 0xff0000, segments: 3,  radius: 0.35 },
-            square:   { id: 3, shape: 3, x: 4.5, y: 0.4, z: 1.0, yaw: 0.0, color: 0x00ff00, segments: 4,  radius: 0.25 }
+            circle:   { id: 1, shape: 1, x: 2.5, y: -1.3, z: 1.0, yaw: 0.0, color: 0x0000ff, segments: 32, radius: 0.22 },
+            triangle: { id: 2, shape: 2, x: 2.5, y: 0.0, z: 1.2, yaw: 0.0, color: 0xff0000, segments: 3,  radius: 0.35 },
+            square:   { id: 3, shape: 3, x: 2.5, y: 1.3, z: 1.0, yaw: 0.0, color: 0x00ff00, segments: 4,  radius: 0.25 }
         };
 
         let tags = {
-            tag1: { id: 1, label: "Gate 1 Entrance Marker", x: 1.5, y: -0.3, z: 1.0, yaw: 0.0, size: 0.16 },
-            tag2: { id: 2, label: "Gate 2 Center Pylon", x: 3.0, y: 0.2, z: 1.2, yaw: 0.262, size: 0.16 },
-            tag3: { id: 3, label: "Gate 3 Exit Marker", x: 4.5, y: -0.1, z: 1.0, yaw: -0.175, size: 0.16 },
-            tag4: { id: 4, label: "Arena Perimeter Anchor", x: 0.0, y: 2.0, z: 0.5, yaw: 1.571, size: 0.20 }
+            tag1: { id: 1, label: "Infield Navigation Anchor", x: 1.0, y: -0.8, z: 0.4, yaw: 0.0, size: 0.16 },
+            tag2: { id: 2, label: "West Perimeter Landmark", x: 2.2, y: -2.2, z: 0.8, yaw: 0.524, size: 0.16 },
+            tag3: { id: 3, label: "Far Outfield Landmark", x: 4.2, y: -0.5, z: 1.0, yaw: 3.142, size: 0.16 },
+            tag4: { id: 4, label: "East Perimeter Landmark", x: 1.8, y: 2.2, z: 0.6, yaw: -0.524, size: 0.20 }
         };
 
         const shapesList = document.getElementById("shapes-list");
@@ -741,7 +741,7 @@
                 const tagGeo = new THREE.PlaneGeometry(sz, sz);
                 const tagMat = new THREE.MeshBasicMaterial({ 
                     map: createAprilTagTexture(t.id),
-                    side: THREE.FrontSide
+                    side: THREE.DoubleSide
                 });
                 const tagFace = new THREE.Mesh(tagGeo, tagMat);
                 tagFace.position.set(0, 0, 0.005);

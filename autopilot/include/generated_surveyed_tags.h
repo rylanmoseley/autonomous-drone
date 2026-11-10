@@ -1,6 +1,6 @@
 // ============================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT DIRECTLY
-// Generated from: surveyed_tags.json (SHA-256: 07427b7e001db8e3)
+// Generated from: surveyed_tags.json (SHA-256: 4eaa31cc6129b950)
 // Arena: Competition Arena Alpha | Frame: NED
 // Zero-allocation compile-time static lookup table for surveyed fiducial tags
 // ============================================================================
@@ -24,14 +24,14 @@ struct CompiledSurveyedTagEntry {
 
 constexpr size_t COMPILED_SURVEYED_TAG_COUNT = 4;
 constexpr const char* COMPILED_ARENA_NAME = "Competition Arena Alpha";
-constexpr const char* COMPILED_TAG_MAP_HASH = "07427b7e001db8e3";
+constexpr const char* COMPILED_TAG_MAP_HASH = "4eaa31cc6129b950";
 
 // Static ROM table sorted by tag_id for compile-time or branchless binary search
 constexpr CompiledSurveyedTagEntry COMPILED_SURVEYED_TAGS[COMPILED_SURVEYED_TAG_COUNT] = {
-    { 1, {1.500000f, -0.300000f, 1.000000f}, {1.000000f, 0.000000f, 0.000000f, 0.000000f}, 0.1600f, "Gate 1 Entrance Marker" },
-    { 2, {3.000000f, 0.200000f, 1.200000f}, {0.991445f, 0.000000f, 0.000000f, 0.130526f}, 0.1600f, "Gate 2 Center Pylon" },
-    { 3, {4.500000f, -0.100000f, 1.000000f}, {0.996195f, 0.000000f, 0.000000f, -0.087156f}, 0.1600f, "Gate 3 Exit Marker" },
-    { 4, {0.000000f, 2.000000f, 0.500000f}, {0.707107f, 0.000000f, 0.000000f, 0.707107f}, 0.2000f, "Arena Perimeter Anchor" },
+    { 1, {1.000000f, -0.800000f, 0.400000f}, {1.000000f, 0.000000f, 0.000000f, 0.000000f}, 0.1600f, "Infield Navigation Anchor" },
+    { 2, {2.200000f, -2.200000f, 0.800000f}, {0.965926f, 0.000000f, 0.000000f, 0.258819f}, 0.1600f, "West Perimeter Landmark" },
+    { 3, {4.200000f, -0.500000f, 1.000000f}, {0.000000f, 0.000000f, 0.000000f, 1.000000f}, 0.1600f, "Far Outfield Landmark" },
+    { 4, {1.800000f, 2.200000f, 0.600000f}, {0.965926f, 0.000000f, 0.000000f, -0.258819f}, 0.2000f, "East Perimeter Landmark" },
 };
 
 // O(log N) branchless constexpr binary search lookup in ROM

@@ -394,18 +394,6 @@ void AutopilotNode::computeNonTargetRepulsion(
         seen_shapes.insert(g.shape_type);
     }
 
-    // 2. Preloaded surveyed tags for gates not yet tracked by GoalEstimator
-    {
-        std::lock_guard<std::mutex> lock(tag_map_mutex_);
-        for (const auto& kv : surveyed_tags_) {
-            uint16_t tag_id = kv.first;
-            uint8_t shape = (tag_id >= 1 && tag_id <= 3) ? static_cast<uint8_t>(tag_id) : SHAPE_NONE;
-            if (shape == target_shape) continue;
-            if (shape != SHAPE_NONE && seen_shapes.count(shape)) continue;
-            obstacles.push_back({kv.second.world_pos.x, kv.second.world_pos.y, kv.second.world_pos.z, shape});
-        }
-    }
-
     const double R_nogo = 0.55;       // Visual No-Go boundary cylinder (0.55m)
     const double R_influence = 0.70;  // Repulsion influence zone (0.70m)
 

@@ -7,30 +7,30 @@
   "tags": [
     {
       "id": 1,
-      "label": "Gate 1 Entrance Marker",
-      "position_ned": [1.5, -0.3, 1.0],
+      "label": "Infield Navigation Anchor",
+      "position_ned": [1.0, -0.8, 0.4],
       "attitude_rpy_deg": [0.0, 0.0, 0.0],
       "size_m": 0.16
     },
     {
       "id": 2,
-      "label": "Gate 2 Center Pylon",
-      "position_ned": [3.0, 0.2, 1.2],
-      "attitude_rpy_deg": [0.0, 0.0, 15.0],
+      "label": "West Perimeter Landmark",
+      "position_ned": [2.2, -2.2, 0.8],
+      "attitude_rpy_deg": [0.0, 0.0, 30.0],
       "size_m": 0.16
     },
     {
       "id": 3,
-      "label": "Gate 3 Exit Marker",
-      "position_ned": [4.5, -0.1, 1.0],
-      "attitude_rpy_deg": [0.0, 0.0, -10.0],
+      "label": "Far Outfield Landmark",
+      "position_ned": [4.2, -0.5, 1.0],
+      "attitude_rpy_deg": [0.0, 0.0, 180.0],
       "size_m": 0.16
     },
     {
       "id": 4,
-      "label": "Arena Perimeter Anchor",
-      "position_ned": [0.0, 2.0, 0.5],
-      "attitude_rpy_deg": [0.0, 0.0, 90.0],
+      "label": "East Perimeter Landmark",
+      "position_ned": [1.8, 2.2, 0.6],
+      "attitude_rpy_deg": [0.0, 0.0, -30.0],
       "size_m": 0.20
     }
   ]
