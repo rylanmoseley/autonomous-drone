@@ -85,6 +85,8 @@ public:
 
     Pose last_current_pose_{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0};
     Pose last_completed_goal_pose_{0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+    Pose hover_pose_{0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+    bool has_hover_pose_{false};
     mutable std::mutex pose_mutex_;
 
     void updateTelemetry(const Pose& pose) {

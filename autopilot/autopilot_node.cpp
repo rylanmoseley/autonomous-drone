@@ -122,6 +122,7 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
             standoff_ticks = 0;
             seek_ticks = 0;
             active_target_pose = {};
+            has_hover_pose_ = false;
             // Preserve estimator goal positions so drone knows where targets are!
             planner.reset();
             active_sequence_len = pkt.sequence_length;
@@ -151,6 +152,7 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
             standoff_ticks = 0;
             seek_ticks = 0;
             active_target_pose = {};
+            has_hover_pose_ = false;
             // Preserve estimator goal positions so drone knows where targets are!
             break;
         case UI_CMD_SET_CONSTRAINTS:
@@ -684,13 +686,7 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         adjusted_target.z = raw_target.z;
                         adjusted_target.yaw = atan2(approach_dy, approach_dx);
 
-                        double apf_vx = 0.0, apf_vy = 0.0, apf_off_x = 0.0, apf_off_y = 0.0;
-                        computeNonTargetRepulsion(current_pose, target_shape, 0.0, 0.0,
-                                                  apf_vx, apf_vy, apf_off_x, apf_off_y);
-                        adjusted_target.x += apf_off_x;
-                        adjusted_target.y += apf_off_y;
-
-                        planner.plan(current_pose, adjusted_target, dt, apf_vx, apf_vy);
+                        planner.plan(current_pose, adjusted_target, dt, 0.0, 0.0);
                         cmd.target_x = adjusted_target.x;
                         cmd.target_y = adjusted_target.y;
                         cmd.target_z = adjusted_target.z;
@@ -700,12 +696,14 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
                         while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
 
-                        // Lateral error perpendicular to the approach corridor normal
-                        double delta_x = current_pose.x - adjusted_target.x;
-                        double delta_y = current_pose.y - adjusted_target.y;
-                        double e_perp = -delta_x * approach_dy + delta_y * approach_dx;
+                        // Lateral error perpendicular to the approach corridor normal relative to target gate center
+                        double d_gate_x = current_pose.x - raw_target.x;
+                        double d_gate_y = current_pose.y - raw_target.y;
+                        double e_perp = -d_gate_x * approach_dy + d_gate_y * approach_dx;
                         double e_z = current_pose.z - raw_target.z;
                         double lat_err = std::hypot(e_perp, e_z);
+                        double delta_x = current_pose.x - adjusted_target.x;
+                        double delta_y = current_pose.y - adjusted_target.y;
                         double e_along = delta_x * approach_dx + delta_y * approach_dy;
 
                         // Require hold for at least 6 ticks (~300ms) to ensure lateral and angular momentum has settled
@@ -842,6 +840,8 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     state = FlightState::FLIGHT_STATE_LANDING;
                 } else {
                     state = FlightState::FLIGHT_STATE_HOVER_WAIT;
+                    hover_pose_ = current_pose;
+                    has_hover_pose_ = true;
                 }
             }
             break;
@@ -849,8 +849,15 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
 
         case FlightState::FLIGHT_STATE_HOVER_WAIT:
             cmd.enable = true;
-            cmd.target_x = current_pose.x; cmd.target_y = current_pose.y; cmd.target_z = current_pose.z; cmd.target_yaw = current_pose.yaw;
-            planner.plan(current_pose, {cmd.target_x, cmd.target_y, cmd.target_z, 0, 0, cmd.target_yaw, 0, 1.0}, dt);
+            if (!has_hover_pose_) {
+                hover_pose_ = current_pose;
+                has_hover_pose_ = true;
+            }
+            cmd.target_x = hover_pose_.x;
+            cmd.target_y = hover_pose_.y;
+            cmd.target_z = hover_pose_.z;
+            cmd.target_yaw = hover_pose_.yaw;
+            planner.plan(current_pose, hover_pose_, dt);
             break;
 
         case FlightState::FLIGHT_STATE_LANDING:
