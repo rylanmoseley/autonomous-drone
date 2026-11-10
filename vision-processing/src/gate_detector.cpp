@@ -299,11 +299,19 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
             res.posX_m = (cx - frame.cols / 2.0) * (distance_m / effective_focal);
             res.posY_m = (cy - frame.rows / 2.0) * (distance_m / effective_focal);
             if (spec.shape == "Triangle") {
-                // Compensate for upright triangle geometry where bbox / perimeter centroid is shifted above aperture center
-                res.posY_m += 0.088;
+                if (bbox.y <= 2) {
+                    // Apex is clipped at top of camera frame at close range (< 0.95m).
+                    // Reconstruct true aperture center from the unclipped bottom base:
+                    // For an upright equilateral triangle (width W=0.666m, base-to-center H_bc=0.205m):
+                    // ratio_base_to_center = 0.205 / 0.666 ~ 0.308
+                    double y_base = bbox.y + bbox.height;
+                    double cy_reconstructed = y_base - 0.308 * gate_size_px;
+                    res.posY_m = (cy_reconstructed - frame.rows / 2.0) * (distance_m / effective_focal);
+                    res.center.y = static_cast<int>(std::round(cy_reconstructed));
+                }
             }
             res.posZ_m = distance_m;
-            res.confidence = 0.95;
+            res.confidence = touches_edge ? 0.80 : 0.95;
             res.is_3d = false;
 
             if (draw_overlay) {

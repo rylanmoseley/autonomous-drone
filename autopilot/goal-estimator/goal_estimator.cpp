@@ -47,9 +47,14 @@ void GoalEstimator::updateEstimates(const std::vector<GoalMeasurement>& measurem
                     continue;
                 }
 
-                it->second.pose.x = alpha_ * pos.x + (1.0 - alpha_) * it->second.pose.x;
-                it->second.pose.y = alpha_ * pos.y + (1.0 - alpha_) * it->second.pose.y;
-                it->second.pose.z = alpha_ * pos.z + (1.0 - alpha_) * it->second.pose.z;
+                double eff_alpha = alpha_;
+                if (it->second.state == TRACK_STATE_LOCKED && hyp.confidence < 0.85f) {
+                    eff_alpha = alpha_ * 0.25; // Damp updates from marginal or edge-clipped contours
+                }
+
+                it->second.pose.x = eff_alpha * pos.x + (1.0 - eff_alpha) * it->second.pose.x;
+                it->second.pose.y = eff_alpha * pos.y + (1.0 - eff_alpha) * it->second.pose.y;
+                it->second.pose.z = eff_alpha * pos.z + (1.0 - eff_alpha) * it->second.pose.z;
 
                 double dyaw = yaw - it->second.pose.yaw;
                 while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
