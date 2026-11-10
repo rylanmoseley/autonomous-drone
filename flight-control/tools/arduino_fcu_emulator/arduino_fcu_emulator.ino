@@ -10,12 +10,44 @@
  *      3. Mission Planner / QGroundControl connectivity, parameters, and HUD
  *      4. Autopilot daemon telemetry ingestion (LOCAL_POSITION_NED, ATTITUDE)
  *
- *  Hardware Connections:
+ *  ==============================================================================
+ *  WHY DOES SERIAL MONITOR SHOW "SLOP" / GIBBERISH?
+ *  ==============================================================================
+ *  1. MAVLink is a BINARY protocol, NOT human-readable ASCII text!
+ *     Every packet starts with 0xFD (which renders in ASCII as 'ý'), followed
+ *     by raw binary floats, bitmasks, and CRCs (e.g. 0x00, 0x1E, 0x9F).
+ *     When opened in the text-based Arduino Serial Monitor, this binary stream
+ *     naturally displays as strange symbols and scrambled characters ("slop").
+ *     Seeing 'ý' and binary characters actually means the MAVLink stream is WORKING!
+ *
+ *  2. Hardware Pin Sharing on Arduino Uno:
+ *     On the Uno, Pin 0 (RX) and Pin 1 (TX) are directly connected to the onboard
+ *     USB-to-Serial converter chip. If the Uno is connected to your PC via USB
+ *     and Pin 0/1 are wired to the Pi, the USB chip and Pi will fight over the line.
+ *
+ *  3. Operating Modes:
+ *     - MODE 0 (Direct MAVLink on Serial):
+ *       Sends binary MAVLink on Pins 0 & 1 (and USB).
+ *       -> Close the Serial Monitor so mavlink_proxy.py / Mission Planner can read it!
+ *     - MODE 1 (Dual Mode - SoftwareSerial to Pi, Clean Text on Serial Monitor):
+ *       Sends binary MAVLink on Pin 2 (RX) and Pin 3 (TX) to the Pi.
+ *       Sends clean, human-readable English debug logs to your USB Serial Monitor!
+ *       (Enable below by setting #define USE_SOFTWARE_SERIAL 1)
+ *
+ *  Hardware Connections (MODE 0 - Default Hardware Serial):
  *    Arduino Uno R3                 Raspberry Pi (40-Pin Header)
  *    ----------------             -----------------------------
  *    GND          --------------> Pin 6  (GND)
  *    Pin 0 (RX)   <-------------- Pin 8  (GPIO 14 - Pi TX, 3.3V safe)
  *    Pin 1 (TX)   ---[Divider]--> Pin 10 (GPIO 15 - Pi RX, 3.3V input!)
+ *
+ *  Hardware Connections (MODE 1 - SoftwareSerial with Debug Console):
+ *    Arduino Uno R3                 Raspberry Pi (40-Pin Header)
+ *    ----------------             -----------------------------
+ *    GND          --------------> Pin 6  (GND)
+ *    Pin 2 (RX)   <-------------- Pin 8  (GPIO 14 - Pi TX, 3.3V safe)
+ *    Pin 3 (TX)   ---[Divider]--> Pin 10 (GPIO 15 - Pi RX, 3.3V input!)
+ *    USB Cable    --------------> PC (Open Serial Monitor at 115200 baud for logs)
  *
  *  CRITICAL VOLTAGE LEVEL WARNING:
  *    The Arduino Uno R3 operates at 5.0V logic. The Raspberry Pi GPIO is 3.3V
@@ -24,13 +56,6 @@
  *    - Uno TX (5.0V) -> Pi RX: MUST use a logic level shifter or a simple
  *      two-resistor voltage divider (e.g. 1k ohm in series, 2k ohm to GND)
  *      to step 5V down to ~3.3V before connecting to Pi Pin 10!
- *
- *  Baud Rate Note:
- *    The default baud rate is set to 115200. On a 16MHz ATmega328P, 921600 baud
- *    has an 8.5% clock divisor error which causes framing corruptions. 115200
- *    baud has only 2.1% error and runs with zero packet drops.
- *    Start the companion proxy with:
- *      python3 mavlink_proxy.py --serial /dev/ttyAMA0 --baud 115200
  * ==============================================================================
  */
 
@@ -38,9 +63,27 @@
 #include <avr/pgmspace.h>
 
 // ------------------------------------------------------------------------------
-// Configuration
+// Operating Mode Selection
 // ------------------------------------------------------------------------------
-#define MAVLINK_BAUD          115200
+// Set to 0: MAVLink directly on Hardware Serial (Pins 0 & 1 / USB).
+//           * Best for direct testing or USB connection to Pi (/dev/ttyACM0).
+//           * Close Serial Monitor when running proxy!
+// Set to 1: MAVLink on SoftwareSerial (Pins 2 & 3).
+//           * USB Serial Monitor prints human-readable English telemetry logs.
+#define USE_SOFTWARE_SERIAL   0
+
+#if USE_SOFTWARE_SERIAL
+  #include <SoftwareSerial.h>
+  #define SW_RX_PIN           2
+  #define SW_TX_PIN           3
+  #define MAVLINK_BAUD        57600   // 57600 baud is optimal for SoftwareSerial
+  SoftwareSerial g_mav_serial(SW_RX_PIN, SW_TX_PIN);
+  #define MAV_PORT            g_mav_serial
+#else
+  #define MAVLINK_BAUD        115200  // 115200 baud is optimal for Hardware Serial
+  #define MAV_PORT            Serial
+#endif
+
 #define SYSTEM_ID             1       // MAVLink System ID (1 = Primary Vehicle)
 #define COMPONENT_ID          1       // MAVLink Component ID (1 = Autopilot)
 
@@ -253,11 +296,11 @@ void send_mavlink_v2(uint32_t msgid, uint8_t crc_extra, const void *payload, uin
     crc_bytes[0] = (uint8_t)(crc & 0xFF);
     crc_bytes[1] = (uint8_t)((crc >> 8) & 0xFF);
 
-    Serial.write(header, 10);
+    MAV_PORT.write(header, 10);
     if (len > 0 && payload != nullptr) {
-        Serial.write(p, len);
+        MAV_PORT.write(p, len);
     }
-    Serial.write(crc_bytes, 2);
+    MAV_PORT.write(crc_bytes, 2);
 }
 
 // ------------------------------------------------------------------------------
@@ -343,7 +386,7 @@ void send_global_position_int() {
     MsgGlobalPositionInt gpos;
     gpos.time_boot_ms = now;
     // Fixed reference coordinate (San Francisco arena / test location)
-    gpos.lat = 377749000;  // 37.7749000 N
+    gpos.lat = 377749000;   // 37.7749000 N
     gpos.lon = -1224194000; // -122.4194000 W
     gpos.alt = 15000;       // 15.0m MSL
     gpos.relative_alt = 1250; // 1.25m AGL
@@ -386,7 +429,7 @@ void send_parameter_index(uint16_t idx) {
 void send_all_parameters() {
     for (uint16_t i = 0; i < kNumParameters; ++i) {
         send_parameter_index(i);
-        delay(12); // Small throttle delay to prevent Uno serial TX buffer overflow
+        delay(12); // Small throttle delay to prevent serial TX buffer overflow
     }
 }
 
@@ -440,7 +483,9 @@ static uint8_t  g_rx_payload[64];
 
 void process_incoming_packet(uint32_t msgid, const uint8_t *payload, uint8_t len) {
     if (msgid == MSG_ID_PARAM_REQUEST_LIST) {
-        // Mission Planner initial parameter sync
+#if USE_SOFTWARE_SERIAL
+        Serial.println(F("[GCS] PARAM_REQUEST_LIST received! Sending 8 parameters to Mission Planner..."));
+#endif
         send_all_parameters();
     }
     else if (msgid == MSG_ID_PARAM_REQUEST_READ && len >= 2) {
@@ -452,7 +497,6 @@ void process_incoming_packet(uint32_t msgid, const uint8_t *payload, uint8_t len
         }
     }
     else if (msgid == MSG_ID_MISSION_REQUEST_LIST) {
-        // Waypoint request
         send_mission_count();
     }
     else if (msgid == MSG_ID_COMMAND_LONG && len >= 30) {
@@ -463,8 +507,11 @@ void process_incoming_packet(uint32_t msgid, const uint8_t *payload, uint8_t len
             g_is_armed = (arm_param >= 1.0f);
             send_command_ack(cmd, MAV_RESULT_ACCEPTED);
             send_statustext(g_is_armed ? "FCU: Motors Armed" : "FCU: Motors Disarmed");
+#if USE_SOFTWARE_SERIAL
+            Serial.print(F("[CMD] Motor Arm State Changed -> "));
+            Serial.println(g_is_armed ? F("ARMED") : F("DISARMED"));
+#endif
         } else {
-            // Acknowledge other commands
             send_command_ack(cmd, MAV_RESULT_ACCEPTED);
         }
     }
@@ -581,11 +628,35 @@ void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, LOW);
 
-    // Initialize UART at 115200 baud
+#if USE_SOFTWARE_SERIAL
+    Serial.begin(115200);
+    g_mav_serial.begin(MAVLINK_BAUD);
+
+    Serial.println(F("\n========================================================"));
+    Serial.println(F("  HEXAGON Flight Drone - FCU Emulator (Debug Console)   "));
+    Serial.println(F("========================================================"));
+    Serial.print(F("MAVLink stream active on Pins 2(RX) & 3(TX) @ "));
+    Serial.print(MAVLINK_BAUD);
+    Serial.println(F(" baud."));
+    Serial.println(F("Human-readable telemetry log active. Zero slop!"));
+    Serial.println(F("--------------------------------------------------------"));
+#else
     Serial.begin(MAVLINK_BAUD);
 
-    // Wait briefly for serial pipeline to stabilize
-    delay(500);
+    // Initial human-readable notice before binary packets begin
+    Serial.println(F("\n========================================================"));
+    Serial.println(F("  HEXAGON Flight Drone - FCU Emulator (MAVLink v2)      "));
+    Serial.println(F("========================================================"));
+    Serial.println(F("NOTICE: MAVLink is a BINARY protocol (not ASCII text)."));
+    Serial.println(F("Packets start with 0xFD ('ý') followed by binary floats."));
+    Serial.println(F("If you see 'ý' and symbols in Serial Monitor:"));
+    Serial.println(F("  1. The binary MAVLink telemetry stream is WORKING!"));
+    Serial.println(F("  2. CLOSE this Serial Monitor so the proxy can read it."));
+    Serial.println(F("  3. Connect Mission Planner over UDP port 14550."));
+    Serial.println(F("  (Or set #define USE_SOFTWARE_SERIAL 1 for text debug)"));
+    Serial.println(F("========================================================\n"));
+    delay(1000);
+#endif
 
     // Send startup announcement
     send_heartbeat();
@@ -596,11 +667,11 @@ void loop() {
     uint32_t now = millis();
 
     // 1. Process incoming commands from Pi / Proxy / Mission Planner
-    while (Serial.available() > 0) {
-        uint8_t c = (uint8_t)Serial.read();
+    while (MAV_PORT.available() > 0) {
+        uint8_t c = (uint8_t)MAV_PORT.read();
         parse_rx_byte(c);
 
-        // Simple manual key controls via Serial Monitor
+        // Simple manual key controls
         if (c == 'p' || c == 'P') {
             send_all_parameters();
         } else if (c == 'a' || c == 'A') {
@@ -608,6 +679,22 @@ void loop() {
             send_statustext(g_is_armed ? "Manual: Armed" : "Manual: Disarmed");
         }
     }
+
+#if USE_SOFTWARE_SERIAL
+    // Also read PC Serial Monitor keystrokes in debug mode
+    while (Serial.available() > 0) {
+        char ch = Serial.read();
+        if (ch == 'p' || ch == 'P') {
+            Serial.println(F("[MANUAL] Re-broadcasting parameters to GCS..."));
+            send_all_parameters();
+        } else if (ch == 'a' || ch == 'A') {
+            g_is_armed = !g_is_armed;
+            Serial.print(F("[MANUAL] Toggled arm state -> "));
+            Serial.println(g_is_armed ? F("ARMED") : F("DISARMED"));
+            send_statustext(g_is_armed ? "Manual: Armed" : "Manual: Disarmed");
+        }
+    }
+#endif
 
     // 2. High-rate loop (4 Hz / 250 ms): Attitude telemetry
     if (now - g_last_4hz_ms >= 250) {
@@ -628,6 +715,12 @@ void loop() {
         send_heartbeat();
         send_sys_status();
         send_global_position_int();
+
+#if USE_SOFTWARE_SERIAL
+        Serial.print(F("[1Hz] Heartbeat | "));
+        Serial.print(g_is_armed ? F("GUIDED (ARMED)") : F("STABILIZE (DISARMED)"));
+        Serial.print(F(" | Batt: 12.58V (91%) | Alt: 1.25m\n"));
+#endif
 
         // Heartbeat visual indicator on Pin 13
         if (g_is_armed) {

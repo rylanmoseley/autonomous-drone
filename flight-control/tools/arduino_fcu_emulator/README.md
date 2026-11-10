@@ -1,29 +1,66 @@
 # Arduino Uno R3 MAVLink FCU Emulator
 
-This utility turns an **Arduino Uno R3 (ATmega328P)** into a simulated ArduPilot (ArduCopter) Flight Control Unit (FCU). It outputs standard **MAVLink v2** telemetry over hardware serial (`Serial` / Pins 0 & 1), allowing you to bench-test the companion computer MAVLink proxy and Ground Control Station (GCS) software (such as **Mission Planner** or **QGroundControl**) without risking real flight hardware or propellers.
+This utility turns an **Arduino Uno R3 (ATmega328P)** into a simulated ArduPilot (ArduCopter) Flight Control Unit (FCU). It outputs standard **MAVLink v2** telemetry over hardware serial, allowing you to bench-test the companion computer MAVLink proxy and Ground Control Station (GCS) software (such as **Mission Planner** or **QGroundControl**) without risking real flight hardware or propellers.
 
 ---
 
-## Capabilities & Telemetry Streams
+## ❓ Why Does the Serial Monitor Show "Slop" / Gibberish?
 
-The sketch acts as a self-contained, zero-dependency ArduPilot quadcopter:
+If you open the Arduino IDE Serial Monitor and see a continuous stream of strange symbols like `ý`, question marks, and unprintable glyphs:
 
-| MAVLink Message | ID | Rate | Purpose |
-| :--- | :---: | :---: | :--- |
-| **`HEARTBEAT`** | `#0` | 1 Hz | Identifies vehicle as ArduPilot Quadcopter (`MAV_TYPE_QUADROTOR`, `MAV_AUTOPILOT_ARDUPILOTMEGA`). Broadcasts armed/disarmed state. |
-| **`SYS_STATUS`** | `#1` | 1 Hz | Reports 12.6V battery voltage (3S LiPo), 1.45A current draw, 91% remaining capacity, and healthy sensor flags. |
-| **`ATTITUDE`** | `#30` | 4 Hz | Streams roll, pitch, and yaw with subtle synthetic oscillation to prove live HUD responsiveness. |
-| **`LOCAL_POSITION_NED`** | `#32` | 2 Hz | Position setpoint ($X=1.5\text{ m}, Y=0.0\text{ m}, Z=-1.25\text{ m}$) compatible with the onboard Autopilot daemon. |
-| **`GLOBAL_POSITION_INT`** | `#33` | 1 Hz | GPS coordinate position and altitude so Mission Planner displays the drone icon on the map. |
-| **`VFR_HUD`** | `#74` | 2 Hz | Drives the Mission Planner HUD instrument tape (airspeed, altitude, heading, throttle). |
-| **`PARAM_VALUE`** | `#22` | On Request | Responds to `PARAM_REQUEST_LIST` with standard ArduPilot parameters (`SYSID_THISMAV`, `PILOT_SPEED_UP`, `WP_RADIUS`, `FRAME_CLASS`, etc.) stored in Flash (`PROGMEM`) so Mission Planner completes connection instantly. |
-| **`COMMAND_ACK`** | `#77` | On Request | Acknowledges arm/disarm (`MAV_CMD_COMPONENT_ARM_DISARM`) and capability requests. |
-| **`STATUSTEXT`** | `#253` | Event | Emits status messages on boot and when motors are armed or disarmed. |
+1. **MAVLink is a raw binary wire protocol**, NOT human-readable ASCII text.
+   - Every packet starts with the magic byte `0xFD` (which renders in ASCII as `ý`).
+   - The remaining bytes are raw binary IEEE-754 floats (angles, velocities), bitmasks, and CRCs (bytes like `0x00`, `0x1E`, `0x9F`).
+   - Text terminals like the Arduino Serial Monitor cannot decode binary packets and will render them as gibberish ("slop").
+   - **Seeing `ý` and binary characters actually confirms that the MAVLink packet generator is alive and transmitting!**
+2. **Serial Monitor Baud Rate**: If the Serial Monitor is set to the default `9600` baud instead of `115200` baud, framing errors will make the binary look even more erratic.
+3. **Hardware Pin Sharing on Arduino Uno**:
+   - On the Uno, **Pin 0 (RX) and Pin 1 (TX) are physically wired to the onboard ATmega16U2 USB chip**.
+   - If the Uno is connected to your PC via USB to view Serial Monitor *and* simultaneously wired to the Raspberry Pi GPIO pins, the USB chip and the Pi will fight over the RX pin.
+
+---
+
+## Operating Modes
+
+[`arduino_fcu_emulator.ino`](arduino_fcu_emulator.ino) supports two modes via `#define USE_SOFTWARE_SERIAL`:
+
+### Mode 0: Hardware Serial (Default - `#define USE_SOFTWARE_SERIAL 0`)
+* **MAVLink Stream**: Transmits on **Pins 0 & 1** (and USB) at **115,200 baud**.
+* **Usage**:
+  1. Upload the sketch.
+  2. **Close the Arduino IDE Serial Monitor**.
+  3. Start the proxy on the Raspberry Pi:
+     ```bash
+     python3 /opt/drone/scripts/mavlink_proxy.py --serial /dev/ttyAMA0 --baud 115200
+     ```
+  4. Connect Mission Planner via UDP (`14550`). Mission Planner's parser will ingest the binary stream and display your HUD, attitude, and battery indicators!
+
+### Mode 1: Dual Mode with Human-Readable Debug Console (`#define USE_SOFTWARE_SERIAL 1`)
+* **MAVLink Stream**: Transmits on **Pin 2 (RX) and Pin 3 (TX)** at **57,600 baud** to the Raspberry Pi.
+* **Serial Monitor (USB)**: Prints clean, formatted English debug logs at **115,200 baud** with **zero slop**!
+  ```
+  [1Hz] Heartbeat | STABILIZE (DISARMED) | Batt: 12.58V (91%) | Alt: 1.25m
+  [GCS] PARAM_REQUEST_LIST received! Sending 8 parameters to Mission Planner...
+  [CMD] Motor Arm State Changed -> ARMED
+  ```
+* **Usage**:
+  1. Wire Pi TX $\rightarrow$ Arduino Pin 2 (RX).
+  2. Wire Arduino Pin 3 (TX) through voltage divider $\rightarrow$ Pi RX.
+  3. Change line 63 of [`arduino_fcu_emulator.ino`](arduino_fcu_emulator.ino) to:
+     ```cpp
+     #define USE_SOFTWARE_SERIAL 1
+     ```
+  4. Keep your USB cable plugged into your PC and open Serial Monitor at **115,200 baud**.
+  5. On the Pi, run:
+     ```bash
+     python3 /opt/drone/scripts/mavlink_proxy.py --serial /dev/ttyAMA0 --baud 57600
+     ```
 
 ---
 
 ## Hardware Connections & Pinout
 
+### Mode 0 (Default Hardware Serial):
 ```
 +------------------------+                     +-------------------------------+
 |     Arduino Uno R3     |                     |    Raspberry Pi 40-Pin Header |
@@ -34,6 +71,18 @@ The sketch acts as a self-contained, zero-dependency ArduPilot quadcopter:
 +------------------------+                     +-------------------------------+
 ```
 
+### Mode 1 (SoftwareSerial with USB Debug Console):
+```
++------------------------+                     +-------------------------------+
+|     Arduino Uno R3     |                     |    Raspberry Pi 40-Pin Header |
+|                        |                     |                               |
+|                    GND |-------------------->| Pin 6  (GND)                  |
+|             Pin 2 (RX) |<--------------------| Pin 8  (GPIO 14 / UART0 TX)   |
+|             Pin 3 (TX) |--[Divider / Shifter]| Pin 10 (GPIO 15 / UART0 RX)   |
+|              USB Cable |-------------------->| PC (Serial Monitor @ 115200)  |
++------------------------+                     +-------------------------------+
+```
+
 ### ⚠️ Critical Voltage Level Notice (5.0V vs 3.3V)
 * **Raspberry Pi GPIOs are strictly 3.3V and ARE NOT 5V tolerant.**
 * **Pi TX (3.3V) $\rightarrow$ Arduino RX**: Safe to connect directly (3.3V meets the ATmega328P input HIGH threshold $V_{IH} \ge 3.0\text{ V}$).
@@ -41,55 +90,20 @@ The sketch acts as a self-contained, zero-dependency ArduPilot quadcopter:
   1. A bidirectional logic level shifter (e.g. BSS138), or
   2. A simple 2-resistor voltage divider:
      ```
-     Arduino Pin 1 (TX) ---> [ 1kΩ Resistor ] ---+---> Pi Pin 10 (RX)
-                                                  |
-                                           [ 2kΩ Resistor ]
-                                                  |
-                                                 GND
+     Arduino TX Pin ---> [ 1kΩ Resistor ] ---+---> Pi Pin 10 (RX)
+                                             |
+                                      [ 2kΩ Resistor ]
+                                             |
+                                            GND
      ```
      This steps $5.0\text{ V}$ down safely to $\approx 3.33\text{ V}$.
+* **Alternative (No Resistors Needed!)**: Plug the Arduino directly into one of the Raspberry Pi's USB ports with a USB cable and run the proxy with `--serial /dev/ttyACM0`.
 
 ---
 
-## Quickstart Guide
-
-### 1. Flash the Arduino
-1. Open [`arduino_fcu_emulator.ino`](arduino_fcu_emulator.ino) in the **Arduino IDE**.
-2. Select **Board**: *Arduino Uno*.
-3. Select your Uno's **Port** and click **Upload**.
-4. Once flashed, the onboard LED on **Pin 13** will begin blinking at 1 Hz (indicating active heartbeat generation).
-
-### 2. Configure & Start the MAVLink Proxy on the Pi
-The Arduino emulator uses **115,200 baud** (at 16 MHz, the ATmega328P has an 8.5% clock divisor error at 921,600 baud, but only 2.1% error at 115,200 baud).
-
-SSH into the Raspberry Pi and run the proxy:
-```bash
-# Ensure serial UART is enabled in raspi-config and /dev/ttyAMA0 exists
-python3 /opt/drone/scripts/mavlink_proxy.py \
-    --serial /dev/ttyAMA0 \
-    --baud 115200 \
-    --gcs-broadcast-ip 192.168.4.255 \
-    --gcs-port 14550
-```
-
-*Note: If testing locally or via USB cable plugged directly into the Pi, use `--serial /dev/ttyACM0`.*
-
-### 3. Connect Mission Planner
-1. Connect your ground station laptop to the drone's Wi-Fi Access Point: **`HEXAGON-flight-drone`**.
+## Connecting Mission Planner
+1. Connect your PC to the drone Wi-Fi: **`HEXAGON-flight-drone`**.
 2. Open **Mission Planner**.
-3. In the top right corner:
-   - Select connection type: **UDP**
-   - Click **Connect**
-   - Enter Port: **`14550`**
-4. Mission Planner will detect the `HEARTBEAT`, request parameters, receive the parameter table, and transition to the live Flight Data screen:
-   - **HUD**: Active horizon oscillating gently.
-   - **Battery**: Displays 12.6V / 91%.
-   - **Map**: Vehicle located at 37.7749° N, 122.4194° W.
-   - **Action Tab**: Clicking **Arm/Disarm** will toggle the emulator's state and Pin 13 LED (solid ON when armed).
-
----
-
-## Manual Serial Controls (Optional)
-If you connect to the Uno using the Arduino IDE Serial Monitor (set to 115,200 baud, No line ending):
-* Press **`p`** or **`P`**: Forces re-broadcasting the full parameter table.
-* Press **`a`** or **`A`**: Toggles motor arm/disarm state manually.
+3. In the top right corner, select **UDP** and click **Connect**.
+4. Set Port to **`14550`**.
+5. Mission Planner will connect, download parameters, and display live HUD telemetry and battery indicators.
