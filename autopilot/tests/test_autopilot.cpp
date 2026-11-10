@@ -363,3 +363,99 @@ TEST(AutopilotTest, NonTargetGoalRepulsionZoneDeflection) {
     double dist_cmd_to_obs = std::hypot(cmd.target_x - 1.8, cmd.target_y - 0.05);
     EXPECT_GE(dist_cmd_to_obs, 0.50);
 }
+
+TEST(AutopilotTest, SideBySideGoalsReverseOrientationBackwardsTraversal) {
+    AutopilotNode node;
+
+    // Mission sequence: Circle (shape 1) -> Triangle (shape 2)
+    UICommandPacket cmd_pkt = {};
+    cmd_pkt.msg_type = MSG_TYPE_UI_CMD;
+    cmd_pkt.command = UI_CMD_START_MISSION;
+    cmd_pkt.sequence_length = 2;
+    cmd_pkt.goal_sequence[0] = SHAPE_CIRCLE;
+    cmd_pkt.goal_sequence[1] = SHAPE_TRIANGLE;
+    cmd_pkt.end_action = MISSION_END_HOVER;
+    node.handleCommand(cmd_pkt);
+
+    // Drone position at takeoff
+    Pose current = {0.0, -0.6, 1.0, 0, 0, 0, 0, 1.0};
+    double dt = 0.05;
+
+    // Two gates arranged side-by-side at X=2.5:
+    // Gate 1 (Circle) at (2.5, -0.6, 1.0), yaw = 0.0 (normal +X)
+    // Gate 2 (Triangle) at (2.5, +0.6, 1.0), yaw = 0.0 (normal +X)
+    VisionPacket v_pkt = {};
+    v_pkt.msg_type = MSG_TYPE_VISION;
+    v_pkt.num_goals_reported = 2;
+
+    v_pkt.goals[0].shape_type = SHAPE_CIRCLE;
+    v_pkt.goals[0].is_detected = 1;
+    v_pkt.goals[0].num_hypotheses = 1;
+    v_pkt.goals[0].hypotheses[0].position_cam = {2.5f, -0.6f, 1.0f};
+    v_pkt.goals[0].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f}; // yaw = 0.0
+    v_pkt.goals[0].hypotheses[0].confidence = 0.98f;
+
+    v_pkt.goals[1].shape_type = SHAPE_TRIANGLE;
+    v_pkt.goals[1].is_detected = 1;
+    v_pkt.goals[1].num_hypotheses = 1;
+    v_pkt.goals[1].hypotheses[0].position_cam = {2.5f, 0.6f, 1.0f};
+    v_pkt.goals[1].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f}; // yaw = 0.0
+    v_pkt.goals[1].hypotheses[0].confidence = 0.98f;
+
+    node.getEstimator().updateEstimates(v_pkt, 1.0);
+
+    // Tick through takeoff into PATH_FOLLOWING
+    node.tick(current, dt); // Takeoff -> PATH_FOLLOWING
+    node.tick(current, dt); // Executes PATH_FOLLOWING for Gate 1
+
+    // Gate 1 should be traversed in forward orientation (+X)
+    EXPECT_EQ(node.current_seq_index, 0u);
+    EXPECT_NEAR(node.approach_dx, 1.0, 1e-3);
+    EXPECT_NEAR(node.approach_dy, 0.0, 1e-3);
+
+    // Run kinematic loop through Gate 1 until Gate 1 is completed
+    int ticks = 0;
+    while (node.current_seq_index == 0 && ticks < 200) {
+        node.getEstimator().updateEstimates(v_pkt, 1.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    // Gate 1 is completed, now targeting Gate 2!
+    EXPECT_EQ(node.current_seq_index, 1u);
+
+    // The commanded entrance standoff for Gate 2 must be on the +X side (X = 2.5 - (-1.0)*0.75 = 3.25)
+    FlightCommand cmd2 = node.tick(current, dt);
+    EXPECT_TRUE(cmd2.enable);
+
+    // Drone exited Gate 1 at X >= 3.0.
+    // For side-by-side Gate 2, the autopilot MUST traverse backwards (-X)!
+    EXPECT_NEAR(node.approach_dx, -1.0, 1e-3);
+    EXPECT_NEAR(node.approach_dy, 0.0, 1e-3);
+    EXPECT_GT(cmd2.target_x, 3.0); // Standoff is behind the gate (X > 3.0)
+    EXPECT_NEAR(std::abs(cmd2.target_yaw), M_PI, 0.1); // Drone points backwards (-X) toward Gate 2!
+
+    // Run kinematic loop through Gate 2 backwards
+    ticks = 0;
+    while (node.current_seq_index == 1 && ticks < 200) {
+        node.getEstimator().updateEstimates(v_pkt, 2.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    // Gate 2 completed backwards! Final position exited on the -X side (X <= 2.1)
+    EXPECT_EQ(node.current_seq_index, 2u);
+    EXPECT_LE(current.x, 2.1);
+}

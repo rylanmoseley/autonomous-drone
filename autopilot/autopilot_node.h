@@ -68,6 +68,9 @@ public:
     double approach_dx = 0.0;
     double approach_dy = 0.0;
     double approach_dz = 0.0;
+    double approach_sign_ = 1.0;
+    double last_approach_dx_ = 1.0;
+    double last_approach_dy_ = 0.0;
     double transit_yaw = 0.0;
     Pose active_target_pose = {};
     bool has_active_target = false;
@@ -127,4 +130,5 @@ public:
         double& out_apf_vy,
         double& out_offset_x,
         double& out_offset_y);
+    void updateApproachDirection(const Pose& target_pose);
 };
