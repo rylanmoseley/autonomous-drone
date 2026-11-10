@@ -253,20 +253,29 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
             const auto& contour = contours[best_idx];
             cv::Rect bbox = cv::boundingRect(contour);
 
-            // Reject contours clipped by the camera frame boundaries
-            if (bbox.x <= 4 || bbox.y <= 4 ||
-                bbox.x + bbox.width >= frame.cols - 4 ||
-                bbox.y + bbox.height >= frame.rows - 4) {
-                continue;
+            // Reject marginal peripheral contours clipped by the camera frame boundaries,
+            // but permit large centered contours when the vehicle is close to the gate.
+            bool touches_edge = (bbox.x <= 2 || bbox.y <= 2 ||
+                                 bbox.x + bbox.width >= frame.cols - 2 ||
+                                 bbox.y + bbox.height >= frame.rows - 2);
+            if (touches_edge) {
+                // Peripheral slivers entering or exiting the frame have off-center centroid or small dimension
+                double c_x = bbox.x + bbox.width / 2.0;
+                double c_y = bbox.y + bbox.height / 2.0;
+                bool is_centered = (std::abs(c_x - frame.cols / 2.0) < 140.0 && std::abs(c_y - frame.rows / 2.0) < 120.0);
+                bool is_large = (bbox.width > 200 || bbox.height > 180);
+                if (!is_centered || !is_large) {
+                    continue;
+                }
             }
 
             // Aspect ratio check to reject occluded slivers or partially cut off contours
             double aspect = static_cast<double>(bbox.width) / std::max(1, bbox.height);
             if (spec.shape == "Triangle") {
-                if (aspect < 0.85 || aspect > 1.45) continue;
+                if (aspect < 0.70 || aspect > 1.60) continue;
             } else if (spec.shape == "Square") {
-                if (aspect < 0.80 || aspect > 1.25) continue;
-            } else if (aspect < 0.70 || aspect > 1.40) {
+                if (aspect < 0.75 || aspect > 1.30) continue;
+            } else if (aspect < 0.65 || aspect > 1.45) {
                 continue;
             }
 
