@@ -133,12 +133,12 @@ TEST(MavlinkDaemonTest, ReceiveArduPilotMavlinkTelemetry) {
     daemon_addr.sin_port = htons(24570);
     inet_pton(AF_INET, "127.0.0.1", &daemon_addr.sin_addr);
 
-    // Send MAVLink LOCAL_POSITION_NED (#32)
+    // Send MAVLink LOCAL_POSITION_NED (#32) with ArduPilot NED convention (Z = -1.1m is +1.1m altitude)
     MavlinkLocalPositionNed pos_pkt{};
     pos_pkt.time_boot_ms = 5000;
     pos_pkt.x = 4.5f;
     pos_pkt.y = -3.2f;
-    pos_pkt.z = 1.1f;
+    pos_pkt.z = -1.1f;
 
     uint8_t tx_buf[128];
     size_t len = mavlink_encode_packet(
@@ -171,10 +171,107 @@ TEST(MavlinkDaemonTest, ReceiveArduPilotMavlinkTelemetry) {
     Telemetry telem = daemon.getTelemetry();
     EXPECT_NEAR(telem.current_pose.x, 4.5, 1e-4);
     EXPECT_NEAR(telem.current_pose.y, -3.2, 1e-4);
-    EXPECT_NEAR(telem.current_pose.z, 1.1, 1e-4);
+    EXPECT_NEAR(telem.current_pose.z, 1.1, 1e-4); // Successfully converted ArduPilot -Z to +Z altitude
     EXPECT_NEAR(telem.current_pose.roll, 0.05, 1e-4);
     EXPECT_NEAR(telem.current_pose.pitch, -0.02, 1e-4);
     EXPECT_NEAR(telem.current_pose.yaw, 1.57, 1e-4);
+
+    EXPECT_TRUE(daemon.isFcuConnected(1.0));
+    EXPECT_LT(daemon.getTimeSinceLastTelemetry(), 0.5);
+
+    daemon.stop();
+    close(fcu_sock);
+}
+
+// Verify MAVLink Msg #84 (SET_POSITION_TARGET_LOCAL_NED) Serialization
+TEST(MavlinkDaemonTest, SendMavlinkSetPositionTargetMsg84) {
+    MavlinkDaemon daemon(24580, "127.0.0.1", 24581);
+    daemon.start();
+
+    int fcu_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in fcu_addr;
+    fcu_addr.sin_family = AF_INET;
+    fcu_addr.sin_port = htons(24581);
+    fcu_addr.sin_addr.s_addr = INADDR_ANY;
+    bind(fcu_sock, (struct sockaddr *)&fcu_addr, sizeof(fcu_addr));
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 150000;
+    setsockopt(fcu_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    FlightCommand cmd;
+    cmd.target_x = 2.5;
+    cmd.target_y = -1.2;
+    cmd.target_z = 1.0; // Altitude 1.0m
+    cmd.target_yaw = 0.785;
+    cmd.enable = true;
+    daemon.sendFlightCommand(cmd);
+
+    // Read both packets sent (1: raw struct, 2: MAVLink Msg #84)
+    uint8_t buffer[512];
+    bool received_msg84 = false;
+    for (int i = 0; i < 2; ++i) {
+        struct sockaddr_in from;
+        socklen_t from_len = sizeof(from);
+        int n = recvfrom(fcu_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
+        if (n >= 12 && buffer[0] == MAVLINK_STX_V2) {
+            uint32_t msgid = static_cast<uint32_t>(buffer[7]) |
+                             (static_cast<uint32_t>(buffer[8]) << 8) |
+                             (static_cast<uint32_t>(buffer[9]) << 16);
+            if (msgid == MAVLINK_MSG_ID_SET_POSITION_TARGET_LOCAL_NED) {
+                received_msg84 = true;
+                const auto* tgt = reinterpret_cast<const MavlinkSetPositionTargetLocalNed*>(buffer + 10);
+                EXPECT_NEAR(tgt->x, 2.5f, 1e-4);
+                EXPECT_NEAR(tgt->y, -1.2f, 1e-4);
+                EXPECT_NEAR(tgt->z, -1.0f, 1e-4); // NED altitude is negative Z
+                EXPECT_NEAR(tgt->yaw, 0.785f, 1e-4);
+            }
+        }
+    }
+    EXPECT_TRUE(received_msg84);
+
+    daemon.stop();
+    close(fcu_sock);
+}
+
+// Verify Corrupted CRC Packet Rejection
+TEST(MavlinkDaemonTest, CorruptedCrcDropped) {
+    MavlinkDaemon daemon(24590, "127.0.0.1", 24591);
+    daemon.start();
+
+    int fcu_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in daemon_addr;
+    daemon_addr.sin_family = AF_INET;
+    daemon_addr.sin_port = htons(24590);
+    inet_pton(AF_INET, "127.0.0.1", &daemon_addr.sin_addr);
+
+    MavlinkLocalPositionNed pos_pkt{};
+    pos_pkt.time_boot_ms = 1000;
+    pos_pkt.x = 99.0f; // Absurd position
+    pos_pkt.y = 99.0f;
+    pos_pkt.z = -99.0f;
+
+    uint8_t tx_buf[128];
+    size_t len = mavlink_encode_packet(
+        tx_buf, sizeof(tx_buf),
+        1, 1, 1,
+        MAVLINK_MSG_ID_LOCAL_POSITION_NED,
+        MAVLINK_CRC_EXTRA_LOCAL_POSITION_NED,
+        &pos_pkt, sizeof(pos_pkt)
+    );
+
+    // Corrupt the CRC bytes at the end of the packet
+    tx_buf[len - 1] ^= 0xFF;
+    tx_buf[len - 2] ^= 0xAA;
+
+    sendto(fcu_sock, tx_buf, len, 0, (struct sockaddr *)&daemon_addr, sizeof(daemon_addr));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    // Telemetry must NOT adopt the corrupted packet!
+    Telemetry telem = daemon.getTelemetry();
+    EXPECT_NE(telem.current_pose.x, 99.0);
+    EXPECT_NE(telem.current_pose.y, 99.0);
 
     daemon.stop();
     close(fcu_sock);

@@ -17,6 +17,8 @@ public:
     void sendVisionPositionEstimate(const MavlinkVisionPositionEstimate& est);
 
     Telemetry getTelemetry();
+    double getTimeSinceLastTelemetry() const;
+    bool isFcuConnected(double timeout_s = 1.0) const;
     bool hasVisionPositionEstimate() const;
     MavlinkVisionPositionEstimate getLastVisionPositionEstimate() const;
     uint32_t getVisionEstimateCount() const;
@@ -36,6 +38,8 @@ private:
     std::thread rx_thread_;
     
     Telemetry current_telemetry_{};
+    std::chrono::steady_clock::time_point last_telemetry_time_{};
+    bool has_telemetry_{false};
     mutable std::mutex telem_mutex_;
 
     MavlinkVisionPositionEstimate last_vision_est_{};
