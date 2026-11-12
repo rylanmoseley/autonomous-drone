@@ -66,12 +66,17 @@ void GoalEstimator::updateEstimates(const std::vector<GoalMeasurement>& measurem
                     it->second.pose.y = eff_alpha * pos.y + (1.0 - eff_alpha) * it->second.pose.y;
                     it->second.pose.z = eff_alpha * pos.z + (1.0 - eff_alpha) * it->second.pose.z;
 
-                    double dyaw = yaw - it->second.pose.yaw;
-                    while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
-                    while (dyaw < -M_PI) dyaw -= 2.0 * M_PI;
-                    it->second.pose.yaw += alpha_ * dyaw;
-                    while (it->second.pose.yaw > M_PI) it->second.pose.yaw -= 2.0 * M_PI;
-                    while (it->second.pose.yaw < -M_PI) it->second.pose.yaw += 2.0 * M_PI;
+                    double dyaw = std::atan2(std::sin(yaw - it->second.pose.yaw), std::cos(yaw - it->second.pose.yaw));
+                    if (it->second.state == TRACK_STATE_LOCKED && std::abs(dyaw) > M_PI / 2.0) {
+                        // Project to the same normal axis (+-180 deg equivalence for planar gates)
+                        if (dyaw > 0.0) {
+                            dyaw -= M_PI;
+                        } else {
+                            dyaw += M_PI;
+                        }
+                    }
+                    it->second.pose.yaw = std::atan2(std::sin(it->second.pose.yaw + eff_alpha * dyaw),
+                                                     std::cos(it->second.pose.yaw + eff_alpha * dyaw));
                 }
             }
 
