@@ -89,6 +89,10 @@ public:
     double getBiasY() const { return bias_y_; }
     double getBiasZ() const { return bias_z_; }
 
+    double getVelocityX() const { return vx_; }
+    double getVelocityY() const { return vy_; }
+    double getVelocityZ() const { return vz_; }
+
     // Pack feedback pose into standard Telemetry datagram for autopilot / MAVLink
     Telemetry getTelemetry(int battery_level = 95, bool error_state = false) const;
 

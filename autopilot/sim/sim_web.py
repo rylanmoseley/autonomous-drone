@@ -238,10 +238,20 @@ class FollowerSimulator:
                 des_vy *= scale
             des_vz = max(-self.max_velocity_z, min(self.max_velocity_z, des_vz))
 
+            # 3D vector acceleration magnitude clamping
             max_dv = self.max_acceleration * dt
-            self.vx += max(-max_dv, min(max_dv, des_vx - self.vx))
-            self.vy += max(-max_dv, min(max_dv, des_vy - self.vy))
-            self.vz += max(-max_dv, min(max_dv, des_vz - self.vz))
+            dvx = des_vx - self.vx
+            dvy = des_vy - self.vy
+            dvz = des_vz - self.vz
+            dv_mag = math.sqrt(dvx * dvx + dvy * dvy + dvz * dvz)
+            if dv_mag > max_dv and dv_mag > 1e-9:
+                scale = max_dv / dv_mag
+                dvx *= scale
+                dvy *= scale
+                dvz *= scale
+            self.vx += dvx
+            self.vy += dvy
+            self.vz += dvz
 
             dx = (self.vx + self.drift_vel_x) * dt
             dy = (self.vy + self.drift_vel_y) * dt
@@ -321,7 +331,7 @@ follower = FollowerSimulator()
 state_lock = threading.Lock()
 vision_goals = [
     {"id": 1, "shape": 1, "x": 2.5, "y": -1.3, "z": 1.0, "yaw": 0.0},
-    {"id": 2, "shape": 2, "x": 2.5, "y": 0.0, "z": 1.2, "yaw": 0.0},
+    {"id": 2, "shape": 2, "x": 2.5, "y": 0.0, "z": 1.0, "yaw": 0.0},
     {"id": 3, "shape": 3, "x": 2.5, "y": 1.3, "z": 1.0, "yaw": 0.0}
 ]
 
@@ -442,7 +452,11 @@ def evaluate_camera_vision(true_x, true_y, true_z, true_yaw, goals):
         meas_x = gx + random.gauss(0, noise_pos)
         meas_y = gy + random.gauss(0, noise_pos)
         meas_z = gz + random.gauss(0, noise_pos * 0.5)
-        meas_yaw = gyaw + random.gauss(0, 0.015)
+
+        rel_yaw = gyaw - true_yaw
+        while rel_yaw > math.pi: rel_yaw -= 2.0 * math.pi
+        while rel_yaw < -math.pi: rel_yaw += 2.0 * math.pi
+        meas_cam_yaw = rel_yaw + random.gauss(0, 0.015)
         conf = max(0.45, min(0.99, 1.0 - (dist / 6.00) * 0.45))
 
         detections.append({
@@ -455,7 +469,8 @@ def evaluate_camera_vision(true_x, true_y, true_z, true_yaw, goals):
             "x": meas_x,
             "y": meas_y,
             "z": meas_z,
-            "yaw": meas_yaw,
+            "yaw": meas_cam_yaw,
+            "world_yaw": gyaw,
             "conf": round(conf, 2),
             "u": u,
             "v": v,
@@ -686,6 +701,11 @@ def _fcu_thread():
                         import struct
                         usec, x, y, z, roll, pitch, yaw = struct.unpack_from("<Qffffff", data[10:])
                         follower.correct_drift(x, y, z, yaw)
+                    elif msgid == 84 and len(data) >= 10 + 53: # SET_POSITION_TARGET_LOCAL_NED
+                        import struct
+                        t_boot, x, y, z, vx, vy, vz, afx, afy, afz, yaw, yaw_rate = struct.unpack_from("<Ifffffffffff", data[10:])
+                        last_fcu_cmd = FlightCommand(x, y, -z, yaw, True, False)
+                        last_cmd_time = time.time()
             except BlockingIOError:
                 break
             except Exception as e:
@@ -775,6 +795,8 @@ def vision_feedback_thread():
                     for i in range(pkt.num_goals_reported):
                         gm = pkt.goals[i]
                         if gm.is_detected:
+                            q = gm.hypotheses[0].orientation_cam
+                            det_yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
                             dets.append({
                                 "shape": gm.shape_type,
                                 "u": gm.centroid.u,
@@ -782,6 +804,7 @@ def vision_feedback_thread():
                                 "x": gm.hypotheses[0].position_cam.x,
                                 "y": gm.hypotheses[0].position_cam.y,
                                 "z": gm.hypotheses[0].position_cam.z,
+                                "yaw": det_yaw,
                                 "conf": gm.hypotheses[0].confidence,
                                 "box_size": int(gm.contour_area) if gm.contour_area > 0 else 50
                             })

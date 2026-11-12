@@ -65,6 +65,10 @@ void AutopilotSimHarness::clearSimulatedTags() {
 void AutopilotSimHarness::reset(const Pose& initial_pose) {
     follower_.reset(initial_pose);
     trajectory_.clear();
+    collision_records_.clear();
+    sequence_traversed_.clear();
+    last_observed_seq_index_ = 0;
+    min_clearance_recorded_ = 1e9;
     vision_seq_id_ = 0;
 }
 
@@ -89,8 +93,6 @@ void AutopilotSimHarness::injectVisionTelemetry(double current_time) {
         const auto& goal = simulated_goals_[i];
         GoalMeasurement& gm = v_pkt.goals[i];
         gm.shape_type = goal.shape_type;
-        gm.is_detected = 1;
-        gm.num_hypotheses = 1;
 
         double dx = goal.x - cam_x;
         double dy = goal.y - cam_y;
@@ -98,7 +100,60 @@ void AutopilotSimHarness::injectVisionTelemetry(double current_time) {
 
         double fwd = dx * cos_yaw + dy * sin_yaw;
         double lat = -(dy * cos_yaw - dx * sin_yaw); // +x_cam is right, +y_world is left
+        double vert = dz;
+        double dist = std::sqrt(dx * dx + dy * dy + dz * dz);
 
+        if (perception_cfg_.fov_filtering_enabled) {
+            if (fwd <= perception_cfg_.min_range_m || dist > perception_cfg_.max_range_m) {
+                gm.is_detected = 0;
+                gm.num_hypotheses = 0;
+                continue;
+            }
+            double h_angle = std::atan2(std::abs(lat), fwd);
+            double v_angle = std::atan2(std::abs(vert), fwd);
+            if (h_angle > (perception_cfg_.h_fov_deg * 0.5 * M_PI / 180.0) ||
+                v_angle > (perception_cfg_.v_fov_deg * 0.5 * M_PI / 180.0)) {
+                gm.is_detected = 0;
+                gm.num_hypotheses = 0;
+                continue;
+            }
+            if (perception_cfg_.proximity_dropout_enabled && dist < perception_cfg_.proximity_dropout_dist) {
+                gm.is_detected = 0;
+                gm.num_hypotheses = 0;
+                continue;
+            }
+            if (perception_cfg_.occlusion_check_enabled) {
+                bool occluded = false;
+                double ray_x = dx / dist, ray_y = dy / dist, ray_z = dz / dist;
+                for (size_t j = 0; j < simulated_goals_.size(); ++j) {
+                    if (j == i) continue;
+                    double ox = simulated_goals_[j].x - cam_x;
+                    double oy = simulated_goals_[j].y - cam_y;
+                    double oz = simulated_goals_[j].z - cam_z;
+                    double o_dist = std::sqrt(ox * ox + oy * oy + oz * oz);
+                    if (o_dist < dist - 0.25) {
+                        double proj = ox * ray_x + oy * ray_y + oz * ray_z;
+                        if (proj > 0.0 && proj < dist) {
+                            double perp_sq = (ox - proj * ray_x) * (ox - proj * ray_x) +
+                                             (oy - proj * ray_y) * (oy - proj * ray_y) +
+                                             (oz - proj * ray_z) * (oz - proj * ray_z);
+                            if (perp_sq < (0.28 * 0.28)) {
+                                occluded = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (occluded) {
+                    gm.is_detected = 0;
+                    gm.num_hypotheses = 0;
+                    continue;
+                }
+            }
+        }
+
+        gm.is_detected = 1;
+        gm.num_hypotheses = 1;
         gm.hypotheses[0].position_cam = {
             static_cast<float>(lat),
             static_cast<float>(-dz),
@@ -181,7 +236,35 @@ void AutopilotSimHarness::step(double dt) {
     // 3. Follower responds kinematically to the flight command setpoints
     follower_.step(cmd, dt);
 
-    // 4. Record trajectory point
+    // 4. Physical Collision and Obstacle Clearance Check
+    const Pose& true_pose = follower_.getTruePose();
+    CollisionCheckResult coll = CollisionDetector::check(
+        true_pose.x, true_pose.y, true_pose.z, true_pose.yaw,
+        simulated_goals_
+    );
+    if (coll.min_clearance_m < min_clearance_recorded_) {
+        min_clearance_recorded_ = coll.min_clearance_m;
+    }
+    if (coll.is_hit) {
+        CollisionRecord rec{};
+        rec.timestamp = true_pose.timestamp;
+        rec.shape_type = coll.shape_hit;
+        rec.description = coll.hit_message;
+        rec.drone_pose = true_pose;
+        rec.clearance = coll.min_clearance_m;
+        collision_records_.push_back(rec);
+    }
+
+    // 5. Sequence Progress Tracking
+    uint8_t cur_seq = autopilot_.current_seq_index;
+    if (cur_seq > last_observed_seq_index_) {
+        for (uint8_t idx = last_observed_seq_index_; idx < cur_seq && idx < autopilot_.active_sequence_len; ++idx) {
+            sequence_traversed_.push_back(autopilot_.goal_sequence[idx]);
+        }
+        last_observed_seq_index_ = cur_seq;
+    }
+
+    // 6. Record trajectory point
     TrajectoryPoint pt{};
     pt.timestamp = follower_.getTruePose().timestamp;
     pt.true_pose = follower_.getTruePose();
@@ -213,6 +296,14 @@ MissionReport AutopilotSimHarness::runUntil(double max_duration_s,
         }
     }
 
+    // Final check for traversed sequence if mission finished
+    if (autopilot_.current_seq_index >= autopilot_.active_sequence_len &&
+        sequence_traversed_.size() < autopilot_.active_sequence_len) {
+        for (size_t idx = sequence_traversed_.size(); idx < autopilot_.active_sequence_len; ++idx) {
+            sequence_traversed_.push_back(autopilot_.goal_sequence[idx]);
+        }
+    }
+
     MissionReport report{};
     report.duration_s = elapsed;
     report.total_steps = trajectory_.size();
@@ -223,6 +314,10 @@ MissionReport AutopilotSimHarness::runUntil(double max_duration_s,
     report.total_distance_m = follower_.getMetrics().total_distance_traveled;
     report.tag_readings_forwarded = autopilot_.tags_forwarded_count;
     report.total_drift_corrected_m = follower_.getMetrics().total_drift_corrected_m;
+    report.collision_count = collision_records_.size();
+    report.min_clearance_m = min_clearance_recorded_;
+    report.collisions = collision_records_;
+    report.sequence_traversed = sequence_traversed_;
     report.mission_completed = (report.final_state == FlightState::FLIGHT_STATE_ROTOR_STOPPED ||
                                 report.final_state == FlightState::FLIGHT_STATE_HOVER_WAIT);
 
@@ -236,7 +331,9 @@ MissionReport AutopilotSimHarness::runUntil(double max_duration_s,
         << "Tracking RMSE: " << std::setprecision(4) << report.rmse_tracking << " m, "
         << "Max Error: " << report.max_tracking_error << " m. "
         << "Tags Forwarded: " << report.tag_readings_forwarded << ", "
-        << "Drift Corrected: " << report.total_drift_corrected_m << " m.";
+        << "Drift Corrected: " << report.total_drift_corrected_m << " m. "
+        << "Collisions: " << report.collision_count << ", "
+        << "Min Clearance: " << std::setprecision(3) << report.min_clearance_m << " m.";
     report.summary = oss.str();
 
     return report;

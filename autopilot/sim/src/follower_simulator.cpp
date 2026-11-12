@@ -129,11 +129,21 @@ void FcuFollowerSimulator::step(const FlightCommand& cmd, double dt) {
     }
     des_vz = clamp(des_vz, -config_.max_velocity_z, config_.max_velocity_z);
 
-    // 3. Acceleration Limiting
+    // 3. Acceleration Limiting (3D vector acceleration magnitude clamping)
     double max_dv = config_.max_acceleration * dt;
-    vx_ += clamp(des_vx - vx_, -max_dv, max_dv);
-    vy_ += clamp(des_vy - vy_, -max_dv, max_dv);
-    vz_ += clamp(des_vz - vz_, -max_dv, max_dv);
+    double dvx = des_vx - vx_;
+    double dvy = des_vy - vy_;
+    double dvz = des_vz - vz_;
+    double dv_mag = std::sqrt(dvx * dvx + dvy * dvy + dvz * dvz);
+    if (dv_mag > max_dv && dv_mag > 1e-9) {
+        double scale = max_dv / dv_mag;
+        dvx *= scale;
+        dvy *= scale;
+        dvz *= scale;
+    }
+    vx_ += dvx;
+    vy_ += dvy;
+    vz_ += dvz;
 
     // 4. Position Integration (including external wind drift)
     double step_dx = (vx_ + config_.drift_vel_x) * dt;

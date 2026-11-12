@@ -2,8 +2,10 @@
 
 #include "follower_simulator.h"
 #include "autopilot_node.h"
+#include "collision_detector.h"
 #include <vector>
 #include <functional>
+#include <string>
 
 namespace sim {
 
@@ -34,6 +36,25 @@ struct TrajectoryPoint {
     FlightState flight_state;
 };
 
+struct CollisionRecord {
+    double timestamp{0.0};
+    uint8_t shape_type{0};
+    std::string description;
+    Pose drone_pose{};
+    double clearance{0.0};
+};
+
+struct SimPerceptionConfig {
+    bool fov_filtering_enabled{false};      // If true, enforce camera frustum checks
+    double h_fov_deg{70.0};                 // Horizontal field of view (+-35 deg)
+    double v_fov_deg{50.0};                 // Vertical field of view (+-25 deg)
+    double min_range_m{0.15};               // Minimum detection distance
+    double max_range_m{6.0};                // Maximum detection distance
+    bool occlusion_check_enabled{false};    // Check gate-to-gate line-of-sight occlusion
+    bool proximity_dropout_enabled{false};  // Camera edge clipping at close range
+    double proximity_dropout_dist{0.35};    // Proximity dropout distance (m)
+};
+
 struct MissionReport {
     bool mission_completed{false};
     double duration_s{0.0};
@@ -45,6 +66,10 @@ struct MissionReport {
     double total_distance_m{0.0};
     size_t tag_readings_forwarded{0};
     double total_drift_corrected_m{0.0};
+    size_t collision_count{0};
+    double min_clearance_m{1e9};
+    std::vector<CollisionRecord> collisions;
+    std::vector<uint8_t> sequence_traversed;
     std::string summary;
 };
 
@@ -86,9 +111,15 @@ public:
     const std::vector<TrajectoryPoint>& getTrajectory() const { return trajectory_; }
     const std::vector<SimulatedGoal>& getGoals() const { return simulated_goals_; }
     const std::vector<SimulatedTag>& getTags() const { return simulated_tags_; }
+    const std::vector<CollisionRecord>& getCollisionRecords() const { return collision_records_; }
+    double getMinClearance() const { return min_clearance_recorded_; }
 
     void setVisionEnabled(bool enabled) { vision_enabled_ = enabled; }
     void setDriftCorrectionEnabled(bool enabled) { drift_correction_enabled_ = enabled; }
+
+    // Perception simulation config
+    void setPerceptionConfig(const SimPerceptionConfig& cfg) { perception_cfg_ = cfg; }
+    const SimPerceptionConfig& getPerceptionConfig() const { return perception_cfg_; }
 
 private:
     AutopilotNode autopilot_;
@@ -96,9 +127,14 @@ private:
     std::vector<SimulatedGoal> simulated_goals_;
     std::vector<SimulatedTag> simulated_tags_;
     std::vector<TrajectoryPoint> trajectory_;
+    std::vector<CollisionRecord> collision_records_;
+    std::vector<uint8_t> sequence_traversed_;
+    uint8_t last_observed_seq_index_{0};
+    double min_clearance_recorded_{1e9};
     bool vision_enabled_{true};
     bool drift_correction_enabled_{true};
     uint32_t vision_seq_id_{0};
+    SimPerceptionConfig perception_cfg_{};
 
     void injectVisionTelemetry(double current_time);
 };

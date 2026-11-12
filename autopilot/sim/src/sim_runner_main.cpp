@@ -90,10 +90,15 @@ int main(int argc, char** argv) {
         // Anchor tags for global drift correction via MAVLink pass-through
         harness.addSimulatedTag(1, 1.8, 0.0, 1.0, 0.0, 0.0, 0.0, 0.95f);
         harness.addSimulatedTag(2, 3.6, 0.0, 1.0, 0.0, 0.0, 0.0, 0.95f);
+    } else if (scenario == "side_by_side") {
+        harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_LAND);
+        harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, -1.3, 1.0, 0.0);
+        harness.addSimulatedGoal(SHAPE_TRIANGLE, 2.5, 0.0, 1.0, 0.0);
+        harness.addSimulatedGoal(SHAPE_SQUARE, 2.5, 1.3, 1.0, 0.0);
     } else { // "multi_gate"
         harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_LAND);
         harness.addSimulatedGoal(SHAPE_CIRCLE, 1.5, -0.5, 1.0, 0.0);
-        harness.addSimulatedGoal(SHAPE_TRIANGLE, 3.0, 0.0, 1.2, 0.1);
+        harness.addSimulatedGoal(SHAPE_TRIANGLE, 3.0, 0.0, 1.0, 0.1);
         harness.addSimulatedGoal(SHAPE_SQUARE, 4.5, 0.5, 1.0, 0.0);
     }
 

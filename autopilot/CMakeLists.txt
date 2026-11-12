@@ -84,3 +84,8 @@ target_link_libraries(test_autopilot_sim PRIVATE
     autopilot_sim
 )
 gtest_discover_tests(test_autopilot_sim)
+
+# Python Simulator Unit & Contract Tests
+if(Python3_FOUND)
+    add_test(NAME test_sim_web COMMAND ${Python3_EXECUTABLE} -m unittest discover -s ${CMAKE_CURRENT_SOURCE_DIR}/sim/tests)
+endif()

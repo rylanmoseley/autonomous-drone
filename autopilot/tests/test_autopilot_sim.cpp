@@ -201,6 +201,8 @@ TEST(AutopilotSimulationHarnessTest, MultiGateTraversalWithNoise) {
     MissionReport report = harness.runUntil(65.0, 0.05);
 
     EXPECT_TRUE(report.mission_completed);
+    EXPECT_EQ(report.collision_count, 0u);
+    EXPECT_GT(report.min_clearance_m, 0.04);
     EXPECT_GT(report.total_distance_m, 3.0);
     EXPECT_EQ(report.final_state, FlightState::FLIGHT_STATE_ROTOR_STOPPED);
 
@@ -372,5 +374,597 @@ TEST(AutopilotSimulationHarnessTest, ClosedLoopMissionWithTagDriftHandling) {
     EXPECT_GT(report.tag_readings_forwarded, 0u);
     EXPECT_GT(report.total_drift_corrected_m, 0.0);
     EXPECT_LT(report.rmse_tracking, 0.60);
+}
+
+// 12. Full Mission Side-by-Side 3-Gate Traversal (Circle -> Triangle -> Square)
+TEST(AutopilotSimulationHarnessTest, SideBySideThreeGateMission) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.02;
+    cfg.pos_noise_std_z = 0.01;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 42;
+
+    AutopilotSimHarness harness(cfg);
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_LAND);
+
+    // Three side-by-side gates at X=2.5:
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, -1.3, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_TRIANGLE, 2.5, 0.0, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 2.5, 1.3, 1.0, 0.0);
+
+    MissionReport report = harness.runUntil(60.0, 0.05);
+    std::cout << "Report: completed=" << report.mission_completed 
+              << ", summary=" << report.summary 
+              << ", traj points=" << harness.getTrajectory().size()
+              << ", dist=" << report.total_distance_m << std::endl;
+    for (size_t i = 0; i < harness.getTrajectory().size(); i += 20) {
+        const auto& p = harness.getTrajectory()[i];
+        std::cout << "t=" << p.timestamp << " true=(" << p.true_pose.x << ", " << p.true_pose.y << ", " << p.true_pose.z << ") cmd=(" << p.command.target_x << ", " << p.command.target_y << ", " << p.command.target_z << ")" << std::endl;
+    }
+
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_EQ(report.final_state, FlightState::FLIGHT_STATE_ROTOR_STOPPED);
+    EXPECT_EQ(report.collision_count, 0u);
+    EXPECT_GT(report.min_clearance_m, 0.05);
+    EXPECT_EQ(report.sequence_traversed.size(), 3u);
+    EXPECT_EQ(report.sequence_traversed[0], SHAPE_CIRCLE);
+    EXPECT_EQ(report.sequence_traversed[1], SHAPE_TRIANGLE);
+    EXPECT_EQ(report.sequence_traversed[2], SHAPE_SQUARE);
+}
+
+// 13. Collision Detector Unit Tests: Accurate Geometry, Clearance, and Pylon Detection
+TEST(CollisionDetectorTest, AccurateHoopRimAndPylonCollisions) {
+    std::vector<SimulatedGoal> gates = {
+        {SHAPE_CIRCLE,   2.0,  0.0, 1.0, 0.0},
+        {SHAPE_TRIANGLE, 4.0,  0.0, 1.0, 0.0},
+        {SHAPE_SQUARE,   6.0,  0.0, 1.0, 0.0}
+    };
+
+    // 1. Center passage of Circle gate: no hit, high clearance
+    auto res_center_circle = CollisionDetector::check(2.0, 0.0, 1.0, 0.0, gates);
+    EXPECT_FALSE(res_center_circle.is_hit);
+    EXPECT_GT(res_center_circle.min_clearance_m, 0.10);
+
+    // 2. Exact rim hit on Circle: drone at radius 0.22 in hoop plane
+    auto res_rim_circle = CollisionDetector::check(2.0, 0.22, 1.0, 0.0, gates);
+    EXPECT_TRUE(res_rim_circle.is_hit);
+    EXPECT_EQ(res_rim_circle.shape_hit, SHAPE_CIRCLE);
+
+    // 3. Pylon hit below Circle: w < -0.25 (e.g. z = 0.5)
+    auto res_pylon_circle = CollisionDetector::check(2.0, 0.0, 0.5, 0.0, gates);
+    EXPECT_TRUE(res_pylon_circle.is_hit);
+    EXPECT_EQ(res_pylon_circle.shape_hit, SHAPE_CIRCLE);
+
+    // 4. Center passage of Triangle gate: apex UP at (0, 0.35), base at -0.175
+    auto res_center_tri = CollisionDetector::check(4.0, 0.0, 1.0, 0.0, gates);
+    EXPECT_FALSE(res_center_tri.is_hit);
+    EXPECT_GT(res_center_tri.min_clearance_m, 0.08);
+
+    // 5. Rim hit on Triangle apex (w = +0.35, z = 1.35)
+    auto res_apex_tri = CollisionDetector::check(4.0, 0.0, 1.35, 0.0, gates);
+    EXPECT_TRUE(res_apex_tri.is_hit);
+    EXPECT_EQ(res_apex_tri.shape_hit, SHAPE_TRIANGLE);
+
+    // 6. Pylon hit below Triangle: w < -0.205 (z = 0.6)
+    auto res_pylon_tri = CollisionDetector::check(4.0, 0.0, 0.6, 0.0, gates);
+    EXPECT_TRUE(res_pylon_tri.is_hit);
+    EXPECT_EQ(res_pylon_tri.shape_hit, SHAPE_TRIANGLE);
+
+    // 7. Center passage of Square gate: no hit
+    auto res_center_sq = CollisionDetector::check(6.0, 0.0, 1.0, 0.0, gates);
+    EXPECT_FALSE(res_center_sq.is_hit);
+    EXPECT_GT(res_center_sq.min_clearance_m, 0.08);
+
+    // 8. Rim hit on Square top edge (w = +0.1768, z = 1.177)
+    auto res_rim_sq = CollisionDetector::check(6.0, 0.0, 1.177, 0.0, gates);
+    EXPECT_TRUE(res_rim_sq.is_hit);
+    EXPECT_EQ(res_rim_sq.shape_hit, SHAPE_SQUARE);
+
+    // 9. Far away drone: high clearance, no hits
+    auto res_far = CollisionDetector::check(0.0, 0.0, 1.0, 0.0, gates);
+    EXPECT_FALSE(res_far.is_hit);
+    EXPECT_GT(res_far.min_clearance_m, 1.5);
+}
+
+// 14. Verify APF Repulsion Avoids Collision in Narrow Side-by-Side Gate Layout (0.9m spacing)
+TEST(AutopilotSimulationHarnessTest, SideBySideTightSpacingRepulsionAvoidance) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.015;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 101;
+
+    AutopilotSimHarness harness(cfg);
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_LAND);
+
+    // Gates spaced by only 0.9m laterally (leaving ~0.3m between physical gate rims)
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, -0.9, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_TRIANGLE, 2.5, 0.0, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 2.5, 0.9, 1.0, 0.0);
+
+    MissionReport report = harness.runUntil(60.0, 0.05);
+
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_EQ(report.collision_count, 0u);
+    EXPECT_GT(report.min_clearance_m, 0.04);
+    EXPECT_EQ(report.sequence_traversed.size(), 3u);
+    EXPECT_EQ(report.sequence_traversed[0], SHAPE_CIRCLE);
+    EXPECT_EQ(report.sequence_traversed[1], SHAPE_TRIANGLE);
+    EXPECT_EQ(report.sequence_traversed[2], SHAPE_SQUARE);
+}
+
+// 15. Verify Multi-Angle Yawed Side-by-Side Gates Traversed Normal to Faces with Zero Collision
+TEST(AutopilotSimulationHarnessTest, SideBySideYawedGatesMultiAngle) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.015;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 202;
+
+    AutopilotSimHarness harness(cfg);
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_LAND);
+
+    // Gate 1 (Circle): yaw = 0.0 (normal +X)
+    // Gate 2 (Triangle): yaw = +30 deg (+0.5236 rad)
+    // Gate 3 (Square): yaw = -25 deg (-0.4363 rad)
+    double yaw_tri = 30.0 * M_PI / 180.0;
+    double yaw_sq = -25.0 * M_PI / 180.0;
+
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, -1.3, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_TRIANGLE, 2.5, 0.0, 1.0, yaw_tri);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 2.5, 1.3, 1.0, yaw_sq);
+
+    MissionReport report = harness.runUntil(60.0, 0.05);
+
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_EQ(report.collision_count, 0u);
+    EXPECT_GT(report.min_clearance_m, 0.05);
+    EXPECT_EQ(report.sequence_traversed.size(), 3u);
+}
+
+TEST(AutopilotSimulationHarnessTest, GoalsAtYaw0_07_Minus16) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.015;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 404;
+
+    AutopilotSimHarness harness(cfg);
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_LAND);
+
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, -1.3, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_TRIANGLE, 2.5, 0.0, 1.0, 0.7);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 2.5, 1.3, 1.0, -1.6);
+
+    MissionReport report = harness.runUntil(60.0, 0.05);
+
+    std::cout << "Report: completed=" << report.mission_completed
+              << " collisions=" << report.collision_count
+              << " min_clearance=" << report.min_clearance_m
+              << " seq_size=" << report.sequence_traversed.size() << std::endl;
+    for (size_t i = 0; i < harness.getTrajectory().size(); i += 10) {
+        const auto& pt = harness.getTrajectory()[i];
+        std::cout << "t=" << pt.timestamp
+                  << " pos=(" << pt.true_pose.x << "," << pt.true_pose.y << "," << pt.true_pose.z << ",yaw=" << pt.true_pose.yaw << ")"
+                  << " cmd=(" << pt.command.target_x << "," << pt.command.target_y << ",yaw=" << pt.command.target_yaw << ")"
+                  << std::endl;
+    }
+
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_EQ(report.collision_count, 0u);
+    EXPECT_GT(report.min_clearance_m, 0.05);
+    EXPECT_EQ(report.sequence_traversed.size(), 3u);
+}
+
+// 16. Verify Perception Frustum Filtering & Goal Acquisition from Outside Initial FOV
+TEST(AutopilotSimulationHarnessTest, ClosedLoopMissionWithRealisticCameraFOV) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.02;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 303;
+
+    AutopilotSimHarness harness(cfg);
+    SimPerceptionConfig perc{};
+    perc.fov_filtering_enabled = true;
+    perc.h_fov_deg = 70.0;
+    perc.v_fov_deg = 50.0;
+    perc.min_range_m = 0.20;
+    perc.max_range_m = 5.0;
+    harness.setPerceptionConfig(perc);
+
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_SQUARE}, MISSION_END_HOVER);
+
+    // Gate 1 placed at (2.0, 0.5, 1.0) within camera view
+    // Gate 2 placed at (4.0, -0.4, 1.0)
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 2.0, 0.5, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 4.0, -0.4, 1.0, 0.0);
+
+    MissionReport report = harness.runUntil(45.0, 0.05);
+
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_EQ(report.collision_count, 0u);
+    EXPECT_EQ(report.sequence_traversed.size(), 2u);
+}
+
+// 17. Verify Proximity Perception Dropout: Holds Locked Target and Completes Punch Cleanly
+TEST(AutopilotSimulationHarnessTest, ProximityPerceptionDropoutHoldActivePose) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.02;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 404;
+
+    AutopilotSimHarness harness(cfg);
+    SimPerceptionConfig perc{};
+    perc.fov_filtering_enabled = true;
+    perc.proximity_dropout_enabled = true;
+    perc.proximity_dropout_dist = 0.45; // Camera drops gate contour when closer than 45cm
+    harness.setPerceptionConfig(perc);
+
+    harness.setupMission({SHAPE_CIRCLE}, MISSION_END_HOVER);
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 2.0, 0.0, 1.0, 0.0);
+
+    MissionReport report = harness.runUntil(30.0, 0.05);
+
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_EQ(report.collision_count, 0u);
+    EXPECT_GT(report.min_clearance_m, 0.05);
+    EXPECT_EQ(report.sequence_traversed.size(), 1u);
+}
+
+// 18. Verify Visual Occlusion: Farther Gate is Blocked by Nearer Gate Until First Gate Traversed
+TEST(AutopilotSimulationHarnessTest, VisualOcclusionHandlingInLineGates) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.02;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 505;
+
+    AutopilotSimHarness harness(cfg);
+    SimPerceptionConfig perc{};
+    perc.fov_filtering_enabled = true;
+    perc.occlusion_check_enabled = true;
+    harness.setPerceptionConfig(perc);
+
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_SQUARE}, MISSION_END_LAND);
+    // Two gates aligned along the optical axis:
+    // Gate 1 (Circle) at (1.8, 0.0, 1.0)
+    // Gate 2 (Square) at (3.6, 0.0, 1.0) - directly behind Gate 1!
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 1.8, 0.0, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 3.6, 0.0, 1.0, 0.0);
+
+    MissionReport report = harness.runUntil(50.0, 0.05);
+
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_EQ(report.collision_count, 0u);
+    EXPECT_EQ(report.sequence_traversed.size(), 2u);
+    EXPECT_EQ(report.sequence_traversed[0], SHAPE_CIRCLE);
+    EXPECT_EQ(report.sequence_traversed[1], SHAPE_SQUARE);
+}
+
+// 19. Verify Global Surveyed AprilTags Placed at Arbitrary Arena Positions Correct Severe Drift
+TEST(AutopilotSimulationHarnessTest, GlobalSurveyedTagsRandomlyPlacedInArena) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.02;
+    cfg.random_walk_drift_std = 0.12; // Continuous dead-reckoning drift accumulation
+    cfg.drift_vel_x = 0.08;           // Constant environmental wind
+    cfg.drift_vel_y = -0.06;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 606;
+
+    AutopilotSimHarness harness(cfg);
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_LAND);
+
+    // Three side-by-side gates at X=2.5:
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, -1.3, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_TRIANGLE, 2.5, 0.0, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 2.5, 1.3, 1.0, 0.0);
+
+    // AprilTags placed at landmark spots in the world (NOT on the gates):
+    // Tag 10: In front of Gate 1 area at (1.2, -1.8, 1.0)
+    // Tag 11: Behind the gates near Gate 2 turnaround area at (3.3, 0.0, 1.2)
+    // Tag 12: Near Gate 3 approach area at (1.5, 1.5, 0.9)
+    // Tag 13: Ground marker near start at (0.5, 0.0, 0.8)
+    harness.addSimulatedTag(10, 1.2, -1.8, 1.0, 0.0, 0.0, 0.0, 0.95f);
+    harness.addSimulatedTag(11, 3.3, 0.0, 1.2, 0.0, 0.0, 0.0, 0.95f);
+    harness.addSimulatedTag(12, 1.5, 1.5, 0.9, 0.0, 0.0, 0.0, 0.95f);
+    harness.addSimulatedTag(13, 0.5, 0.0, 0.8, 0.0, 0.0, 0.0, 0.95f);
+
+    MissionReport report = harness.runUntil(70.0, 0.05);
+
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_GT(report.tag_readings_forwarded, 0u);
+    EXPECT_GT(report.total_drift_corrected_m, 0.20);
+    EXPECT_EQ(report.collision_count, 0u);
+    EXPECT_GT(report.min_clearance_m, 0.04);
+    EXPECT_EQ(report.sequence_traversed.size(), 3u);
+}
+
+// 20. Verify 3D Surveyed Tag Attitude and Position Fusion into MAVLink
+TEST(AutopilotSimulationHarnessTest, SurveyedTagAttitudeDriftCorrection) {
+    TagMeasurement tag{};
+    tag.tag_id = 42;
+    tag.is_valid = 1;
+    tag.camera_pos_world = {2.1f, -1.4f, 1.15f};
+
+    // Yaw = 45 deg, Pitch = 10 deg, Roll = -5 deg
+    double cy = std::cos(45.0 * M_PI / 360.0);
+    double sy = std::sin(45.0 * M_PI / 360.0);
+    double cp = std::cos(10.0 * M_PI / 360.0);
+    double sp = std::sin(10.0 * M_PI / 360.0);
+    double cr = std::cos(-5.0 * M_PI / 360.0);
+    double sr = std::sin(-5.0 * M_PI / 360.0);
+    tag.camera_att_world.w = static_cast<float>(cr * cp * cy + sr * sp * sy);
+    tag.camera_att_world.x = static_cast<float>(sr * cp * cy - cr * sp * sy);
+    tag.camera_att_world.y = static_cast<float>(cr * sp * cy + sr * cp * sy);
+    tag.camera_att_world.z = static_cast<float>(cr * cp * sy - sr * sp * cy);
+    tag.confidence = 0.92f;
+
+    MavlinkVisionPositionEstimate est = tag_to_mavlink_vision_position(tag, 12345678ULL);
+    EXPECT_FLOAT_EQ(est.x, 2.1f);
+    EXPECT_FLOAT_EQ(est.y, -1.4f);
+    EXPECT_FLOAT_EQ(est.z, 1.15f);
+    EXPECT_NEAR(est.yaw, 45.0 * M_PI / 180.0, 1e-3);
+    EXPECT_NEAR(est.pitch, 10.0 * M_PI / 180.0, 1e-3);
+    EXPECT_NEAR(est.roll, -5.0 * M_PI / 180.0, 1e-3);
+
+    // Apply to Follower simulator
+    FollowerConfig cfg;
+    cfg.noise_enabled = false;
+    FcuFollowerSimulator follower(cfg);
+    follower.reset({1.5, -1.0, 1.0, 0, 0, 0, 0, 1.0});
+
+    follower.correctDriftWithVision(tag);
+    EXPECT_NEAR(follower.getFeedbackPose().x, 2.1, 0.05);
+    EXPECT_NEAR(follower.getFeedbackPose().y, -1.4, 0.05);
+    EXPECT_NEAR(follower.getFeedbackPose().z, 1.15, 0.05);
+}
+
+// 21. Verify Mission Approaching Gate 1 from Behind Traverses Backwards (-X) Cleanly
+TEST(AutopilotSimulationHarnessTest, MissionReversingStartGate) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.015;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 707;
+
+    AutopilotSimHarness harness(cfg);
+    // Start the drone behind the gate at X = 3.5, facing -X (yaw = pi)
+    harness.reset({3.5, 0.0, 0.0, 0, 0, M_PI, 0, 1.0});
+
+    harness.setupMission({SHAPE_CIRCLE}, MISSION_END_HOVER);
+    // Gate normal oriented toward -X (yaw = pi), facing the incoming drone
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, 0.0, 1.0, M_PI);
+
+    MissionReport report = harness.runUntil(35.0, 0.05);
+
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_EQ(report.collision_count, 0u);
+    EXPECT_EQ(report.sequence_traversed.size(), 1u);
+
+    // Final exit position must be on the -X side of the gate (X <= 2.1)
+    EXPECT_LE(harness.getFollower().getTruePose().x, 2.1);
+}
+
+// 22. Verify Mid-Flight Mission Pause Holds Stable Position and Resumes Cleanly
+TEST(AutopilotSimulationHarnessTest, MidFlightMissionPauseAndResume) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.02;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 808;
+
+    AutopilotSimHarness harness(cfg);
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_SQUARE}, MISSION_END_LAND);
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 1.8, 0.0, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 3.8, 0.0, 1.0, 0.0);
+
+    // Step until Gate 1 is completed
+    harness.runUntil(25.0, 0.05, [](const AutopilotSimHarness& h) {
+        return h.getAutopilot().current_seq_index == 1;
+    });
+    EXPECT_EQ(harness.getAutopilot().current_seq_index, 1u);
+
+    // Send Pause command
+    UICommandPacket pause_pkt{};
+    pause_pkt.msg_type = MSG_TYPE_UI_CMD;
+    pause_pkt.command = UI_CMD_PAUSE_MISSION;
+    harness.getAutopilot().handleCommand(pause_pkt);
+
+    // Step for 2 seconds in paused state
+    Pose pause_pose = harness.getFollower().getTruePose();
+    for (int i = 0; i < 40; ++i) {
+        harness.step(0.05);
+        EXPECT_EQ(harness.getAutopilot().getState(), FlightState::FLIGHT_STATE_HOVER_WAIT);
+    }
+    Pose after_pause_pose = harness.getFollower().getTruePose();
+    EXPECT_NEAR(after_pause_pose.x, pause_pose.x, 0.15);
+    EXPECT_NEAR(after_pause_pose.y, pause_pose.y, 0.15);
+
+    // Send Resume command
+    UICommandPacket resume_pkt{};
+    resume_pkt.msg_type = MSG_TYPE_UI_CMD;
+    resume_pkt.command = UI_CMD_RESUME_MISSION;
+    harness.getAutopilot().handleCommand(resume_pkt);
+
+    // Run remaining mission to completion
+    MissionReport report = harness.runUntil(35.0, 0.05);
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_EQ(report.collision_count, 0u);
+    EXPECT_EQ(report.sequence_traversed.size(), 2u);
+}
+
+// 23. Verify Dynamic Sequence Modification On-The-Fly
+TEST(AutopilotSimulationHarnessTest, MidFlightSequenceUpdate) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.02;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 909;
+
+    AutopilotSimHarness harness(cfg);
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE}, MISSION_END_HOVER);
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 1.8, -0.4, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_TRIANGLE, 3.2, 0.0, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 4.5, 0.4, 1.0, 0.0);
+
+    // Complete Gate 1
+    harness.runUntil(25.0, 0.05, [](const AutopilotSimHarness& h) {
+        return h.getAutopilot().current_seq_index == 1;
+    });
+
+    // Update sequence to Square only:
+    UICommandPacket update_pkt{};
+    update_pkt.msg_type = MSG_TYPE_UI_CMD;
+    update_pkt.command = UI_CMD_SET_SEQUENCE;
+    update_pkt.sequence_length = 1;
+    update_pkt.goal_sequence[0] = SHAPE_SQUARE;
+    update_pkt.end_action = MISSION_END_LAND;
+    harness.getAutopilot().handleCommand(update_pkt);
+
+    MissionReport report = harness.runUntil(35.0, 0.05);
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_EQ(report.collision_count, 0u);
+}
+
+// 24. Verify Safety Timeout: Loss of Vision Heartbeat for > 2.5s Trips E-Stop
+TEST(AutopilotSimulationHarnessTest, VisionHeartbeatTimeoutEstopTrigger) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = false;
+    AutopilotSimHarness harness(cfg);
+
+    harness.setupMission({SHAPE_CIRCLE}, MISSION_END_HOVER);
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 5.0, 0.0, 1.0, 0.0);
+
+    // Step until takeoff completes and drone is in PATH_FOLLOWING
+    harness.runUntil(4.0, 0.05, [](const AutopilotSimHarness& h) {
+        return h.getAutopilot().getState() == FlightState::FLIGHT_STATE_PATH_FOLLOWING;
+    });
+    EXPECT_EQ(harness.getAutopilot().getState(), FlightState::FLIGHT_STATE_PATH_FOLLOWING);
+
+    // Disable vision stream (simulating vision camera hardware crash)
+    harness.setVisionEnabled(false);
+
+    // Age last_vision_time by 3.0 seconds to simulate watchdog timer expiry
+    harness.getAutopilot().last_vision_time = std::chrono::steady_clock::now() - std::chrono::milliseconds(3000);
+
+    // Step to let Autopilot watchdog trip ESTOP and cut throttle so drone drops to ground
+    for (int i = 0; i < 25; ++i) {
+        harness.step(0.05);
+    }
+
+    // Safety watchdog MUST have tripped ESTOP!
+    EXPECT_EQ(harness.getAutopilot().getState(), FlightState::FLIGHT_STATE_ESTOP_TRIPPED);
+    EXPECT_NE(harness.getAutopilot().estop_active, 0u);
+    // Throttle cut, drone dropped to ground
+    EXPECT_LE(harness.getFollower().getTruePose().z, 0.05);
+}
+
+// 25. Verify Tube Rail Constraint Strictly Bounds Lateral and Vertical Motion
+TEST(AutopilotSimulationHarnessTest, TubeRailConstraintLockedTrajectory) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = false;
+    cfg.tau_xy = 0.12;
+
+    AutopilotSimHarness harness(cfg);
+    // Start mounted on the rail constraint at Y = 0.30m
+    harness.reset({0.0, 0.30, 0.0, 0, 0, 0, 0, 1.0});
+    // Rail constraint: Y locked to 0.30m, Z locked to 1.15m
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_SQUARE}, MISSION_END_LAND, true, 0.30f, 1.15f);
+
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 1.8, 0.0, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 3.6, 0.0, 1.0, 0.0);
+
+    MissionReport report = harness.runUntil(40.0, 0.05);
+
+    EXPECT_TRUE(report.mission_completed);
+
+    // Check all trajectory points during PATH_FOLLOWING phase: Y must stay within +-0.08m of rail_y
+    for (const auto& pt : harness.getTrajectory()) {
+        if (pt.flight_state == FlightState::FLIGHT_STATE_PATH_FOLLOWING && pt.true_pose.x > 0.5 && pt.true_pose.x < 3.5) {
+            EXPECT_NEAR(pt.true_pose.y, 0.30, 0.08);
+            EXPECT_NEAR(pt.true_pose.z, 1.15, 0.08);
+        }
+    }
+}
+
+// 26. Verify Kinematic Follower Acceleration and Velocity Saturation Limits
+TEST(FollowerSimulationTest, KinematicSaturationLimits) {
+    FollowerConfig cfg;
+    cfg.max_velocity_xy = 2.0;
+    cfg.max_velocity_z = 1.0;
+    cfg.max_acceleration = 6.0;
+    cfg.max_yaw_rate = 1.5;
+    cfg.tau_xy = 0.05; // Fast tau to demand high acceleration
+    cfg.tau_z = 0.05;
+    cfg.tau_yaw = 0.05;
+    cfg.noise_enabled = false;
+
+    FcuFollowerSimulator follower(cfg);
+    follower.reset({0.0, 0.0, 1.0, 0, 0, 0, 0, 1.0});
+
+    // Send enormous step input: target (100.0, -100.0, 50.0), yaw = pi
+    FlightCommand cmd{};
+    cmd.enable = true;
+    cmd.target_x = 100.0;
+    cmd.target_y = -100.0;
+    cmd.target_z = 50.0;
+    cmd.target_yaw = M_PI;
+
+    double dt = 0.01;
+    double prev_vx = 0.0, prev_vy = 0.0, prev_vz = 0.0;
+
+    for (int i = 0; i < 200; ++i) {
+        follower.step(cmd, dt);
+        double vx = follower.getVelocityX();
+        double vy = follower.getVelocityY();
+        double vz = follower.getVelocityZ();
+
+        double speed_xy = std::hypot(vx, vy);
+        EXPECT_LE(speed_xy, cfg.max_velocity_xy + 1e-4);
+        EXPECT_LE(std::abs(vz), cfg.max_velocity_z + 1e-4);
+
+        if (i > 0) {
+            double ax = (vx - prev_vx) / dt;
+            double ay = (vy - prev_vy) / dt;
+            double az = (vz - prev_vz) / dt;
+            double lin_acc = std::sqrt(ax * ax + ay * ay + az * az);
+            EXPECT_LE(lin_acc, cfg.max_acceleration + 0.1);
+        }
+        prev_vx = vx;
+        prev_vy = vy;
+        prev_vz = vz;
+    }
+}
+
+// 27. Verify Simulation Step Execution Real-Time Performance (< 100 microseconds / step)
+TEST(AutopilotSimulationHarnessTest, StepExecutionTimingBudget) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    AutopilotSimHarness harness(cfg);
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_LAND);
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, -1.3, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_TRIANGLE, 2.5, 0.0, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 2.5, 1.3, 1.0, 0.0);
+    harness.addSimulatedTag(1, 1.0, -1.0, 1.0);
+    harness.addSimulatedTag(2, 3.0, 1.0, 1.0);
+
+    const int N_STEPS = 2000;
+    auto t_start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < N_STEPS; ++i) {
+        harness.step(0.05);
+    }
+    auto t_end = std::chrono::high_resolution_clock::now();
+    double total_us = std::chrono::duration<double, std::micro>(t_end - t_start).count();
+    double avg_us = total_us / N_STEPS;
+
+    std::cout << "[PERF] 2000 sim steps executed in " << total_us / 1000.0 << " ms ("
+              << avg_us << " us / step)" << std::endl;
+
+    // Real-time step budget is 50,000 us (50ms at 20Hz). Harness runs >= 500x faster than real-time.
+    EXPECT_LT(avg_us, 100.0);
 }
 
