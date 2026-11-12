@@ -125,6 +125,9 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
             traverse_ticks = 0;
             active_target_pose = {};
             has_hover_pose_ = false;
+            has_orthogonal_path_ = false;
+            active_orthogonal_path_ = {};
+            last_completed_goal_pose_ = last_current_pose_;
             // Preserve estimator goal positions so drone knows where targets are!
             planner.reset();
             active_sequence_len = pkt.sequence_length;
@@ -156,6 +159,10 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
             traverse_ticks = 0;
             active_target_pose = {};
             has_hover_pose_ = false;
+            has_orthogonal_path_ = false;
+            active_orthogonal_path_ = {};
+            last_completed_goal_pose_ = last_current_pose_;
+            planner.reset();
             // Preserve estimator goal positions so drone knows where targets are!
             break;
         case UI_CMD_SET_CONSTRAINTS:
@@ -614,6 +621,7 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     if (has_stale) {
                         if (new_goal) {
                             updateApproachDirection(stale_goal.pose);
+                            new_goal = false;
                         }
                         PathPlanner::StandoffPlan seek_plan = planner.planStandoffTarget(
                             current_pose, stale_goal.pose, approach_dx, approach_dy);

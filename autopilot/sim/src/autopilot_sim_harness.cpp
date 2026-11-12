@@ -82,11 +82,36 @@ void AutopilotSimHarness::injectVisionTelemetry(double current_time) {
 
     // 1. Populate goals
     const Pose& true_p = follower_.getTruePose();
-    double cos_yaw = std::cos(true_p.yaw);
-    double sin_yaw = std::sin(true_p.yaw);
-    double cam_x = true_p.x + 0.18 * cos_yaw;
-    double cam_y = true_p.y + 0.18 * sin_yaw;
-    double cam_z = true_p.z + 0.04;
+    double cy = std::cos(true_p.yaw), sy = std::sin(true_p.yaw);
+    double cp = std::cos(true_p.pitch), sp = std::sin(true_p.pitch);
+    double cr = std::cos(true_p.roll), sr = std::sin(true_p.roll);
+
+    // Drone rotation matrix: Three.js order YZX: R = Ry(yaw) * Rz(-pitch) * Rx(roll)
+    double r00 = cy * cp;
+    double r01 = cy * sp * cr + sy * sr;
+    double r02 = -cy * sp * sr + sy * cr;
+
+    double r10 = -sp;
+    double r11 = cp * cr;
+    double r12 = -cp * sr;
+
+    double r20 = -sy * cp;
+    double r21 = -sy * sp * cr + cy * sr;
+    double r22 = sy * sp * sr + cy * cr;
+
+    // Camera origin in world coordinates (mount offset: 0.18m forward, 0.04m up):
+    double p_cam_tx = r00 * 0.18 + r01 * 0.04;
+    double p_cam_ty = r10 * 0.18 + r11 * 0.04;
+    double p_cam_tz = r20 * 0.18 + r21 * 0.04;
+
+    double cam_x = true_p.x + p_cam_tx;
+    double cam_y = true_p.y - p_cam_tz;
+    double cam_z = true_p.z + p_cam_ty;
+
+    // Camera basis vectors in world coordinates (forward = +Z_cam, right = +X_cam, down = +Y_cam):
+    double fwd_x = r00,   fwd_y = -r20,  fwd_z = r10;
+    double right_x = r02, right_y = -r22, right_z = r12;
+    double down_x = -r01, down_y = r21,  down_z = -r11;
 
     v_pkt.num_goals_reported = static_cast<uint8_t>(std::min(simulated_goals_.size(), static_cast<size_t>(3)));
     for (size_t i = 0; i < v_pkt.num_goals_reported; ++i) {
@@ -98,9 +123,10 @@ void AutopilotSimHarness::injectVisionTelemetry(double current_time) {
         double dy = goal.y - cam_y;
         double dz = goal.z - cam_z;
 
-        double fwd = dx * cos_yaw + dy * sin_yaw;
-        double lat = -(dy * cos_yaw - dx * sin_yaw); // +x_cam is right, +y_world is left
-        double vert = dz;
+        // Exact 3D camera projection accounting for drone yaw, pitch, and roll:
+        double fwd = dx * fwd_x + dy * fwd_y + dz * fwd_z;
+        double lat = dx * right_x + dy * right_y + dz * right_z;
+        double vert_down = dx * down_x + dy * down_y + dz * down_z;
         double dist = std::sqrt(dx * dx + dy * dy + dz * dz);
 
         if (perception_cfg_.fov_filtering_enabled) {
@@ -110,7 +136,7 @@ void AutopilotSimHarness::injectVisionTelemetry(double current_time) {
                 continue;
             }
             double h_angle = std::atan2(std::abs(lat), fwd);
-            double v_angle = std::atan2(std::abs(vert), fwd);
+            double v_angle = std::atan2(std::abs(vert_down), fwd);
             if (h_angle > (perception_cfg_.h_fov_deg * 0.5 * M_PI / 180.0) ||
                 v_angle > (perception_cfg_.v_fov_deg * 0.5 * M_PI / 180.0)) {
                 gm.is_detected = 0;
@@ -156,7 +182,7 @@ void AutopilotSimHarness::injectVisionTelemetry(double current_time) {
         gm.num_hypotheses = 1;
         gm.hypotheses[0].position_cam = {
             static_cast<float>(lat),
-            static_cast<float>(-dz),
+            static_cast<float>(vert_down),
             static_cast<float>(fwd)
         };
         double rel_yaw = goal.yaw - true_p.yaw;

@@ -383,13 +383,33 @@ collision_state = {"collision": False, "object": "", "time": 0.0}
 mission_status_text = "STANDBY (Ready)"
 last_cmd_time = 0.0
 
-def evaluate_camera_vision(true_x, true_y, true_z, true_yaw, goals):
-    cam_x = true_x + 0.18 * math.cos(true_yaw)
-    cam_y = true_y + 0.18 * math.sin(true_yaw)
-    cam_z = true_z + 0.04
+def evaluate_camera_vision(true_x, true_y, true_z, true_yaw, goals, true_pitch=0.0, true_roll=0.0):
+    cy, sy = math.cos(true_yaw), math.sin(true_yaw)
+    cp, sp = math.cos(true_pitch), math.sin(true_pitch)
+    cr, sr = math.cos(true_roll), math.sin(true_roll)
 
-    cos_yaw = math.cos(true_yaw)
-    sin_yaw = math.sin(true_yaw)
+    # 3D attitude matrix (order YZX: R = Ry(yaw) * Rz(-pitch) * Rx(roll))
+    r00 = cy * cp
+    r01 = cy * sp * cr + sy * sr
+    r02 = -cy * sp * sr + sy * cr
+
+    r10 = -sp
+    r11 = cp * cr
+    r12 = -cp * sr
+
+    r20 = -sy * cp
+    r21 = -sy * sp * cr + cy * sr
+    r22 = sy * sp * sr + cy * cr
+
+    # Camera origin in world coordinates (mount offset: 0.18m forward, 0.04m up):
+    cam_x = true_x + r00 * 0.18 + r01 * 0.04
+    cam_y = true_y - (r20 * 0.18 + r21 * 0.04)
+    cam_z = true_z + r10 * 0.18 + r11 * 0.04
+
+    # Camera basis vectors in world coordinates:
+    fwd_x, fwd_y, fwd_z = r00, -r20, r10
+    right_x, right_y, right_z = r02, -r22, r12
+    down_x, down_y, down_z = -r01, r21, -r11
 
     # 70 deg horiz FOV (+-35 deg), 50 deg vert FOV (+-25 deg)
     fx = 160.0 / math.tan(math.radians(35.0))
@@ -411,16 +431,16 @@ def evaluate_camera_vision(true_x, true_y, true_z, true_yaw, goals):
         if dist < 0.15 or dist > 6.00:
             continue
 
-        fwd = dx * cos_yaw + dy * sin_yaw
-        lat = dx * sin_yaw - dy * cos_yaw
-        vert = dz
+        fwd = dx * fwd_x + dy * fwd_y + dz * fwd_z
+        lat = dx * right_x + dy * right_y + dz * right_z
+        vert_down = dx * down_x + dy * down_y + dz * down_z
 
         # Must be in front of camera
         if fwd <= 0.15:
             continue
 
         h_angle = math.atan2(lat, fwd)
-        v_angle = math.atan2(vert, fwd)
+        v_angle = math.atan2(vert_down, fwd)
         if abs(h_angle) > math.radians(35.0) or abs(v_angle) > math.radians(25.0):
             continue
 
@@ -445,7 +465,7 @@ def evaluate_camera_vision(true_x, true_y, true_z, true_yaw, goals):
             continue
 
         u = int(160.0 + fx * (lat / fwd))
-        v = int(120.0 - fy * (vert / fwd))
+        v = int(120.0 + fy * (vert_down / fwd))
         box_size = int(max(18, min(140, fx * 0.40 / fwd)))
 
         noise_pos = 0.012 * (dist / 1.5)
@@ -465,7 +485,7 @@ def evaluate_camera_vision(true_x, true_y, true_z, true_yaw, goals):
             "dist": round(dist, 2),
             "fwd": fwd,
             "lat": lat,
-            "vert": vert,
+            "vert": vert_down,
             "x": meas_x,
             "y": meas_y,
             "z": meas_z,
@@ -479,13 +499,33 @@ def evaluate_camera_vision(true_x, true_y, true_z, true_yaw, goals):
 
     return detections
 
-def evaluate_camera_tags(true_x, true_y, true_z, true_yaw, tags):
-    cam_x = true_x + 0.18 * math.cos(true_yaw)
-    cam_y = true_y + 0.18 * math.sin(true_yaw)
-    cam_z = true_z + 0.04
+def evaluate_camera_tags(true_x, true_y, true_z, true_yaw, tags, true_pitch=0.0, true_roll=0.0):
+    cy, sy = math.cos(true_yaw), math.sin(true_yaw)
+    cp, sp = math.cos(true_pitch), math.sin(true_pitch)
+    cr, sr = math.cos(true_roll), math.sin(true_roll)
 
-    cos_yaw = math.cos(true_yaw)
-    sin_yaw = math.sin(true_yaw)
+    # 3D attitude matrix (order YZX: R = Ry(yaw) * Rz(-pitch) * Rx(roll))
+    r00 = cy * cp
+    r01 = cy * sp * cr + sy * sr
+    r02 = -cy * sp * sr + sy * cr
+
+    r10 = -sp
+    r11 = cp * cr
+    r12 = -cp * sr
+
+    r20 = -sy * cp
+    r21 = -sy * sp * cr + cy * sr
+    r22 = sy * sp * sr + cy * cr
+
+    # Camera origin in world coordinates (mount offset: 0.18m forward, 0.04m up):
+    cam_x = true_x + r00 * 0.18 + r01 * 0.04
+    cam_y = true_y - (r20 * 0.18 + r21 * 0.04)
+    cam_z = true_z + r10 * 0.18 + r11 * 0.04
+
+    # Camera basis vectors in world coordinates:
+    fwd_x, fwd_y, fwd_z = r00, -r20, r10
+    right_x, right_y, right_z = r02, -r22, r12
+    down_x, down_y, down_z = -r01, r21, -r11
 
     fx = 160.0 / math.tan(math.radians(35.0))
     fy = 120.0 / math.tan(math.radians(25.0))
@@ -506,21 +546,21 @@ def evaluate_camera_tags(true_x, true_y, true_z, true_yaw, tags):
         if dist < 0.15 or dist > 6.00:
             continue
 
-        fwd = dx * cos_yaw + dy * sin_yaw
-        lat = dx * sin_yaw - dy * cos_yaw
-        vert = dz
+        fwd = dx * fwd_x + dy * fwd_y + dz * fwd_z
+        lat = dx * right_x + dy * right_y + dz * right_z
+        vert_down = dx * down_x + dy * down_y + dz * down_z
 
         # Must be in front of camera
         if fwd <= 0.15:
             continue
 
         h_angle = math.atan2(lat, fwd)
-        v_angle = math.atan2(vert, fwd)
+        v_angle = math.atan2(vert_down, fwd)
         if abs(h_angle) > math.radians(35.0) or abs(v_angle) > math.radians(25.0):
             continue
 
         u = int(160.0 + fx * (lat / fwd))
-        v = int(120.0 - fy * (vert / fwd))
+        v = int(120.0 + fy * (vert_down / fwd))
         tag_size = float(t.get("size", 0.16))
         box_size = int(max(14, min(120, fx * tag_size / fwd)))
 
@@ -906,9 +946,15 @@ def vision_thread():
         if enabled:
             with follower.lock:
                 tx, ty, tz, tyaw = follower.true_x, follower.true_y, follower.true_z, follower.true_yaw
+                c_yaw = math.cos(tyaw)
+                s_yaw = math.sin(tyaw)
+                v_fwd = follower.vx * c_yaw + follower.vy * s_yaw
+                v_right = follower.vx * s_yaw - follower.vy * c_yaw
+                tpitch = max(-0.35, min(0.35, v_fwd / 9.81))
+                troll = max(-0.35, min(0.35, v_right / 9.81))
 
-            dets = evaluate_camera_vision(tx, ty, tz, tyaw, goals)
-            tag_dets = evaluate_camera_tags(tx, ty, tz, tyaw, tags)
+            dets = evaluate_camera_vision(tx, ty, tz, tyaw, goals, tpitch, troll)
+            tag_dets = evaluate_camera_tags(tx, ty, tz, tyaw, tags, tpitch, troll)
 
             with state_lock:
                 current_detections = list(dets)
@@ -939,7 +985,7 @@ def vision_thread():
                     cam_fwd = float(matching_det.get("fwd", matching_det["dist"]))
                     cam_lat = float(matching_det.get("lat", 0.0))
                     cam_vert = float(matching_det.get("vert", 0.0))
-                    gm.hypotheses[0].position_cam = Vec3f(cam_lat, -cam_vert, cam_fwd)
+                    gm.hypotheses[0].position_cam = Vec3f(cam_lat, cam_vert, cam_fwd)
                     gm.hypotheses[0].confidence = float(matching_det["conf"])
                     yaw = float(matching_det["yaw"])
                     gm.hypotheses[0].orientation_cam = Quatf(math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0))

@@ -968,3 +968,59 @@ TEST(AutopilotSimulationHarnessTest, StepExecutionTimingBudget) {
     EXPECT_LT(avg_us, 100.0);
 }
 
+// 28. Verify Multiple Sequential Missions (Transit across arena with no drift or collision)
+TEST(AutopilotSimulationHarnessTest, MultipleSequentialMissions) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.02;
+    cfg.pos_noise_std_z = 0.01;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 42;
+
+    AutopilotSimHarness harness(cfg);
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_HOVER);
+
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, -1.3, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_TRIANGLE, 2.5, 0.0, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 2.5, 1.3, 1.0, 0.0);
+
+    // Run first mission: Circle -> Triangle -> Square
+    MissionReport rep1 = harness.runUntil(50.0, 0.05);
+    EXPECT_TRUE(rep1.mission_completed);
+    EXPECT_EQ(rep1.final_state, FlightState::FLIGHT_STATE_HOVER_WAIT);
+    EXPECT_EQ(rep1.collision_count, 0u);
+
+    // Send second mission in reverse: Square -> Triangle -> Circle
+    UICommandPacket cmd2{};
+    cmd2.msg_type = MSG_TYPE_UI_CMD;
+    cmd2.command = UI_CMD_START_MISSION;
+    cmd2.sequence_length = 3;
+    cmd2.goal_sequence[0] = SHAPE_SQUARE;
+    cmd2.goal_sequence[1] = SHAPE_TRIANGLE;
+    cmd2.goal_sequence[2] = SHAPE_CIRCLE;
+    cmd2.end_action = MISSION_END_HOVER;
+    harness.getAutopilot().handleCommand(cmd2);
+
+    MissionReport rep2 = harness.runUntil(60.0, 0.05);
+    EXPECT_TRUE(rep2.mission_completed);
+    EXPECT_EQ(rep2.final_state, FlightState::FLIGHT_STATE_HOVER_WAIT);
+    EXPECT_EQ(rep2.collision_count, 0u);
+
+    // Send third mission across arena: Circle -> Triangle -> Square with LAND
+    UICommandPacket cmd3{};
+    cmd3.msg_type = MSG_TYPE_UI_CMD;
+    cmd3.command = UI_CMD_START_MISSION;
+    cmd3.sequence_length = 3;
+    cmd3.goal_sequence[0] = SHAPE_CIRCLE;
+    cmd3.goal_sequence[1] = SHAPE_TRIANGLE;
+    cmd3.goal_sequence[2] = SHAPE_SQUARE;
+    cmd3.end_action = MISSION_END_LAND;
+    harness.getAutopilot().handleCommand(cmd3);
+
+    MissionReport rep3 = harness.runUntil(60.0, 0.05);
+    EXPECT_TRUE(rep3.mission_completed);
+    EXPECT_EQ(rep3.final_state, FlightState::FLIGHT_STATE_ROTOR_STOPPED);
+    EXPECT_EQ(rep3.collision_count, 0u);
+}
+
+

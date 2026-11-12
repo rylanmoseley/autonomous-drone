@@ -305,14 +305,8 @@ PathPlanner::OrthogonalPath PathPlanner::generateOrthogonalPath(
     bool choose_end1 = true;
     if (preferred_sign > 0.0) {
         choose_end1 = true;
-        if (end1_blocked && !end2_blocked) {
-            choose_end1 = false;
-        }
     } else if (preferred_sign < 0.0) {
         choose_end1 = false;
-        if (end2_blocked && !end1_blocked) {
-            choose_end1 = true;
-        }
     } else {
         if (dist1 <= dist2) {
             // end1 is closer: choose end1 unless it intersects an exclusion area and end2 is clear
