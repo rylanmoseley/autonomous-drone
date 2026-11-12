@@ -65,6 +65,7 @@ public:
     int align_ticks = 0;
     int standoff_ticks = 0;
     int seek_ticks = 0;
+    int traverse_ticks = 0;
     double approach_dx = 0.0;
     double approach_dy = 0.0;
     double approach_dz = 0.0;
@@ -74,6 +75,8 @@ public:
     double transit_yaw = 0.0;
     Pose active_target_pose = {};
     bool has_active_target = false;
+    PathPlanner::OrthogonalPath active_orthogonal_path_{};
+    bool has_orthogonal_path_{false};
     
     std::chrono::steady_clock::time_point last_vision_time;
     std::mutex vision_mutex;
@@ -81,7 +84,19 @@ public:
     // Tag pass-through telemetry counters
     uint32_t tags_received_count{0};
     uint32_t tags_forwarded_count{0};
+    uint32_t surveyed_tags_verified_count_{0};
     TagMeasurement last_tag_measurement{};
+
+    double vision_timeout_s_{2.5}; // Configurable vision watchdog timeout (0.20s for ER 9 hardware flight)
+    bool fcu_watchdog_enabled_{false};
+    double fcu_timeout_s_{1.0};
+
+    void setVisionTimeout(double timeout_s) { vision_timeout_s_ = timeout_s; }
+    double getVisionTimeout() const { return vision_timeout_s_; }
+    void enableFcuWatchdog(bool enable, double timeout_s = 1.0) {
+        fcu_watchdog_enabled_ = enable;
+        fcu_timeout_s_ = timeout_s;
+    }
 
     Pose last_current_pose_{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0};
     Pose last_completed_goal_pose_{0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};

@@ -231,7 +231,8 @@ TEST(AutopilotTest, RetainGoalsWhenNewDataSent) {
     EXPECT_GT(next_cmd.target_x, 3.0);
 }
 
-TEST(AutopilotTest, TraversalStrictlyAlongGateNormalRegardlessOfStartingPose) {
+// 7. Verify Selection of Closest End and Orthogonal Line Traversal
+TEST(AutopilotTest, TraversalToClosestEndAndOrthogonalLineTracking) {
     AutopilotNode node;
 
     // Mission with 2 gates arranged in reverse spatial order (Gate 1 at X=3.0, Gate 2 at X=1.5)
@@ -245,7 +246,7 @@ TEST(AutopilotTest, TraversalStrictlyAlongGateNormalRegardlessOfStartingPose) {
     cmd_pkt.end_action = MISSION_END_HOVER;
     node.handleCommand(cmd_pkt);
 
-    // Starting pose is at X=4.0 (BEHIND Gate 1 at X=3.0)
+    // Starting pose is at X=4.0 (closer to Gate 1's back end at X=3.75 than front at X=2.25)
     Pose current = {4.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
     double dt = 0.05;
 
@@ -272,9 +273,9 @@ TEST(AutopilotTest, TraversalStrictlyAlongGateNormalRegardlessOfStartingPose) {
     node.tick(current, dt); // Takeoff -> PATH_FOLLOWING
     node.tick(current, dt); // Executes PATH_FOLLOWING for Gate 1
 
-    // Gate 1 entrance standoff is at X = 3.0 - 0.75 = 2.25
-    // Normal approach must be strictly +X (dx=1.0, dy=0.0), regardless of starting at X=4.0
-    EXPECT_NEAR(node.approach_dx, 1.0, 1e-3);
+    // Gate 1 closest end is X = 3.0 + 0.75 = 3.75.
+    // Orthogonal traversal line moves in -X direction (from 3.75 through 3.0 to 2.25)
+    EXPECT_NEAR(node.approach_dx, -1.0, 1e-3);
     EXPECT_NEAR(node.approach_dy, 0.0, 1e-3);
 
     // Run kinematic mock until Gate 1 is completed and Gate 2 is targeted
@@ -292,12 +293,12 @@ TEST(AutopilotTest, TraversalStrictlyAlongGateNormalRegardlessOfStartingPose) {
     }
 
     EXPECT_EQ(node.current_seq_index, 1u);
+    EXPECT_LE(current.x, 2.35); // Exited on the -X side of Gate 1
 
     // Now targeting Gate 2 (Triangle at X=1.5).
-    // Gate 2 is behind Gate 1 (X=1.5 < 3.0).
-    // In old code, seq_dx = 1.5 - 3.0 = -1.5, causing dot_seq < 0, flipping approach_dx to -1.0.
-    // In new code, starting pose is irrelevant: Gate 2 normal is yaw=0 -> approach_dx = +1.0!
-    EXPECT_NEAR(node.approach_dx, 1.0, 1e-3);
+    // Drone is at X <= 2.35. Gate 2 endpoints are X=0.75 and X=2.25.
+    // Closest end is X=2.25, so traversal proceeds along line towards X=0.75 (-X direction)
+    EXPECT_NEAR(node.approach_dx, -1.0, 1e-3);
     EXPECT_NEAR(node.approach_dy, 0.0, 1e-3);
 }
 
@@ -459,4 +460,278 @@ TEST(AutopilotTest, SideBySideGoalsReverseOrientationBackwardsTraversal) {
     // Gate 2 completed backwards! Final position exited on the -X side (X <= 2.1)
     EXPECT_EQ(node.current_seq_index, 2u);
     EXPECT_LE(current.x, 2.1);
+}
+
+// 10. Verify Side-by-Side Traversal with Yawed Gate (Triangle at +30 degrees)
+TEST(AutopilotTest, SideBySideYawedGateTraversalNormalToFace) {
+    AutopilotNode node;
+
+    UICommandPacket cmd_pkt = {};
+    cmd_pkt.msg_type = MSG_TYPE_UI_CMD;
+    cmd_pkt.command = UI_CMD_START_MISSION;
+    cmd_pkt.sequence_length = 2;
+    cmd_pkt.goal_sequence[0] = SHAPE_CIRCLE;
+    cmd_pkt.goal_sequence[1] = SHAPE_TRIANGLE;
+    cmd_pkt.end_action = MISSION_END_HOVER;
+    node.handleCommand(cmd_pkt);
+
+    Pose current = {0.0, -0.6, 1.0, 0, 0, 0, 0, 1.0};
+    double dt = 0.05;
+
+    // Gate 1 (Circle) at (2.5, -0.6, 1.0), yaw = 0.0
+    // Gate 2 (Triangle) at (2.5, +0.6, 1.0), yaw = +30 deg (0.5236 rad)
+    double tri_yaw = 30.0 * M_PI / 180.0;
+    VisionPacket v_pkt = {};
+    v_pkt.msg_type = MSG_TYPE_VISION;
+    v_pkt.num_goals_reported = 2;
+
+    v_pkt.goals[0].shape_type = SHAPE_CIRCLE;
+    v_pkt.goals[0].is_detected = 1;
+    v_pkt.goals[0].num_hypotheses = 1;
+    v_pkt.goals[0].hypotheses[0].position_cam = {2.5f, -0.6f, 1.0f};
+    v_pkt.goals[0].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f};
+    v_pkt.goals[0].hypotheses[0].confidence = 0.98f;
+
+    v_pkt.goals[1].shape_type = SHAPE_TRIANGLE;
+    v_pkt.goals[1].is_detected = 1;
+    v_pkt.goals[1].num_hypotheses = 1;
+    v_pkt.goals[1].hypotheses[0].position_cam = {2.5f, 0.6f, 1.0f};
+    v_pkt.goals[1].hypotheses[0].orientation_cam = {
+        static_cast<float>(std::cos(tri_yaw * 0.5)),
+        0.0f,
+        0.0f,
+        static_cast<float>(std::sin(tri_yaw * 0.5))
+    };
+    v_pkt.goals[1].hypotheses[0].confidence = 0.98f;
+
+    node.getEstimator().updateEstimates(v_pkt, 1.0);
+
+    // Takeoff to PATH_FOLLOWING
+    node.tick(current, dt);
+    node.tick(current, dt);
+
+    // Complete Gate 1 in forward orientation (+X)
+    int ticks = 0;
+    while (node.current_seq_index == 0 && ticks < 200) {
+        node.getEstimator().updateEstimates(v_pkt, 1.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    EXPECT_EQ(node.current_seq_index, 1u);
+
+    // Gate 2 (Triangle) approach must be reverse-oriented AND strictly along the yaw-ed normal (-cos(30), -sin(30))
+    FlightCommand cmd2 = node.tick(current, dt);
+    EXPECT_TRUE(cmd2.enable);
+
+    double expected_nx = -std::cos(tri_yaw); // -0.8660
+    double expected_ny = -std::sin(tri_yaw); // -0.5000
+    EXPECT_NEAR(node.approach_dx, expected_nx, 1e-3);
+    EXPECT_NEAR(node.approach_dy, expected_ny, 1e-3);
+
+    // Target yaw should align directly with approach vector: atan2(-0.5, -0.866) ≈ -2.618 rad (-150 deg)
+    double expected_yaw = std::atan2(expected_ny, expected_nx);
+    EXPECT_NEAR(cmd2.target_yaw, expected_yaw, 1e-3);
+
+    // Standoff is located along the normal corridor behind the gate: (X > 3.0)
+    EXPECT_GT(cmd2.target_x, 3.0);
+    EXPECT_GT(cmd2.target_y, 0.5);
+
+    // Traverse Gate 2 backwards along the yaw-ed face normal
+    ticks = 0;
+    while (node.current_seq_index == 1 && ticks < 200) {
+        node.getEstimator().updateEstimates(v_pkt, 2.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    // Successfully completed yaw-ed Gate 2!
+    EXPECT_EQ(node.current_seq_index, 2u);
+    EXPECT_LE(current.x, 2.2);
+}
+
+// 11. Verify Drone Does Not Stall Under Lateral Offset, Follower Jitter, and APF Deflection
+TEST(AutopilotTest, NoStallUnderLateralNoiseAndStandoffOffset) {
+    AutopilotNode node;
+
+    UICommandPacket cmd_pkt = {};
+    cmd_pkt.msg_type = MSG_TYPE_UI_CMD;
+    cmd_pkt.command = UI_CMD_START_MISSION;
+    cmd_pkt.sequence_length = 1;
+    cmd_pkt.goal_sequence[0] = SHAPE_CIRCLE;
+    cmd_pkt.end_action = MISSION_END_HOVER;
+    node.handleCommand(cmd_pkt);
+
+    // Starting at takeoff position
+    Pose current = {0.0, 0.0, 1.0, 0, 0, 0, 0, 1.0};
+    double dt = 0.05;
+
+    VisionPacket v_pkt = {};
+    v_pkt.msg_type = MSG_TYPE_VISION;
+    v_pkt.num_goals_reported = 1;
+    v_pkt.goals[0].shape_type = SHAPE_CIRCLE;
+    v_pkt.goals[0].is_detected = 1;
+    v_pkt.goals[0].num_hypotheses = 1;
+    v_pkt.goals[0].hypotheses[0].position_cam = {2.0f, 0.0f, 1.0f};
+    v_pkt.goals[0].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f};
+    v_pkt.goals[0].hypotheses[0].confidence = 0.98f;
+
+    node.getEstimator().updateEstimates(v_pkt, 1.0);
+
+    // Takeoff to PATH_FOLLOWING
+    node.tick(current, dt);
+    node.tick(current, dt);
+
+    EXPECT_EQ(node.current_seq_index, 0u);
+
+    // Simulate flight with persistent lateral offset of 0.08m and yaw offset of 0.15 rad
+    // In old code, lat_err > 0.065 and dyaw > 0.12 would stall indefinitely in goal_phase 1!
+    int ticks = 0;
+    while (node.current_seq_index == 0 && ticks < 150) {
+        node.getEstimator().updateEstimates(v_pkt, 1.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+        if (cmd.enable) {
+            // Apply commanded position with persistent simulated tracking disturbance
+            current.x = cmd.target_x;
+            current.y = cmd.target_y + 0.08; // 8cm persistent lateral disturbance
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw + 0.15; // 0.15 rad (8.6 deg) persistent heading disturbance
+        }
+        ticks++;
+    }
+
+    // Under new progressive watchdog, the drone punches through and finishes without stalling!
+    EXPECT_EQ(node.current_seq_index, 1u);
+    EXPECT_LT(ticks, 120);
+}
+
+// 12. Verify Side-by-Side Traversal when Gate Measurement Inverts Yaw (Viewed From Behind)
+TEST(AutopilotTest, SideBySideGateWithInvertedYawFromBehindDoesNotFlipCorridor) {
+    AutopilotNode node;
+
+    UICommandPacket cmd_pkt = {};
+    cmd_pkt.msg_type = MSG_TYPE_UI_CMD;
+    cmd_pkt.command = UI_CMD_START_MISSION;
+    cmd_pkt.sequence_length = 2;
+    cmd_pkt.goal_sequence[0] = SHAPE_CIRCLE;
+    cmd_pkt.goal_sequence[1] = SHAPE_TRIANGLE;
+    cmd_pkt.end_action = MISSION_END_HOVER;
+    node.handleCommand(cmd_pkt);
+
+    Pose current = {0.0, -0.6, 1.0, 0, 0, 0, 0, 1.0};
+    double dt = 0.05;
+
+    // Gate 1 (Circle) at (2.5, -0.6, 1.0)
+    // Gate 2 (Triangle) at (2.5, +0.6, 1.0)
+    VisionPacket v_pkt = {};
+    v_pkt.msg_type = MSG_TYPE_VISION;
+    v_pkt.num_goals_reported = 2;
+
+    v_pkt.goals[0].shape_type = SHAPE_CIRCLE;
+    v_pkt.goals[0].is_detected = 1;
+    v_pkt.goals[0].num_hypotheses = 1;
+    v_pkt.goals[0].hypotheses[0].position_cam = {2.5f, -0.6f, 1.0f};
+    v_pkt.goals[0].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f}; // yaw = 0.0
+    v_pkt.goals[0].hypotheses[0].confidence = 0.98f;
+
+    v_pkt.goals[1].shape_type = SHAPE_TRIANGLE;
+    v_pkt.goals[1].is_detected = 1;
+    v_pkt.goals[1].num_hypotheses = 1;
+    v_pkt.goals[1].hypotheses[0].position_cam = {2.5f, 0.6f, 1.0f};
+    v_pkt.goals[1].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f}; // yaw = 0.0
+    v_pkt.goals[1].hypotheses[0].confidence = 0.98f;
+
+    node.getEstimator().updateEstimates(v_pkt, 1.0);
+
+    // Takeoff to PATH_FOLLOWING
+    node.tick(current, dt);
+    node.tick(current, dt);
+
+    // Complete Gate 1 in forward orientation (+X)
+    int ticks = 0;
+    while (node.current_seq_index == 0 && ticks < 200) {
+        node.getEstimator().updateEstimates(v_pkt, 1.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    EXPECT_EQ(node.current_seq_index, 1u);
+
+    // Now drone is behind the gates (X > 3.0), looking backwards.
+    // Invert the reported yaw for Gate 2 to pi (opposite surface normal):
+    v_pkt.goals[1].hypotheses[0].orientation_cam = {0.0f, 0.0f, 0.0f, 1.0f}; // yaw = pi
+
+    // Run ticks through Gate 2 backwards:
+    ticks = 0;
+    while (node.current_seq_index == 1 && ticks < 200) {
+        node.getEstimator().updateEstimates(v_pkt, 2.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+        // Approach corridor MUST remain negative X (-1.0) and never flip back to +X!
+        EXPECT_LT(node.approach_dx, -0.5);
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    // Gate 2 must complete backwards and exit at X <= 2.1
+    EXPECT_EQ(node.current_seq_index, 2u);
+    EXPECT_LE(current.x, 2.1);
+}
+
+// 13. Verify UdpTelemetryLogger JSON construction and transmission
+TEST(AutopilotTest, UdpTelemetryLoggerJsonSerialization) {
+    int rx_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in rx_addr;
+    memset(&rx_addr, 0, sizeof(rx_addr));
+    rx_addr.sin_family = AF_INET;
+    rx_addr.sin_port = htons(24557);
+    rx_addr.sin_addr.s_addr = INADDR_ANY;
+    bind(rx_sock, (struct sockaddr *)&rx_addr, sizeof(rx_addr));
+
+    struct timeval tv;
+    tv.tv_sec = 0; tv.tv_usec = 100000;
+    setsockopt(rx_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    UdpTelemetryLogger logger("127.0.0.1", 24557);
+    logger.log("state", 3);
+    logger.log("altitude", 1.25);
+    logger.log("mode", "MISSION");
+    logger.flush();
+
+    char buffer[512] = {0};
+    struct sockaddr_in from;
+    socklen_t from_len = sizeof(from);
+    int n = recvfrom(rx_sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&from, &from_len);
+    EXPECT_GT(n, 0);
+
+    if (n > 0) {
+        std::string json_str(buffer, n);
+        EXPECT_NE(json_str.find("\"state\":3"), std::string::npos);
+        EXPECT_NE(json_str.find("\"mode\":\"MISSION\""), std::string::npos);
+        EXPECT_NE(json_str.find("\"altitude\":"), std::string::npos);
+    }
+
+    close(rx_sock);
 }
