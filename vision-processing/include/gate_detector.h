@@ -103,6 +103,7 @@ private:
     double focal_length_;
     bool is_sim_{false};
     std::vector<cv::Point3f> square_object_points_;
+    std::vector<cv::Point3f> triangle_object_points_;
     std::vector<cv::Point3f> pentagon_object_points_;
 };
 

@@ -177,6 +177,14 @@ GateDetector::GateDetector(double focal_length)
         {-pentR_m * std::cos(54.0f * (float)CV_PI / 180.0f),  pentR_m * std::sin(54.0f * (float)CV_PI / 180.0f), 0.0f }, // 3: Bottom-Left (+126 deg)
         {-pentR_m * std::cos(18.0f * (float)CV_PI / 180.0f), -pentR_m * std::sin(18.0f * (float)CV_PI / 180.0f), 0.0f }  // 4: Upper-Left (-162 deg)
     };
+
+    // 3D model points in SI METERS for Equilateral Triangle gate (0.35m radius, pointing up)
+    triangle_object_points_ = {
+        { 0.0f,    -0.35f,  0.0f }, // Apex (top)
+        { 0.3031f,  0.175f, 0.0f }, // Bottom-Right
+        { 0.0f,     0.175f, 0.0f }, // Base-Midpoint
+        {-0.3031f,  0.175f, 0.0f }  // Bottom-Left
+    };
 }
 
 std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bool draw_overlay) {
@@ -272,10 +280,10 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
             // Aspect ratio check to reject occluded slivers or partially cut off contours
             double aspect = static_cast<double>(bbox.width) / std::max(1, bbox.height);
             if (spec.shape == "Triangle") {
-                if (aspect < 0.70 || aspect > 1.60) continue;
+                if (aspect < 0.55 || aspect > 1.80) continue;
             } else if (spec.shape == "Square") {
-                if (aspect < 0.75 || aspect > 1.30) continue;
-            } else if (aspect < 0.65 || aspect > 1.45) {
+                if (aspect < 0.55 || aspect > 1.80) continue;
+            } else if (aspect < 0.55 || aspect > 1.80) {
                 continue;
             }
 
@@ -313,6 +321,125 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
             res.posZ_m = distance_m;
             res.confidence = touches_edge ? 0.80 : 0.95;
             res.is_3d = false;
+
+            if (spec.shape == "Triangle") {
+                // Find apex (min y) and bottom corners (max y left, max y right)
+                int min_y = frame.rows;
+                for (const auto& pt : contour) {
+                    if (pt.y < min_y) min_y = pt.y;
+                }
+                double apex_sum_x = 0.0, apex_sum_y = 0.0;
+                int apex_cnt = 0;
+                for (const auto& pt : contour) {
+                    if (pt.y <= min_y + 4) {
+                        apex_sum_x += pt.x;
+                        apex_sum_y += pt.y;
+                        apex_cnt++;
+                    }
+                }
+                double apex_x = (apex_cnt > 0) ? (apex_sum_x / apex_cnt) : cx;
+                double apex_y = (apex_cnt > 0) ? (apex_sum_y / apex_cnt) : min_y;
+
+                int max_y_left = -1, max_y_right = -1;
+                for (const auto& pt : contour) {
+                    if (pt.x < apex_x - 5) {
+                        if (pt.y > max_y_left) max_y_left = pt.y;
+                    } else if (pt.x > apex_x + 5) {
+                        if (pt.y > max_y_right) max_y_right = pt.y;
+                    }
+                }
+
+                double bl_x = bbox.x, bl_y = bbox.y + bbox.height;
+                double br_x = bbox.x + bbox.width, br_y = bbox.y + bbox.height;
+                int bl_cnt = 0, br_cnt = 0;
+                double bl_sum_x = 0, bl_sum_y = 0;
+                double br_sum_x = 0, br_sum_y = 0;
+
+                for (const auto& pt : contour) {
+                    if (pt.x < apex_x - 5 && max_y_left >= 0 && pt.y >= max_y_left - 4) {
+                        bl_sum_x += pt.x;
+                        bl_sum_y += pt.y;
+                        bl_cnt++;
+                    } else if (pt.x > apex_x + 5 && max_y_right >= 0 && pt.y >= max_y_right - 4) {
+                        br_sum_x += pt.x;
+                        br_sum_y += pt.y;
+                        br_cnt++;
+                    }
+                }
+                if (bl_cnt > 0) { bl_x = bl_sum_x / bl_cnt; bl_y = bl_sum_y / bl_cnt; }
+                if (br_cnt > 0) { br_x = br_sum_x / br_cnt; br_y = br_sum_y / br_cnt; }
+
+                bool solved_pnp = false;
+                cv::Mat camMat = (cv::Mat_<double>(3, 3) << effective_focal, 0.0, frame.cols / 2.0,
+                                                            0.0, effective_focal, frame.rows / 2.0,
+                                                            0.0, 0.0, 1.0);
+                cv::Mat distCoeffs = cv::Mat::zeros(4, 1, CV_64F);
+
+                if (!touches_edge && bl_cnt > 0 && br_cnt > 0 && apex_cnt > 0) {
+                    std::vector<cv::Point2f> img_pts = {
+                        cv::Point2f(static_cast<float>(apex_x), static_cast<float>(apex_y)),
+                        cv::Point2f(static_cast<float>(br_x), static_cast<float>(br_y)),
+                        cv::Point2f(static_cast<float>((bl_x + br_x) * 0.5), static_cast<float>((bl_y + br_y) * 0.5)),
+                        cv::Point2f(static_cast<float>(bl_x), static_cast<float>(bl_y))
+                    };
+                    cv::Mat rvec, tvec;
+                    if (cv::solvePnP(triangle_object_points_, img_pts, camMat, distCoeffs, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE)) {
+                        cv::Mat rotMat;
+                        cv::Rodrigues(rvec, rotMat);
+                        double pnp_yaw = -std::atan2(rotMat.at<double>(0, 2), rotMat.at<double>(2, 2));
+                        if (std::abs(pnp_yaw) <= 3.14159) {
+                            res.yaw_rad = pnp_yaw;
+                            res.yaw_deg = pnp_yaw * (180.0 / CV_PI);
+                            res.pitch_rad = 0.0;
+                            res.roll_rad = 0.0;
+                            res.pitch_deg = 0.0;
+                            res.roll_deg = 0.0;
+                            res.is_3d = true;
+                            solved_pnp = true;
+                        }
+                    }
+                }
+
+                if (!solved_pnp) {
+                    double w_left = apex_x - bl_x;
+                    double w_right = br_x - apex_x;
+                    if (w_left > 5 && w_right > 5) {
+                        double asym = (w_left - w_right) / (w_left + w_right);
+                        double sin_yaw = asym * (2.0 * distance_m / 0.606);
+                        sin_yaw = std::max(-0.95, std::min(0.95, sin_yaw));
+                        res.yaw_rad = std::asin(sin_yaw);
+                        res.yaw_deg = res.yaw_rad * (180.0 / CV_PI);
+                        res.pitch_rad = 0.0;
+                        res.roll_rad = 0.0;
+                    }
+                }
+            } else if (spec.shape == "Square") {
+                double perim = cv::arcLength(contour, true);
+                std::vector<cv::Point> approx;
+                cv::approxPolyDP(contour, approx, 0.04 * perim, true);
+                if (approx.size() == 4) {
+                    auto img_pts = orderQuadPoints(approx);
+                    cv::Mat camMat = (cv::Mat_<double>(3, 3) << effective_focal, 0.0, frame.cols / 2.0,
+                                                                0.0, effective_focal, frame.rows / 2.0,
+                                                                0.0, 0.0, 1.0);
+                    cv::Mat distCoeffs = cv::Mat::zeros(4, 1, CV_64F);
+                    cv::Mat rvec, tvec;
+                    if (cv::solvePnP(square_object_points_, img_pts, camMat, distCoeffs, rvec, tvec)) {
+                        cv::Mat rotMat;
+                        cv::Rodrigues(rvec, rotMat);
+                        double pnp_yaw = -std::atan2(rotMat.at<double>(0, 2), rotMat.at<double>(2, 2));
+                        if (std::abs(pnp_yaw) <= 3.14159) {
+                            res.yaw_rad = pnp_yaw;
+                            res.yaw_deg = pnp_yaw * (180.0 / CV_PI);
+                            res.pitch_rad = 0.0;
+                            res.roll_rad = 0.0;
+                            res.pitch_deg = 0.0;
+                            res.roll_deg = 0.0;
+                            res.is_3d = true;
+                        }
+                    }
+                }
+            }
 
             if (draw_overlay) {
                 cv::drawContours(frame, contours, best_idx, spec.draw_color, 2);
@@ -432,10 +559,10 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
                     res.posZ_m = tvec.at<double>(2);
                     cv::Mat rotMat;
                     cv::Rodrigues(rvec, rotMat);
-                    res.pitch_rad = std::atan2(-rotMat.at<double>(2, 0),
-                        std::sqrt(rotMat.at<double>(0, 0) * rotMat.at<double>(0, 0) + rotMat.at<double>(1, 0) * rotMat.at<double>(1, 0)));
-                    res.yaw_rad = std::atan2(rotMat.at<double>(1, 0), rotMat.at<double>(0, 0));
-                    res.roll_rad = std::atan2(rotMat.at<double>(2, 1), rotMat.at<double>(2, 2));
+                    res.yaw_rad = std::atan2(rotMat.at<double>(0, 2), rotMat.at<double>(2, 2));
+                    res.pitch_rad = std::atan2(-rotMat.at<double>(1, 2),
+                        std::hypot(rotMat.at<double>(0, 2), rotMat.at<double>(2, 2)));
+                    res.roll_rad = std::atan2(rotMat.at<double>(1, 0), rotMat.at<double>(1, 1));
                     res.pitch_deg = res.pitch_rad * (180.0 / CV_PI);
                     res.yaw_deg = res.yaw_rad * (180.0 / CV_PI);
                     res.roll_deg = res.roll_rad * (180.0 / CV_PI);
