@@ -8,21 +8,14 @@
 #include "vision_packet.h"
 #include "telemetry_packet.h"
 #include "common_types.h"
+#include "mission_state_machine.h"
+#include "mission_sequencer.h"
+#include "perception_coordinator.h"
+#include "safety_supervisor.h"
+#include "telemetry_bridge.h"
 #include <thread>
 #include <atomic>
 #include <mutex>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <map>
-
-// Global surveyed pose of a fiducial tag owned authoritatively by the Autopilot
-struct SurveyedTagPose {
-    uint16_t tag_id{0};
-    Vec3f world_pos{0.0f, 0.0f, 0.0f};  // World NED coordinates (meters)
-    Quatf world_att{1.0f, 0.0f, 0.0f, 0.0f}; // World NED attitude
-    float size_m{0.16f};                 // Physical side length in meters
-    bool is_known{false};
-};
 
 class AutopilotNode {
 public:
@@ -31,92 +24,126 @@ public:
     GoalEstimator estimator;
     UdpTelemetryLogger logger;
 
+    MissionStateMachine state_machine;
+    MissionSequencer sequencer;
+    PerceptionCoordinator perception;
+    SafetySupervisor safety;
+    TelemetryBridge telemetry_bridge;
+
+    // References to sequencer fields for seamless backward compatibility
+    uint8_t& active_sequence_len;
+    uint8_t* goal_sequence;
+    uint8_t& current_seq_index;
+    uint8_t& configured_end_action;
+    float& hover_timeout_s;
+    uint8_t& use_tube_constraint;
+    float& tube_rail_y;
+    float& tube_rail_z;
+
+    bool& new_goal;
+    int& goal_phase;
+    int& align_ticks;
+    int& standoff_ticks;
+    int& seek_ticks;
+    int& traverse_ticks;
+    double& approach_dx;
+    double& approach_dy;
+    double& approach_dz;
+    double& approach_sign_;
+    double& last_approach_dx_;
+    double& last_approach_dy_;
+    double transit_yaw{0.0};
+    Pose& active_target_pose;
+    bool& has_active_target;
+    PathPlanner::OrthogonalPath& active_orthogonal_path_;
+    bool& has_orthogonal_path_;
+    Pose& last_completed_goal_pose_;
+    Pose& hover_pose_;
+    bool& has_hover_pose_;
+
+    // References to perception fields
+    uint32_t& tags_received_count;
+    uint32_t& tags_forwarded_count;
+    uint32_t& surveyed_tags_verified_count_;
+    TagMeasurement& last_tag_measurement;
+
+    // Reference to safety watchdog field
+    std::chrono::steady_clock::time_point& last_vision_time;
+
+    // Flight state & UI status
+    FlightState state{FlightState::FLIGHT_STATE_STANDBY_DISARM};
+    uint8_t is_armed{0};
+    uint8_t estop_active{0};
+    uint32_t last_acked_cmd_id{0};
+    uint32_t status_seq_id{0};
+    uint32_t telem_seq_id{0};
+
+    // Sockets & destination
+    int ui_sock{-1};
+    int vision_sock{-1};
+    int telem_sock{-1};
+    struct sockaddr_in telem_dest{};
+
     std::atomic<bool> running{false};
     std::thread loop_thread;
     std::thread ui_thread;
     std::thread vision_thread;
 
-    FlightState state = FlightState::FLIGHT_STATE_STANDBY_DISARM;
-    std::mutex state_mutex;
-
-    // Mission sequence & config from UI
-    uint8_t active_sequence_len = 0;
-    uint8_t goal_sequence[MAX_GOAL_SEQUENCE_LEN] = {};
-    uint8_t current_seq_index = 0;
-    uint8_t configured_end_action = MISSION_END_HOVER;
-    float hover_timeout_s = 0.0f;
-    uint8_t use_tube_constraint = 0;
-    float tube_rail_y = 0.0f;
-    float tube_rail_z = 0.0f;
-    uint8_t is_armed = 0;
-    uint8_t estop_active = 0;
-    uint32_t last_acked_cmd_id = 0;
-    uint32_t status_seq_id = 0;
-    uint32_t telem_seq_id = 0;
     std::mutex cmd_mutex;
-
-    int ui_sock;
-    int vision_sock;
-    int telem_sock;
-    struct sockaddr_in telem_dest;
-    
-    bool new_goal = false;
-    int goal_phase = 0;
-    int align_ticks = 0;
-    int standoff_ticks = 0;
-    int seek_ticks = 0;
-    int traverse_ticks = 0;
-    double approach_dx = 0.0;
-    double approach_dy = 0.0;
-    double approach_dz = 0.0;
-    double approach_sign_ = 1.0;
-    double last_approach_dx_ = 1.0;
-    double last_approach_dy_ = 0.0;
-    double transit_yaw = 0.0;
-    Pose active_target_pose = {};
-    bool has_active_target = false;
-    PathPlanner::OrthogonalPath active_orthogonal_path_{};
-    bool has_orthogonal_path_{false};
-    
-    std::chrono::steady_clock::time_point last_vision_time;
+    std::mutex pose_mutex_;
+    std::mutex state_mutex;
     std::mutex vision_mutex;
 
-    // Tag pass-through telemetry counters
-    uint32_t tags_received_count{0};
-    uint32_t tags_forwarded_count{0};
-    uint32_t surveyed_tags_verified_count_{0};
-    TagMeasurement last_tag_measurement{};
+    Pose last_current_pose_{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0};
 
-    double vision_timeout_s_{2.5}; // Configurable vision watchdog timeout (0.20s for ER 9 hardware flight)
-    bool fcu_watchdog_enabled_{false};
-    double fcu_timeout_s_{1.0};
-
-    void setVisionTimeout(double timeout_s) { vision_timeout_s_ = timeout_s; }
-    double getVisionTimeout() const { return vision_timeout_s_; }
-    void enableFcuWatchdog(bool enable, double timeout_s = 1.0) {
-        fcu_watchdog_enabled_ = enable;
-        fcu_timeout_s_ = timeout_s;
+    // State machine API
+    FlightState getState() const {
+        return state_machine.getState();
+    }
+    void setState(FlightState s) {
+        state_machine.setState(s);
+        state = s;
     }
 
-    Pose last_current_pose_{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0};
-    Pose last_completed_goal_pose_{0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
-    Pose hover_pose_{0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
-    bool has_hover_pose_{false};
-    mutable std::mutex pose_mutex_;
+    // Safety watchdog API
+    void setVisionTimeout(double timeout_s) { safety.setVisionTimeout(timeout_s); }
+    double getVisionTimeout() const { return safety.getVisionTimeout(); }
+    void enableFcuWatchdog(bool enable, double timeout_s = 1.0) {
+        safety.enableFcuWatchdog(enable, timeout_s);
+    }
+
+    // Perception surveyed tag API
+    void registerSurveyedTag(uint16_t tag_id, const Vec3f& world_pos, const Quatf& world_att, float size_m = 0.16f) {
+        perception.registerSurveyedTag(tag_id, world_pos, world_att, size_m);
+    }
+    bool getSurveyedTag(uint16_t tag_id, SurveyedTagPose& out_tag) const {
+        return perception.getSurveyedTag(tag_id, out_tag);
+    }
+    bool hasSurveyedTag(uint16_t tag_id) const {
+        return perception.hasSurveyedTag(tag_id);
+    }
+    void clearSurveyedTags() {
+        perception.clearSurveyedTags();
+    }
 
     void updateTelemetry(const Pose& pose) {
         std::lock_guard<std::mutex> lock(pose_mutex_);
         last_current_pose_ = pose;
     }
 
-    // Authoritative global tag survey map owned by the Autopilot
-    std::map<uint16_t, SurveyedTagPose> surveyed_tags_;
-    mutable std::mutex tag_map_mutex_;
+    GoalEstimator& getEstimator() { return estimator; }
 
-    void registerSurveyedTag(uint16_t tag_id, const Vec3f& world_pos, const Quatf& world_att, float size_m = 0.16f);
-    bool getSurveyedTag(uint16_t tag_id, SurveyedTagPose& out_tag) const;
-    bool hasSurveyedTag(uint16_t tag_id) const;
-    void clearSurveyedTags();
+    // Subcomponent accessors
+    MissionStateMachine& getStateMachine() { return state_machine; }
+    const MissionStateMachine& getStateMachine() const { return state_machine; }
+    MissionSequencer& getSequencer() { return sequencer; }
+    const MissionSequencer& getSequencer() const { return sequencer; }
+    PerceptionCoordinator& getPerceptionCoordinator() { return perception; }
+    const PerceptionCoordinator& getPerceptionCoordinator() const { return perception; }
+    SafetySupervisor& getSafetySupervisor() { return safety; }
+    const SafetySupervisor& getSafetySupervisor() const { return safety; }
+    TelemetryBridge& getTelemetryBridge() { return telemetry_bridge; }
+    const TelemetryBridge& getTelemetryBridge() const { return telemetry_bridge; }
 
     AutopilotNode();
     ~AutopilotNode();
@@ -128,15 +155,10 @@ public:
     void vision_loop();
     void handleVisionPacket(const VisionPacket& pkt, double current_time);
     void handleUICommand(const UICommandPacket& pkt, const struct sockaddr_in& from, socklen_t from_len);
-    
-    // For testing
-    FlightState getState() const { return state; }
-    void setState(FlightState s) { state = s; }
     void handleCommand(const UICommandPacket& pkt) {
         struct sockaddr_in dummy = {};
         handleUICommand(pkt, dummy, sizeof(dummy));
     }
-    GoalEstimator& getEstimator() { return estimator; }
     FlightCommand tick(const Pose& current_pose, double dt);
     void computeNonTargetRepulsion(
         const Pose& current_pose,

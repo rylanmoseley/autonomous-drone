@@ -42,6 +42,11 @@ add_subdirectory(path-planner)
 
 # Core Autopilot Library
 add_library(autopilot_core STATIC
+    mission_state_machine.cpp
+    mission_sequencer.cpp
+    perception_coordinator.cpp
+    safety_supervisor.cpp
+    telemetry_bridge.cpp
     autopilot_node.cpp
 )
 if(TARGET generate_tag_map)
@@ -92,6 +97,28 @@ target_link_libraries(test_sim_perception PRIVATE
     autopilot_sim
 )
 gtest_discover_tests(test_sim_perception)
+
+# Isolated Subsystem Unit Tests
+add_executable(test_mission_state_machine tests/test_mission_state_machine.cpp)
+target_link_libraries(test_mission_state_machine PRIVATE
+    GTest::gtest_main
+    autopilot_core
+)
+gtest_discover_tests(test_mission_state_machine)
+
+add_executable(test_mission_sequencer tests/test_mission_sequencer.cpp)
+target_link_libraries(test_mission_sequencer PRIVATE
+    GTest::gtest_main
+    autopilot_core
+)
+gtest_discover_tests(test_mission_sequencer)
+
+add_executable(test_safety_supervisor tests/test_safety_supervisor.cpp)
+target_link_libraries(test_safety_supervisor PRIVATE
+    GTest::gtest_main
+    autopilot_core
+)
+gtest_discover_tests(test_safety_supervisor)
 
 # Python Simulator Unit & Contract Tests
 if(Python3_FOUND)

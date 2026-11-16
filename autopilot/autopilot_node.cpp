@@ -22,42 +22,59 @@ AutopilotNode::AutopilotNode()
           return cfg;
       }()),
       estimator(0.5, 2.0),
-      logger("127.0.0.1", 14557)
+      logger("127.0.0.1", 14557),
+      state_machine(),
+      sequencer(),
+      perception(),
+      safety(2.5),
+      telemetry_bridge(),
+      active_sequence_len(sequencer.active_sequence_len),
+      goal_sequence(sequencer.goal_sequence),
+      current_seq_index(sequencer.current_seq_index),
+      configured_end_action(sequencer.configured_end_action),
+      hover_timeout_s(sequencer.hover_timeout_s),
+      use_tube_constraint(sequencer.use_tube_constraint),
+      tube_rail_y(sequencer.tube_rail_y),
+      tube_rail_z(sequencer.tube_rail_z),
+      new_goal(sequencer.new_goal),
+      goal_phase(sequencer.goal_phase),
+      align_ticks(sequencer.align_ticks),
+      standoff_ticks(sequencer.standoff_ticks),
+      seek_ticks(sequencer.seek_ticks),
+      traverse_ticks(sequencer.traverse_ticks),
+      approach_dx(sequencer.approach_dx),
+      approach_dy(sequencer.approach_dy),
+      approach_dz(sequencer.approach_dz),
+      approach_sign_(sequencer.approach_sign_),
+      last_approach_dx_(sequencer.last_approach_dx_),
+      last_approach_dy_(sequencer.last_approach_dy_),
+      active_target_pose(sequencer.active_target_pose),
+      has_active_target(sequencer.has_active_target),
+      active_orthogonal_path_(sequencer.active_orthogonal_path_),
+      has_orthogonal_path_(sequencer.has_orthogonal_path_),
+      last_completed_goal_pose_(sequencer.last_completed_goal_pose_),
+      hover_pose_(sequencer.hover_pose_),
+      has_hover_pose_(sequencer.has_hover_pose_),
+      tags_received_count(perception.tags_received_count),
+      tags_forwarded_count(perception.tags_forwarded_count),
+      surveyed_tags_verified_count_(perception.surveyed_tags_verified_count_),
+      last_tag_measurement(perception.last_tag_measurement),
+      last_vision_time(safety.last_vision_time)
 {
-    // Load pre-compiled surveyed tag map generated at compile time from surveyed_tags.json
     loadCompiledSurveyedTags(*this);
 
-    ui_sock = socket(AF_INET, SOCK_DGRAM, 0);
-    struct sockaddr_in ui_addr;
-    memset(&ui_addr, 0, sizeof(ui_addr));
-    ui_addr.sin_family = AF_INET;
-    ui_addr.sin_port = htons(14552);
-    ui_addr.sin_addr.s_addr = INADDR_ANY;
-    bind(ui_sock, (struct sockaddr *)&ui_addr, sizeof(ui_addr));
+    telemetry_bridge.openSockets(14552, 14553, "127.0.0.1", 14554);
+    ui_sock = telemetry_bridge.getUiSocket();
+    vision_sock = telemetry_bridge.getVisionSocket();
+    telem_sock = telemetry_bridge.getTelemSocket();
+    telem_dest = telemetry_bridge.getTelemDest();
 
-    struct timeval tv;
-    tv.tv_sec = 0; tv.tv_usec = 100000;
-    setsockopt(ui_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-    vision_sock = socket(AF_INET, SOCK_DGRAM, 0);
-    struct sockaddr_in vision_addr;
-    memset(&vision_addr, 0, sizeof(vision_addr));
-    vision_addr.sin_family = AF_INET;
-    vision_addr.sin_port = htons(14553);
-    vision_addr.sin_addr.s_addr = INADDR_ANY;
-    bind(vision_sock, (struct sockaddr *)&vision_addr, sizeof(vision_addr));
-    setsockopt(vision_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-    telem_sock = socket(AF_INET, SOCK_DGRAM, 0);
-    memset(&telem_dest, 0, sizeof(telem_dest));
-    telem_dest.sin_family = AF_INET;
-    telem_dest.sin_port = htons(14554);
-    inet_pton(AF_INET, "127.0.0.1", &telem_dest.sin_addr);
-    
-    last_vision_time = std::chrono::steady_clock::now();
+    safety.recordVisionPacket();
 }
 
-AutopilotNode::~AutopilotNode() { stop(); }
+AutopilotNode::~AutopilotNode() {
+    stop();
+}
 
 void AutopilotNode::start() {
     running = true;
@@ -73,119 +90,69 @@ void AutopilotNode::stop() {
     if (loop_thread.joinable()) loop_thread.join();
     if (ui_thread.joinable()) ui_thread.join();
     if (vision_thread.joinable()) vision_thread.join();
-    if (ui_sock >= 0) { close(ui_sock); ui_sock = -1; }
-    if (vision_sock >= 0) { close(vision_sock); vision_sock = -1; }
-    if (telem_sock >= 0) { close(telem_sock); telem_sock = -1; }
+    telemetry_bridge.closeSockets();
+    ui_sock = -1;
+    vision_sock = -1;
+    telem_sock = -1;
 }
 
 void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct sockaddr_in& from, socklen_t from_len) {
     std::lock_guard<std::mutex> lock(cmd_mutex);
     switch (pkt.command) {
         case UI_CMD_ARM:
+            state_machine.handleArmCommand();
             is_armed = 1;
             estop_active = 0;
-            if (state == FlightState::FLIGHT_STATE_STANDBY_DISARM || state == FlightState::FLIGHT_STATE_ROTOR_STOPPED || state == FlightState::FLIGHT_STATE_ESTOP_TRIPPED) {
-                state = FlightState::FLIGHT_STATE_ARMED;
-            }
+            state = state_machine.getState();
             break;
         case UI_CMD_DISARM:
+            state_machine.handleDisarmCommand();
             is_armed = 0;
             estop_active = 0;
-            state = FlightState::FLIGHT_STATE_STANDBY_DISARM;
-            current_seq_index = 0;
-            new_goal = true;
-            has_active_target = false;
-            goal_phase = 0;
-            align_ticks = 0;
-            standoff_ticks = 0;
-            seek_ticks = 0;
-            traverse_ticks = 0;
-            active_target_pose = {};
+            state = state_machine.getState();
+            sequencer.reset();
             estimator.reset();
             planner.reset();
             break;
-        case UI_CMD_START_MISSION:
+        case UI_CMD_START_MISSION: {
+            bool in_air = (last_current_pose_.z > 0.4);
+            state_machine.handleStartMissionCommand(in_air);
             is_armed = 1;
             estop_active = 0;
-            if (state == FlightState::FLIGHT_STATE_HOVER_WAIT && last_current_pose_.z > 0.4) {
-                state = FlightState::FLIGHT_STATE_PATH_FOLLOWING;
-            } else {
-                state = FlightState::FLIGHT_STATE_TAKEOFF;
-            }
-            current_seq_index = 0;
-            new_goal = true;
-            last_approach_dx_ = 1.0;
-            last_approach_dy_ = 0.0;
-            approach_sign_ = 1.0;
-            has_active_target = false;
-            goal_phase = 0;
-            align_ticks = 0;
-            standoff_ticks = 0;
-            seek_ticks = 0;
-            traverse_ticks = 0;
-            active_target_pose = {};
-            has_hover_pose_ = false;
-            has_orthogonal_path_ = false;
-            active_orthogonal_path_ = {};
-            last_completed_goal_pose_ = last_current_pose_;
-            // Preserve estimator goal positions so drone knows where targets are!
+            state = state_machine.getState();
+            sequencer.startMission(pkt, last_current_pose_);
             planner.reset();
-            active_sequence_len = pkt.sequence_length;
-            memcpy(goal_sequence, pkt.goal_sequence, sizeof(goal_sequence));
-            configured_end_action = pkt.end_action;
-            hover_timeout_s = pkt.hover_timeout_s;
-            use_tube_constraint = pkt.use_tube_constraint;
-            tube_rail_y = pkt.tube_rail_y;
-            tube_rail_z = pkt.tube_rail_z;
             break;
+        }
         case UI_CMD_SET_SEQUENCE:
-            active_sequence_len = pkt.sequence_length;
-            memcpy(goal_sequence, pkt.goal_sequence, sizeof(goal_sequence));
-            configured_end_action = pkt.end_action;
-            hover_timeout_s = pkt.hover_timeout_s;
-            current_seq_index = 0;
-            if (is_armed && (state == FlightState::FLIGHT_STATE_HOVER_WAIT || state == FlightState::FLIGHT_STATE_PATH_FOLLOWING || state == FlightState::FLIGHT_STATE_GOAL_SEEK)) {
+            sequencer.updateSequence(pkt, last_current_pose_);
+            if (is_armed && (state == FlightState::FLIGHT_STATE_HOVER_WAIT ||
+                             state == FlightState::FLIGHT_STATE_PATH_FOLLOWING ||
+                             state == FlightState::FLIGHT_STATE_GOAL_SEEK)) {
                 state = (last_current_pose_.z > 0.4) ? FlightState::FLIGHT_STATE_PATH_FOLLOWING : FlightState::FLIGHT_STATE_TAKEOFF;
+                state_machine.setState(state);
             }
-            new_goal = true;
-            last_approach_dx_ = 1.0;
-            last_approach_dy_ = 0.0;
-            approach_sign_ = 1.0;
-            has_active_target = false;
-            goal_phase = 0;
-            align_ticks = 0;
-            standoff_ticks = 0;
-            seek_ticks = 0;
-            traverse_ticks = 0;
-            active_target_pose = {};
-            has_hover_pose_ = false;
-            has_orthogonal_path_ = false;
-            active_orthogonal_path_ = {};
-            last_completed_goal_pose_ = last_current_pose_;
             planner.reset();
-            // Preserve estimator goal positions so drone knows where targets are!
             break;
         case UI_CMD_SET_CONSTRAINTS:
-            use_tube_constraint = pkt.use_tube_constraint;
-            tube_rail_y = pkt.tube_rail_y;
-            tube_rail_z = pkt.tube_rail_z;
+            sequencer.setConstraints(pkt.use_tube_constraint, pkt.tube_rail_y, pkt.tube_rail_z);
             break;
         case UI_CMD_PAUSE_MISSION:
-            if (state == FlightState::FLIGHT_STATE_PATH_FOLLOWING || state == FlightState::FLIGHT_STATE_GOAL_SEEK) {
-                state = FlightState::FLIGHT_STATE_HOVER_WAIT;
-            }
+            state_machine.handlePauseMissionCommand();
+            state = state_machine.getState();
             break;
         case UI_CMD_RESUME_MISSION:
-            if (state == FlightState::FLIGHT_STATE_HOVER_WAIT) {
-                state = FlightState::FLIGHT_STATE_PATH_FOLLOWING;
-            }
+            state_machine.handleResumeMissionCommand();
+            state = state_machine.getState();
             break;
         case UI_CMD_LAND_NOW:
-            state = FlightState::FLIGHT_STATE_LANDING;
+            state_machine.handleLandCommand();
+            state = state_machine.getState();
             break;
         case UI_CMD_ESTOP:
-            state = FlightState::FLIGHT_STATE_ESTOP_TRIPPED;
+            state_machine.handleEstopCommand();
             estop_active = 1;
+            state = state_machine.getState();
             break;
         default:
             break;
@@ -199,29 +166,27 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
     auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
     status.timestamp_ns = now_ns;
-    status.flight_state = (uint8_t)state;
+    status.flight_state = static_cast<uint8_t>(state_machine.getState());
     status.is_armed = is_armed;
     status.estop_active = estop_active;
-    status.active_sequence_len = active_sequence_len;
-    status.current_seq_index = current_seq_index;
-    status.current_target_shape = (current_seq_index < active_sequence_len) ? goal_sequence[current_seq_index] : (uint8_t)SHAPE_NONE;
-    status.configured_end_action = configured_end_action;
+    status.active_sequence_len = sequencer.active_sequence_len;
+    status.current_seq_index = sequencer.current_seq_index;
+    status.current_target_shape = sequencer.getCurrentTargetShape();
+    status.configured_end_action = sequencer.configured_end_action;
     status.battery_voltage = 12.0f;
     status.battery_remaining = 90.0f;
     status.active_error_flags = 0;
     status.last_acked_cmd_id = pkt.command_id;
     status.cmd_ack_result = 0;
 
-    if (from_len > 0 && ui_sock >= 0) {
-        sendto(ui_sock, &status, sizeof(status), 0, (struct sockaddr *)&from, from_len);
-    }
+    telemetry_bridge.sendUIStatus(from, from_len, status);
 }
 
 void AutopilotNode::ui_loop() {
     char buffer[4096];
     while (running) {
         struct sockaddr_in from; socklen_t from_len = sizeof(from);
-        int n = recvfrom(ui_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
+        int n = recvfrom(telemetry_bridge.getUiSocket(), buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
         if (n == sizeof(UICommandPacket)) {
             UICommandPacket* pkt = reinterpret_cast<UICommandPacket*>(buffer);
             if (pkt->msg_type == MSG_TYPE_UI_CMD) {
@@ -231,39 +196,7 @@ void AutopilotNode::ui_loop() {
     }
 }
 
-void AutopilotNode::registerSurveyedTag(uint16_t tag_id, const Vec3f& world_pos, const Quatf& world_att, float size_m) {
-    std::lock_guard<std::mutex> lock(tag_map_mutex_);
-    SurveyedTagPose tag{};
-    tag.tag_id = tag_id;
-    tag.world_pos = world_pos;
-    tag.world_att = world_att;
-    tag.size_m = size_m;
-    tag.is_known = true;
-    surveyed_tags_[tag_id] = tag;
-}
-
-bool AutopilotNode::getSurveyedTag(uint16_t tag_id, SurveyedTagPose& out_tag) const {
-    std::lock_guard<std::mutex> lock(tag_map_mutex_);
-    auto it = surveyed_tags_.find(tag_id);
-    if (it != surveyed_tags_.end()) {
-        out_tag = it->second;
-        return true;
-    }
-    return false;
-}
-
-bool AutopilotNode::hasSurveyedTag(uint16_t tag_id) const {
-    std::lock_guard<std::mutex> lock(tag_map_mutex_);
-    return surveyed_tags_.find(tag_id) != surveyed_tags_.end();
-}
-
-void AutopilotNode::clearSurveyedTags() {
-    std::lock_guard<std::mutex> lock(tag_map_mutex_);
-    surveyed_tags_.clear();
-}
-
 void AutopilotNode::handleVisionPacket(const VisionPacket& pkt, double current_time) {
-    VisionPacket transformed_pkt = pkt;
     Pose cur;
     {
         std::lock_guard<std::mutex> lock(pose_mutex_);
@@ -273,99 +206,18 @@ void AutopilotNode::handleVisionPacket(const VisionPacket& pkt, double current_t
         cur = fcu.getTelemetry().current_pose;
     }
 
-    double cy = std::cos(cur.yaw), sy = std::sin(cur.yaw);
-    double cp = std::cos(cur.pitch), sp = std::sin(cur.pitch);
-    double cr = std::cos(cur.roll), sr = std::sin(cur.roll);
-
-    // Three.js drone rotation matrix (order YZX): R = Ry(yaw) * Rz(-pitch) * Rx(roll)
-    double r00 = cy * cp;
-    double r01 = cy * sp * cr + sy * sr;
-    double r02 = -cy * sp * sr + sy * cr;
-
-    double r10 = -sp;
-    double r11 = cp * cr;
-    double r12 = -cp * sr;
-
-    double r20 = -sy * cp;
-    double r21 = -sy * sp * cr + cy * sr;
-    double r22 = sy * sp * sr + cy * cr;
-
-    // Camera origin in world coordinates (mount offset: 0.18m forward, 0.04m up):
-    double p_cam_tx = r00 * 0.18 + r01 * 0.04;
-    double p_cam_ty = r10 * 0.18 + r11 * 0.04;
-    double p_cam_tz = r20 * 0.18 + r21 * 0.04;
-
-    double cam_x = cur.x + p_cam_tx;
-    double cam_y = cur.y - p_cam_tz;
-    double cam_z = cur.z + p_cam_ty;
-
-    // Camera basis vectors in world coordinates (forward = +Z_cam, right = +X_cam, down = +Y_cam):
-    double fwd_x = r00,   fwd_y = -r20,  fwd_z = r10;
-    double right_x = r02, right_y = -r22, right_z = r12;
-    double down_x = -r01, down_y = r21,  down_z = -r11;
-
-    for (uint8_t i = 0; i < transformed_pkt.num_goals_reported && i < 3; ++i) {
-        GoalMeasurement& gm = transformed_pkt.goals[i];
-        if (gm.is_detected && gm.num_hypotheses > 0) {
-            PoseHypothesis& hyp = gm.hypotheses[0];
-            double z_cam = hyp.position_cam.z;
-            double x_cam = hyp.position_cam.x;
-            double y_cam = hyp.position_cam.y;
-
-            // Full 3D attitude-compensated projection:
-            double world_x = cam_x + z_cam * fwd_x + x_cam * right_x + y_cam * down_x;
-            double world_y = cam_y + z_cam * fwd_y + x_cam * right_y + y_cam * down_y;
-            double world_z = cam_z + z_cam * fwd_z + x_cam * right_z + y_cam * down_z;
-
-            // Plausibility check: gates in the arena safety cage are strictly bounded
-            if (world_z > 2.30 || world_z < 0.20 || z_cam > 5.5 || z_cam < 0.20 || world_x > 8.0 || world_x < -2.0 || std::abs(world_y) > 4.0) {
-                gm.is_detected = 0;
-                continue;
-            }
-
-            hyp.position_cam.x = static_cast<float>(world_x);
-            hyp.position_cam.y = static_cast<float>(world_y);
-            hyp.position_cam.z = static_cast<float>(world_z);
-
-            Quatf q = hyp.orientation_cam;
-            double cam_yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
-            double world_yaw = std::atan2(std::sin(cur.yaw + cam_yaw), std::cos(cur.yaw + cam_yaw));
-
-            double cy = std::cos(world_yaw * 0.5);
-            double sy = std::sin(world_yaw * 0.5);
-            hyp.orientation_cam = Quatf{static_cast<float>(cy), 0.0f, 0.0f, static_cast<float>(sy)};
-        }
-    }
-
+    VisionPacket transformed_pkt = PerceptionCoordinator::transformVisionGoals(pkt, cur);
     estimator.updateEstimates(transformed_pkt, current_time);
-    {
-        std::lock_guard<std::mutex> lock(vision_mutex);
-        last_vision_time = std::chrono::steady_clock::now();
-    }
 
-    // Pass through global tag measurements (AprilTag / ChArUco) to ArduPilot FCU via MAVLink
-    for (uint8_t i = 0; i < pkt.num_tags_detected && i < 4; ++i) {
-        const TagMeasurement& tag = pkt.tags[i];
-        if (tag.is_valid) {
-            tags_received_count++;
-            if (hasSurveyedTag(tag.tag_id)) {
-                surveyed_tags_verified_count_++;
-            }
-            uint64_t usec = (pkt.timestamp_ns > 0)
-                ? (pkt.timestamp_ns / 1000)
-                : static_cast<uint64_t>(current_time * 1e6);
-            fcu.sendVisionPositionEstimate(tag, usec);
-            tags_forwarded_count++;
-            last_tag_measurement = tag;
-        }
-    }
+    safety.recordVisionPacket();
+    perception.processTagForwarding(pkt, current_time, fcu);
 }
 
 void AutopilotNode::vision_loop() {
     char buffer[2048];
     while (running) {
         struct sockaddr_in from; socklen_t from_len = sizeof(from);
-        int n = recvfrom(vision_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
+        int n = recvfrom(telemetry_bridge.getVisionSocket(), buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
         if (n == sizeof(VisionPacket)) {
             VisionPacket* pkt = reinterpret_cast<VisionPacket*>(buffer);
             if (pkt->msg_type == MSG_TYPE_VISION) {
@@ -385,8 +237,8 @@ void AutopilotNode::computeNonTargetRepulsion(
     double& out_apf_vx,
     double& out_apf_vy,
     double& out_offset_x,
-    double& out_offset_y) {
-
+    double& out_offset_y)
+{
     std::vector<TrackedGoal> known_goals = estimator.getAllKnownGoals();
     std::vector<PathPlanner::Obstacle> obstacles;
     obstacles.reserve(known_goals.size());
@@ -403,7 +255,7 @@ void AutopilotNode::updateApproachDirection(const Pose& target_pose) {
     std::vector<TrackedGoal> known_goals = estimator.getAllKnownGoals();
     std::vector<PathPlanner::Obstacle> obstacles;
     obstacles.reserve(known_goals.size());
-    uint8_t target_shape = (current_seq_index < active_sequence_len) ? goal_sequence[current_seq_index] : 0;
+    uint8_t target_shape = sequencer.getCurrentTargetShape();
     for (const auto& g : known_goals) {
         if (g.shape_type == target_shape) continue;
         obstacles.push_back({g.pose.x, g.pose.y, g.pose.z, g.shape_type});
@@ -424,60 +276,46 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
     FlightCommand cmd = {};
     cmd.enable = false;
     cmd.estop = false;
-    
-    // Safety
-    auto now = std::chrono::steady_clock::now();
-    double time_since_vision = 0;
-    {
-        std::lock_guard<std::mutex> lock(vision_mutex);
-        time_since_vision = std::chrono::duration<double>(now - last_vision_time).count();
-    }
-    if (time_since_vision > vision_timeout_s_ && state != FlightState::FLIGHT_STATE_ESTOP_TRIPPED 
-        && state != FlightState::FLIGHT_STATE_STANDBY_DISARM && state != FlightState::FLIGHT_STATE_ROTOR_STOPPED) {
-        state = FlightState::FLIGHT_STATE_ESTOP_TRIPPED;
-        estop_active = 1;
-    }
 
-    if (fcu_watchdog_enabled_ && fcu.getTimeSinceLastTelemetry() > fcu_timeout_s_
-        && state != FlightState::FLIGHT_STATE_ESTOP_TRIPPED 
-        && state != FlightState::FLIGHT_STATE_STANDBY_DISARM && state != FlightState::FLIGHT_STATE_ROTOR_STOPPED) {
-        state = FlightState::FLIGHT_STATE_ESTOP_TRIPPED;
+    // Safety watchdog evaluation
+    if (safety.shouldTripEstop(state, fcu.getTimeSinceLastTelemetry())) {
+        state_machine.handleEstopCommand();
         estop_active = 1;
+        state = state_machine.getState();
     }
 
     std::lock_guard<std::mutex> lock(cmd_mutex);
 
     switch(state) {
         case FlightState::FLIGHT_STATE_ESTOP_TRIPPED:
-            cmd.estop = true;
-            cmd.enable = false;
-            break;
+            return SafetySupervisor::createEstopCommand();
 
         case FlightState::FLIGHT_STATE_TAKEOFF: {
             cmd.enable = true;
-            double takeoff_z = (use_tube_constraint && tube_rail_z != 0.0f) ? std::abs(tube_rail_z) : 1.0;
-            Pose takeoff_target = {current_pose.x, current_pose.y, takeoff_z, 0, 0, current_pose.yaw, 0, 1.0};
+            Pose takeoff_target = MissionStateMachine::computeTakeoffTarget(
+                current_pose, sequencer.use_tube_constraint, sequencer.tube_rail_z);
             planner.plan(current_pose, takeoff_target, dt);
             cmd.target_x = takeoff_target.x;
             cmd.target_y = takeoff_target.y;
             cmd.target_z = takeoff_target.z;
             cmd.target_yaw = takeoff_target.yaw;
             if (planner.has_arrived(current_pose, takeoff_target)) {
-                state = FlightState::FLIGHT_STATE_PATH_FOLLOWING;
-                new_goal = true;
-                last_completed_goal_pose_ = {current_pose.x, current_pose.y, takeoff_z, 0, 0, current_pose.yaw, 0, 1.0};
+                state_machine.setState(FlightState::FLIGHT_STATE_PATH_FOLLOWING);
+                state = state_machine.getState();
+                sequencer.new_goal = true;
+                sequencer.last_completed_goal_pose_ = takeoff_target;
             }
             break;
         }
 
         case FlightState::FLIGHT_STATE_PATH_FOLLOWING:
         case FlightState::FLIGHT_STATE_GOAL_SEEK: {
-            if (current_seq_index < active_sequence_len) {
-                uint8_t target_shape = goal_sequence[current_seq_index];
+            if (!sequencer.isSequenceComplete()) {
+                uint8_t target_shape = sequencer.getCurrentTargetShape();
                 double current_time = std::chrono::duration<double>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
                 std::vector<TrackedGoal> ests = estimator.getCurrentEstimates(current_time);
-                
+
                 bool found = false;
                 Pose estimated_pose = {};
                 for (const auto& tg : ests) {
@@ -487,19 +325,16 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         break;
                     }
                 }
-                
+
                 if (found) {
-                    if (goal_phase == 0 || goal_phase == 1) {
+                    if (sequencer.goal_phase == 0 || sequencer.goal_phase == 1) {
                         active_target_pose = estimated_pose;
                         has_active_target = true;
                     }
                 } else if (has_active_target) {
-                    // Vision dropped detection (e.g. gate rim clipped by frame edges when close)
-                    // If we already have a locked active target pose, retain it!
                     estimated_pose = active_target_pose;
                     found = true;
                 } else {
-                    // Check if GoalEstimator has a recent last known estimate
                     TrackedGoal stale_g;
                     if (estimator.getLastKnownEstimate(target_shape, stale_g)) {
                         active_target_pose = stale_g.pose;
@@ -508,25 +343,26 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         found = true;
                     }
                 }
-                
+
                 if (found) {
-                    state = FlightState::FLIGHT_STATE_PATH_FOLLOWING;
+                    state_machine.setState(FlightState::FLIGHT_STATE_PATH_FOLLOWING);
+                    state = state_machine.getState();
                     cmd.enable = true;
-                    Pose raw_target = (goal_phase == 2) ? active_target_pose : estimated_pose;
-                    if (use_tube_constraint) {
-                        raw_target.y = tube_rail_y;
-                        if (tube_rail_z != 0.0f) raw_target.z = std::abs(tube_rail_z);
+                    Pose raw_target = (sequencer.goal_phase == 2) ? active_target_pose : estimated_pose;
+                    if (sequencer.use_tube_constraint) {
+                        raw_target.y = sequencer.tube_rail_y;
+                        if (sequencer.tube_rail_z != 0.0f) raw_target.z = std::abs(sequencer.tube_rail_z);
                     }
-                    
-                    if (new_goal || !has_orthogonal_path_) {
-                        new_goal = false;
-                        goal_phase = 0;
-                        standoff_ticks = 0;
-                        align_ticks = 0;
-                        seek_ticks = 0;
-                        traverse_ticks = 0;
+
+                    if (sequencer.new_goal || !has_orthogonal_path_) {
+                        sequencer.new_goal = false;
+                        sequencer.goal_phase = 0;
+                        sequencer.standoff_ticks = 0;
+                        sequencer.align_ticks = 0;
+                        sequencer.seek_ticks = 0;
+                        sequencer.traverse_ticks = 0;
                         updateApproachDirection(raw_target);
-                    } else if (goal_phase < 2) {
+                    } else if (sequencer.goal_phase < 2) {
                         std::vector<TrackedGoal> known_goals = estimator.getAllKnownGoals();
                         std::vector<PathPlanner::Obstacle> obstacles;
                         obstacles.reserve(known_goals.size());
@@ -542,13 +378,12 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         approach_dz = active_orthogonal_path_.normal_z;
                     }
 
-                    if (goal_phase == 0) {
-                        standoff_ticks++;
+                    if (sequencer.goal_phase == 0) {
+                        sequencer.standoff_ticks++;
                         PathPlanner::StandoffPlan plan_res = planner.planStandoffTarget(
                             current_pose, raw_target, approach_dx, approach_dy);
                         Pose adjusted_target = plan_res.target_pose;
 
-                        // Repulsion avoidance from non-target goals (No-Go Keep-Out Zones)
                         double des_vx = adjusted_target.x - current_pose.x;
                         double des_vy = adjusted_target.y - current_pose.y;
                         double apf_vx = 0.0, apf_vy = 0.0, apf_off_x = 0.0, apf_off_y = 0.0;
@@ -565,12 +400,12 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         cmd.target_yaw = adjusted_target.yaw;
 
                         if (planner.isStandoffReached(current_pose, active_orthogonal_path_.entry_point, adjusted_target,
-                                                      approach_dx, approach_dy, plan_res.dot_fwd, standoff_ticks)) {
-                            goal_phase = 1;
-                            align_ticks = 0;
+                                                      approach_dx, approach_dy, plan_res.dot_fwd, sequencer.standoff_ticks)) {
+                            sequencer.goal_phase = 1;
+                            sequencer.align_ticks = 0;
                         }
-                    } else if (goal_phase == 1) {
-                        align_ticks++;
+                    } else if (sequencer.goal_phase == 1) {
+                        sequencer.align_ticks++;
                         Pose adjusted_target = active_orthogonal_path_.entry_point;
 
                         planner.plan(current_pose, adjusted_target, dt, 0.0, 0.0);
@@ -580,13 +415,13 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         cmd.target_yaw = adjusted_target.yaw;
 
                         if (planner.isBoresightAligned(current_pose, raw_target, adjusted_target,
-                                                       approach_dx, approach_dy, align_ticks)) {
-                            goal_phase = 2;
-                            align_ticks = 0;
-                            traverse_ticks = 0;
+                                                       approach_dx, approach_dy, sequencer.align_ticks)) {
+                            sequencer.goal_phase = 2;
+                            sequencer.align_ticks = 0;
+                            sequencer.traverse_ticks = 0;
                         }
                     } else {
-                        traverse_ticks++;
+                        sequencer.traverse_ticks++;
                         Pose step_target = planner.planOrthogonalTraversalTarget(current_pose, active_orthogonal_path_, 0.35);
                         cmd.target_x = step_target.x;
                         cmd.target_y = step_target.y;
@@ -595,33 +430,23 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
 
                         planner.plan(current_pose, active_orthogonal_path_.exit_point, dt, 0.0, 0.0);
 
-                        if (planner.isOrthogonalTraversalCompleted(current_pose, active_orthogonal_path_, traverse_ticks)) {
-                            last_completed_goal_pose_ = raw_target;
-                            last_approach_dx_ = approach_dx;
-                            last_approach_dy_ = approach_dy;
-                            current_seq_index++;
-                            new_goal = true;
-                            has_active_target = false;
-                            has_orthogonal_path_ = false;
-                            goal_phase = 0;
-                            align_ticks = 0;
-                            standoff_ticks = 0;
-                            traverse_ticks = 0;
+                        if (planner.isOrthogonalTraversalCompleted(current_pose, active_orthogonal_path_, sequencer.traverse_ticks)) {
+                            sequencer.advanceSequence(raw_target);
                         }
                     }
                 } else {
-                    // Search behavior: orient and localize search using stale estimate if available
-                    state = FlightState::FLIGHT_STATE_GOAL_SEEK;
+                    state_machine.setState(FlightState::FLIGHT_STATE_GOAL_SEEK);
+                    state = state_machine.getState();
                     cmd.enable = true;
-                    seek_ticks++;
+                    sequencer.seek_ticks++;
 
                     TrackedGoal stale_goal;
                     bool has_stale = estimator.getLastKnownEstimate(target_shape, stale_goal);
 
                     if (has_stale) {
-                        if (new_goal) {
+                        if (sequencer.new_goal) {
                             updateApproachDirection(stale_goal.pose);
-                            new_goal = false;
+                            sequencer.new_goal = false;
                         }
                         PathPlanner::StandoffPlan seek_plan = planner.planStandoffTarget(
                             current_pose, stale_goal.pose, approach_dx, approach_dy);
@@ -632,24 +457,23 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         double dist_to_goal = std::hypot(current_pose.x - stale_goal.pose.x,
                                                          current_pose.y - stale_goal.pose.y);
 
-                        // If close to standoff (< 0.60m) or within proximity in front (< 1.2m), adopt target!
                         if (dist_to_standoff < 0.60 || (dist_to_goal < 1.2 && seek_plan.dot_fwd <= -0.20)) {
                             active_target_pose = stale_goal.pose;
                             has_active_target = true;
-                            state = FlightState::FLIGHT_STATE_PATH_FOLLOWING;
-                            goal_phase = 0;
-                            align_ticks = 0;
-                            standoff_ticks = 0;
-                            seek_ticks = 0;
-                            traverse_ticks = 0;
-                            new_goal = true;
+                            state_machine.setState(FlightState::FLIGHT_STATE_PATH_FOLLOWING);
+                            state = state_machine.getState();
+                            sequencer.goal_phase = 0;
+                            sequencer.align_ticks = 0;
+                            sequencer.standoff_ticks = 0;
+                            sequencer.seek_ticks = 0;
+                            sequencer.traverse_ticks = 0;
+                            sequencer.new_goal = true;
                             updateApproachDirection(stale_goal.pose);
                             Pose standoff_target_entry = planner.planStandoffTarget(
                                 current_pose, stale_goal.pose, approach_dx, approach_dy).entrance_standoff;
                             cmd = planner.plan(current_pose, standoff_target_entry, dt);
                             return cmd;
                         } else {
-                            // Fly toward the standoff position in front of the gate entrance
                             double des_vx = standoff_target.x - current_pose.x;
                             double des_vy = standoff_target.y - current_pose.y;
                             double apf_vx = 0.0, apf_vy = 0.0, apf_off_x = 0.0, apf_off_y = 0.0;
@@ -659,12 +483,10 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                             cmd.target_x = standoff_target.x + apf_off_x;
                             cmd.target_y = standoff_target.y + apf_off_y;
                             cmd.target_z = standoff_target.z;
-                            // Orient toward the goal so the camera acquires it along the flight path
                             cmd.target_yaw = std::atan2(stale_goal.pose.y - current_pose.y,
                                                         stale_goal.pose.x - current_pose.x);
                         }
                     } else {
-                        // Fallback: smooth scan sweep to acquire initial lock on the goal
                         double apf_vx = 0.0, apf_vy = 0.0, apf_off_x = 0.0, apf_off_y = 0.0;
                         computeNonTargetRepulsion(current_pose, target_shape, 0.0, 0.0,
                                                   apf_vx, apf_vy, apf_off_x, apf_off_y);
@@ -679,42 +501,47 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     return cmd;
                 }
             } else {
-                if (configured_end_action == MISSION_END_LAND) {
-                    state = FlightState::FLIGHT_STATE_LANDING;
+                if (sequencer.configured_end_action == MISSION_END_LAND) {
+                    state_machine.handleLandCommand();
                 } else {
-                    state = FlightState::FLIGHT_STATE_HOVER_WAIT;
+                    state_machine.handlePauseMissionCommand();
                     hover_pose_ = current_pose;
                     has_hover_pose_ = true;
                 }
+                state = state_machine.getState();
             }
             break;
         }
 
-        case FlightState::FLIGHT_STATE_HOVER_WAIT:
+        case FlightState::FLIGHT_STATE_HOVER_WAIT: {
             cmd.enable = true;
-            if (!has_hover_pose_) {
-                hover_pose_ = current_pose;
-                has_hover_pose_ = true;
-            }
+            Pose hover_target = MissionStateMachine::computeHoverHold(current_pose, has_hover_pose_, hover_pose_);
+            hover_pose_ = hover_target;
+            has_hover_pose_ = true;
             cmd.target_x = hover_pose_.x;
             cmd.target_y = hover_pose_.y;
             cmd.target_z = hover_pose_.z;
             cmd.target_yaw = hover_pose_.yaw;
             planner.plan(current_pose, hover_pose_, dt);
             break;
+        }
 
-        case FlightState::FLIGHT_STATE_LANDING:
+        case FlightState::FLIGHT_STATE_LANDING: {
             cmd.enable = true;
-            cmd.target_x = current_pose.x;
-            cmd.target_y = current_pose.y;
-            cmd.target_z = std::max(0.0, current_pose.z - 0.40 * dt);
-            cmd.target_yaw = current_pose.yaw;
-            planner.plan(current_pose, {cmd.target_x, cmd.target_y, cmd.target_z, 0, 0, cmd.target_yaw, 0, 1.0}, dt);
-            if (current_pose.z <= 0.05) {
-                state = FlightState::FLIGHT_STATE_ROTOR_STOPPED;
+            bool touchdown = false;
+            Pose land_target = MissionStateMachine::computeLandingStep(current_pose, dt, touchdown);
+            cmd.target_x = land_target.x;
+            cmd.target_y = land_target.y;
+            cmd.target_z = land_target.z;
+            cmd.target_yaw = land_target.yaw;
+            planner.plan(current_pose, land_target, dt);
+            if (touchdown) {
+                state_machine.setState(FlightState::FLIGHT_STATE_ROTOR_STOPPED);
+                state = state_machine.getState();
                 is_armed = 0;
             }
             break;
+        }
 
         case FlightState::FLIGHT_STATE_ROTOR_STOPPED:
         case FlightState::FLIGHT_STATE_STANDBY_DISARM:
@@ -738,7 +565,7 @@ void AutopilotNode::run() {
         auto now = std::chrono::steady_clock::now();
         double dt = std::chrono::duration<double>(now - last_time).count();
         last_time = now;
-        
+
         if (dt > 0.1) dt = 0.1;
 
         Telemetry telem = fcu.getTelemetry();
@@ -763,11 +590,9 @@ void AutopilotNode::run() {
             telem_pkt.goals[i] = goals[i];
         }
 
-        if (telem_sock >= 0) {
-            sendto(telem_sock, &telem_pkt, sizeof(telem_pkt), 0, (struct sockaddr *)&telem_dest, sizeof(telem_dest));
-        }
+        telemetry_bridge.sendTelemetry(telem_pkt);
 
-        logger.log("state", (int)state);
+        logger.log("state", static_cast<int>(state));
         logger.log("cmd_tx", cmd.target_x);
         logger.log("cmd_ty", cmd.target_y);
         logger.log("cmd_tz", cmd.target_z);
