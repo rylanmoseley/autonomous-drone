@@ -27,16 +27,19 @@ bool MavlinkMessageDispatcher::dispatchPacket(const uint8_t* buffer, size_t len)
     }
 
     if (msgid == MAVLINK_MSG_ID_LOCAL_POSITION_NED && payload_len >= sizeof(MavlinkLocalPositionNed)) {
-        const auto* pos = reinterpret_cast<const MavlinkLocalPositionNed*>(payload);
-        dispatchLocalPositionNed(*pos);
+        MavlinkLocalPositionNed pos{};
+        std::memcpy(&pos, payload, sizeof(pos));
+        dispatchLocalPositionNed(pos);
         return true;
     } else if (msgid == MAVLINK_MSG_ID_ATTITUDE && payload_len >= sizeof(MavlinkAttitude)) {
-        const auto* att = reinterpret_cast<const MavlinkAttitude*>(payload);
-        dispatchAttitude(*att);
+        MavlinkAttitude att{};
+        std::memcpy(&att, payload, sizeof(att));
+        dispatchAttitude(att);
         return true;
     } else if (msgid == MAVLINK_MSG_ID_VISION_POSITION_ESTIMATE && payload_len >= sizeof(MavlinkVisionPositionEstimate)) {
-        const auto* vpe = reinterpret_cast<const MavlinkVisionPositionEstimate*>(payload);
-        dispatchVisionPositionEstimate(*vpe);
+        MavlinkVisionPositionEstimate vpe{};
+        std::memcpy(&vpe, payload, sizeof(vpe));
+        dispatchVisionPositionEstimate(vpe);
         return true;
     }
 

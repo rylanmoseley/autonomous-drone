@@ -23,8 +23,12 @@ except ImportError:
             if "websockets" in dirs:
                 sys.path.insert(0, root)
                 break
-    import websockets
-    from websockets.server import serve
+    try:
+        import websockets
+        from websockets.server import serve
+    except ImportError:
+        websockets = None
+        serve = None
 
 from http import HTTPStatus
 import urllib.parse
@@ -1214,6 +1218,8 @@ async def handler(websocket):
         task.cancel()
 
 async def main(port=5000):
+    if serve is None:
+        raise RuntimeError("websockets is required to run the simulation server. Please install websockets: pip install websockets or sudo apt install python3-websockets")
     print(f"Autopilot Simulation Server running at http://localhost:{port}")
     async with serve(handler, "", port, process_request=process_request):
         await asyncio.Future()

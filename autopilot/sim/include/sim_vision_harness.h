@@ -3,10 +3,17 @@
 #include "sim_types.h"
 #include "vision_packet.h"
 #include "flight_control_interface.h"
-#include "gate_detector.h"
 #include <vector>
 #include <string>
+
+#if defined(HAVE_OPENCV)
+  #define SIM_HAS_OPENCV 1
+#endif
+
+#ifdef SIM_HAS_OPENCV
+#include "gate_detector.h"
 #include <opencv2/opencv.hpp>
+#endif
 
 namespace sim {
 
@@ -43,6 +50,7 @@ public:
         uint32_t sequence_id,
         double current_time);
 
+#ifdef SIM_HAS_OPENCV
     // Renders the drone camera view (320x240 BGR) from the true drone pose and simulated goals
     cv::Mat renderFrame(
         const Pose& true_pose,
@@ -51,20 +59,25 @@ public:
     // Direct access to underlying GateDetector instance
     vision::GateDetector& getDetector() { return detector_; }
     const vision::GateDetector& getDetector() const { return detector_; }
+#endif
 
 private:
     SimPerceptionConfig config_;
+#ifdef SIM_HAS_OPENCV
     vision::GateDetector detector_;
+    mutable cv::Mat render_buffer_;
+#endif
 
     // UDP IPC for hooking into running vision_node
     int udp_tx_sock_{-1};
     int udp_rx_sock_{-1};
-    mutable cv::Mat render_buffer_;
 
     void initSockets();
     void closeSockets();
     bool tryReceiveRunningSimulationPacket(VisionPacket& packet);
+#ifdef SIM_HAS_OPENCV
     void sendFrameToRunningSimulation(const cv::Mat& frame);
+#endif
 };
 
 } // namespace sim

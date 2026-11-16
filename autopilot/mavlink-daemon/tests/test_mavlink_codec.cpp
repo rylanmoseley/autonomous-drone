@@ -23,11 +23,12 @@ TEST(MavlinkCodecTest, EncodeMsg84SetPositionTarget) {
     EXPECT_TRUE(ok);
     EXPECT_EQ(msgid, MAVLINK_MSG_ID_SET_POSITION_TARGET_LOCAL_NED);
 
-    const auto* tgt = reinterpret_cast<const MavlinkSetPositionTargetLocalNed*>(payload);
-    EXPECT_FLOAT_EQ(tgt->x, 3.5f);
-    EXPECT_FLOAT_EQ(tgt->y, -2.0f);
-    EXPECT_FLOAT_EQ(tgt->z, -1.5f);
-    EXPECT_FLOAT_EQ(tgt->yaw, 0.785f);
+    MavlinkSetPositionTargetLocalNed tgt{};
+    std::memcpy(&tgt, payload, sizeof(tgt));
+    EXPECT_FLOAT_EQ(tgt.x, 3.5f);
+    EXPECT_FLOAT_EQ(tgt.y, -2.0f);
+    EXPECT_FLOAT_EQ(tgt.z, -1.5f);
+    EXPECT_FLOAT_EQ(tgt.yaw, 0.785f);
 }
 
 TEST(MavlinkCodecTest, EncodeMsg102VisionPositionEstimate) {
@@ -49,12 +50,13 @@ TEST(MavlinkCodecTest, EncodeMsg102VisionPositionEstimate) {
     EXPECT_TRUE(ok);
     EXPECT_EQ(msgid, MAVLINK_MSG_ID_VISION_POSITION_ESTIMATE);
 
-    const auto* parsed = reinterpret_cast<const MavlinkVisionPositionEstimate*>(payload);
-    EXPECT_EQ(parsed->usec, 500000u);
-    EXPECT_FLOAT_EQ(parsed->x, 1.0f);
-    EXPECT_FLOAT_EQ(parsed->y, 2.0f);
-    EXPECT_FLOAT_EQ(parsed->z, -0.5f);
-    EXPECT_FLOAT_EQ(parsed->yaw, 1.2f);
+    MavlinkVisionPositionEstimate parsed{};
+    std::memcpy(&parsed, payload, sizeof(parsed));
+    EXPECT_EQ(parsed.usec, 500000u);
+    EXPECT_FLOAT_EQ(parsed.x, 1.0f);
+    EXPECT_FLOAT_EQ(parsed.y, 2.0f);
+    EXPECT_FLOAT_EQ(parsed.z, -0.5f);
+    EXPECT_FLOAT_EQ(parsed.yaw, 1.2f);
 }
 
 TEST(MavlinkCodecTest, RejectCorruptedCrc) {

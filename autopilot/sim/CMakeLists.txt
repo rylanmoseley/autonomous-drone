@@ -17,9 +17,16 @@ target_include_directories(autopilot_sim PUBLIC
 
 target_link_libraries(autopilot_sim PUBLIC
     autopilot_core
-    gate_detector
-    ${OpenCV_LIBS}
 )
+
+if(TARGET gate_detector)
+    target_link_libraries(autopilot_sim PUBLIC gate_detector)
+endif()
+
+if(OpenCV_FOUND)
+    target_link_libraries(autopilot_sim PUBLIC ${OpenCV_LIBS})
+    target_compile_definitions(autopilot_sim PUBLIC HAVE_OPENCV=1)
+endif()
 
 # Standalone CLI Scenario Runner
 add_executable(autopilot_sim_runner

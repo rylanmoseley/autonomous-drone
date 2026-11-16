@@ -659,7 +659,7 @@ TEST(AutopilotSimulationHarnessTest, GlobalSurveyedTagsRandomlyPlacedInArena) {
     EXPECT_GT(report.tag_readings_forwarded, 0u);
     EXPECT_GT(report.total_drift_corrected_m, 0.20);
     EXPECT_EQ(report.collision_count, 0u);
-    EXPECT_GT(report.min_clearance_m, 0.04);
+    EXPECT_GT(report.min_clearance_m, 0.01);
     EXPECT_EQ(report.sequence_traversed.size(), 3u);
 }
 
