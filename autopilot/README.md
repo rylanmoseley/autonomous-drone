@@ -3,8 +3,9 @@
 [![Language](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
 [![Loop Rate](https://img.shields.io/badge/Loop%20Rate-20%20Hz%20(50%20ms)-brightgreen.svg)](#core-architecture--loop-lifecycle)
 [![MAVLink](https://img.shields.io/badge/Protocol-MAVLink%20v2-orange.svg)](../shared/include/mavlink_protocol.h)
+[![Tests](https://img.shields.io/badge/Tests-68%20CTest%20%7C%2024%20PyUnit-brightgreen.svg)](#building--testing)
 
-The **Autopilot Subsystem** serves as the central coordination hub of the HEXAGON Flight autonomous quadcopter. Operating hierarchically on the companion Single-Board Computer (**Radxa Zero 3W**), it manages mission lifecycle state execution, stateful gate position filtering, kinematic trajectory generation with obstacle avoidance, MAVLink bridge execution to the ArduPilot Flight Controller Unit (FCU), and Software-in-the-Loop (SIL) simulation.
+The **Autopilot Subsystem** serves as the central coordination hub of the HEXAGON Flight autonomous quadcopter. Operating on the companion Single-Board Computer (**Radxa Zero 3W**), it manages mission lifecycle states, stateful gate position filtering, 3D orthogonal trajectory planning, artificial potential field (APF) obstacle avoidance, MAVLink bridge execution to the ArduPilot Flight Controller Unit (FCU), and Software-in-the-Loop (SIL) simulation.
 
 ---
 
@@ -12,11 +13,13 @@ The **Autopilot Subsystem** serves as the central coordination hub of the HEXAGO
 
 - [Core Architecture & Loop Lifecycle](#core-architecture--loop-lifecycle)
 - [Subsystem Directory Layout](#subsystem-directory-layout)
+- [Subsystem Documentation](#subsystem-documentation)
 - [Algorithmic Formulations](#algorithmic-formulations)
-  - [1. Stateful Goal Position Estimator](#1-stateful-goal-position-estimator)
-  - [2. Artificial Potential Field (APF) Path Planner](#2-artificial-potential-field-apf-path-planner)
-  - [3. Authoritative Surveyed Tag Map (Compile-Time ROM)](#3-authoritative-surveyed-tag-map-compile-time-rom)
-  - [4. MAVLink v2 Protocol & Drift Correction Bridge](#4-mavlink-v2-protocol--drift-correction-bridge)
+  - [1. 3D Orthogonal Path Generation & Sign-Locked Traversal](#1-3d-orthogonal-path-generation--sign-locked-traversal)
+  - [2. Stateful Goal Position Estimator & Outlier Rejection](#2-stateful-goal-position-estimator--outlier-rejection)
+  - [3. Artificial Potential Field (APF) Path Planner](#3-artificial-potential-field-apf-path-planner)
+  - [4. Authoritative Surveyed Tag Map (Compile-Time ROM)](#4-authoritative-surveyed-tag-map-compile-time-rom)
+  - [5. MAVLink v2 Protocol & Drift Correction Bridge](#5-mavlink-v2-protocol--drift-correction-bridge)
 - [Safety Watchdogs & Failsafes](#safety-watchdogs--failsafes)
 - [Software-in-the-Loop (SIL) Simulation](#software-in-the-loop-sil-simulation)
 - [Building & Testing](#building--testing)
@@ -39,23 +42,25 @@ flowchart TD
     end
 
     subgraph AutopilotNode ["AutopilotNode 20 Hz Deterministic Loop"]
-        V_IN["handleVisionPacket()"] --> GE["GoalEstimator\n(Exponential Filter & Covariance)"]
-        V_IN --> TAG_ROUTER{"Is Tag in Survey Map?"}
-        TAG_ROUTER -- Yes --> MD_EST["fcu.sendVisionPositionEstimate()\n(MAVLink #102 -> EKF3)"]
+        V_IN["handleVisionPacket()"] --> PC["PerceptionCoordinator\n• Attitude Projection\n• Cage Bounds Gating\n• Tag Routing"]
+        PC --> GE["GoalEstimator\n(Exponential Filter & Outlier Filter)"]
+        PC -- Valid Tag --> MD_EST["fcu.sendVisionPositionEstimate()\n(MAVLink #102 -> EKF3)"]
 
-        UI_IN["handleUIPacket()"] --> SM["Mission State Machine\n(STANDBY -> TAKEOFF -> SEEK -> TRAVERSAL -> LAND)"]
-        FCU_IN --> F_IN["handleFlightTelemetry()"]
+        UI_IN["handleUICommand()"] --> SM["MissionStateMachine\n(STANDBY -> TAKEOFF -> PATH_FOLLOWING -> HOVER -> LAND)"]
+        UI_IN --> SQ["MissionSequencer\n(Standoff -> Align -> Traversal -> Next)"]
+        FCU_IN --> MD["MavlinkMessageDispatcher"]
 
-        SM --> PP["PathPlanner::computeVelocity()\n• Attractive Waypoint Force\n• Repulsive Obstacle Field\n• Vortex Swirl Anti-Lockup"]
+        SM --> PP["PathPlanner\n• Orthogonal Traversal Line\n• Standoff Corridor\n• APF Obstacle Repulsion"]
 
-        WD["Watchdog & Failsafe Evaluator\n• Vision Loss Timeout (200 ms)\n• Link Loss Watchdog\n• Low-Voltage Autoland"]
+        WD["SafetySupervisor\n• Vision Loss Timeout (200 ms)\n• FCU Watchdog (1.0 s)\n• Instant Disarm Override"]
     end
 
     subgraph Outputs ["Command & Telemetry Egress"]
-        PP --> CMD_OUT["fcu.sendVelocityCommand()\n(MAVLink #84 SET_POSITION_TARGET)"]
-        WD -- Trigger --> CMD_ESTOP["fcu.disarm()\n(Instantaneous Cutoff <= 150 ms)"]
-        AutopilotNode --> LOG_OUT["UdpTelemetryLogger :14554\n(FlightTelemetryPacket)"]
-        AutopilotNode --> UI_OUT["UIStatusPacket :14552\n(Sequence ACK, Mode, Battery)"]
+        PP --> CMD_OUT["fcu.sendFlightCommand()\n(MAVLink #84 SET_POSITION_TARGET)"]
+        WD -- Trigger --> CMD_ESTOP["fcu.sendFlightCommand(estop)\n(Instantaneous Cutoff <= 150 ms)"]
+        AutopilotNode --> LOG_OUT["UdpTelemetryLogger :14557\n(FlightTelemetry)"]
+        AutopilotNode --> TB_OUT["TelemetryBridge :14554\n(TelemetryPacket Broadcast)"]
+        AutopilotNode --> UI_OUT["TelemetryBridge :14552\n(UIStatusPacket)"]
     end
 ```
 
@@ -65,132 +70,152 @@ flowchart TD
 
 ```
 autopilot/
-├── CMakeLists.txt                 # Autopilot build configuration & code generator rules
-├── autopilot_node.h               # Master coordinating class declaration
-├── autopilot_node.cpp             # Implementation of 20 Hz loop, state machine, and IPC
-├── main.cpp                       # Production SBC entry point executable
+├── CMakeLists.txt                         # Autopilot build configuration & code generator rules
+├── autopilot_node.h                       # Master coordinating class declaration
+├── autopilot_node.cpp                     # Implementation of 20 Hz loop, state machine, and IPC
+├── main.cpp                               # Production SBC entry point executable
+├── mission_state_machine.h/.cpp           # FlightState transitions, takeoff & landing profiles
+├── mission_sequencer.h/.cpp               # Waypoint sequence queue & goal progression phases
+├── perception_coordinator.h/.cpp          # Surveyed tag registry & vision projection
+├── safety_supervisor.h/.cpp               # Watchdogs & fail-safe emergency stop
+├── telemetry_bridge.h/.cpp                # Socket lifecycle & UDP broadcasting
 ├── config/
-│   └── surveyed_tags.json         # Human-readable JSON arena survey of fiducial tags
+│   └── surveyed_tags.json                 # Human-readable JSON arena survey of fiducial tags
 ├── scripts/
-│   └── generate_tag_map.py        # Python pre-compiler generating constexpr ROM header
+│   └── generate_tag_map.py                # Python pre-compiler generating constexpr ROM header
 ├── include/
-│   └── generated_surveyed_tags.h  # Auto-generated zero-allocation ROM lookup table
-├── goal-estimator/                # Goal tracking library
-│   ├── goal_estimator.h
-│   ├── goal_estimator.cpp
-│   └── tests/test_estimator.cpp
-├── path-planner/                  # Kinematic APF path planning library
-│   ├── path_planner.h
-│   ├── path_planner.cpp
-│   └── tests/test_planner.cpp
-├── mavlink-daemon/                # Zero-dependency MAVLink v2 serial/socket bridge
-│   ├── mavlink_daemon.h
-│   ├── mavlink_daemon.cpp
-│   └── tests/test_mavlink.cpp
-├── sim/                           # 3D Software-in-the-Loop simulation suite
-│   ├── include/
-│   │   ├── autopilot_sim_harness.h # Mock sensor injection & closed-loop verification
-│   │   └── follower_simulator.h   # Kinematic quadcopter model with lag, noise & drift
-│   ├── src/
-│   │   ├── autopilot_sim_harness.cpp
-│   │   ├── follower_simulator.cpp
-│   │   └── sim_runner_main.cpp    # Headless CLI scenario runner
-│   ├── sim_web.py                 # Real-time WebSocket 3D browser visualizer
-│   └── tests/test_autopilot_sim.cpp
-└── tests/
-    └── test_autopilot.cpp         # Integration tests for state machine & ROM tag map
+│   └── generated_surveyed_tags.h          # Auto-generated zero-allocation ROM lookup table
+├── docs/                                  # Detailed subsystem documentation
+│   ├── README.md                          # Documentation index
+│   ├── architecture.md                    # Threading, IPC, and coordinate frames
+│   ├── mission_core.md                    # State machine & sequencer
+│   ├── path_planner.md                    # Orthogonal line generator & APF
+│   ├── goal_estimator.md                  # Noise filters & spatial tracking
+│   ├── mavlink_daemon.md                  # MAVLink v2 bridge & codecs
+│   └── simulation.md                      # SIL testbed & collision detectors
+├── goal-estimator/                        # Modular goal tracking library
+│   ├── tracked_goal.h                     # Data structures for tracked goals
+│   ├── goal_track_filter.h/.cpp           # Alpha damping, jump filter, yaw symmetry
+│   ├── goal_registry.h/.cpp               # Thread-safe track storage & timeouts
+│   ├── goal_telemetry_formatter.h/.cpp    # Telemetry state formatting
+│   ├── goal_estimator.h/.cpp              # Coordinator facade
+│   └── tests/                             # Isolated unit tests
+├── path-planner/                          # Modular path planning library
+│   ├── kinematic_profile_filter.h/.cpp    # Velocity & acceleration saturation
+│   ├── approach_corridor_planner.h/.cpp   # Standoff geometry & entrance corridor
+│   ├── orthogonal_path_generator.h/.cpp   # 3D normal vectors & traversal paths
+│   ├── obstacle_avoidance_potential_field.h/.cpp # Repulsive fields & exclusion
+│   ├── phase_alignment_evaluator.h/.cpp   # Standoff arrival & punch-through
+│   ├── path_planner.h/.cpp                # Coordinator facade
+│   └── tests/                             # Isolated unit tests
+├── mavlink-daemon/                        # Zero-dependency MAVLink v2 bridge
+│   ├── mavlink_packet_codec.h/.cpp        # Msg #84 & Msg #102 framing & CRC
+│   ├── mavlink_message_dispatcher.h/.cpp  # Inbound packet handling & NED/NEU conversion
+│   ├── mavlink_network_channel.h/.cpp     # UDP socket lifecycle & receive thread
+│   ├── mavlink_fcu_watchdog.h             # Connection watchdog
+│   ├── mavlink_daemon.h/.cpp              # Coordinator facade
+│   └── tests/                             # Isolated unit tests
+└── sim/                                   # 3D Software-in-the-Loop simulation suite
+    ├── include/
+    │   ├── sim_types.h                    # Ground-truth simulation structures
+    │   ├── collision_detector.h           # Torus rim & pylon collision model
+    │   ├── sim_camera_perception.h        # Frustum FOV, occlusion & tag sightings
+    │   ├── autopilot_sim_harness.h        # Closed-loop test harness
+    │   └── follower_simulator.h           # Kinematic drone model with lag, noise & drift
+    ├── src/
+    │   ├── collision_detector.cpp
+    │   ├── sim_camera_perception.cpp
+    │   ├── autopilot_sim_harness.cpp
+    │   ├── follower_simulator.cpp
+    │   └── sim_runner_main.cpp            # Headless CLI scenario runner
+    ├── sim_web.py                         # Real-time WebSocket 3D browser visualizer
+    └── tests/                             # SIL unit and scenario tests
 ```
+
+---
+
+## Subsystem Documentation
+
+Comprehensive technical documentation for each component is available in [`docs/`](docs/README.md):
+
+- [**System Architecture & Threading Model**](docs/architecture.md)
+- [**Mission Core & State Machine**](docs/mission_core.md)
+- [**Path Planner Subsystem**](docs/path_planner.md)
+- [**Goal Estimator Subsystem**](docs/goal_estimator.md)
+- [**MAVLink Daemon Subsystem**](docs/mavlink_daemon.md)
+- [**Simulation Subsystem & Collision Detection**](docs/simulation.md)
 
 ---
 
 ## Algorithmic Formulations
 
-### 1. Stateful Goal Position Estimator
-Incoming gate observations relative to the camera frame are transformed into World NED coordinates and filtered by [`GoalEstimator`](goal-estimator/goal_estimator.h) using a first-order exponential temporal filter:
+### 1. 3D Orthogonal Path Generation & Sign-Locked Traversal
+The drone traverses each gate strictly along a 3D line segment perpendicular to the gate aperture through its widest point ([`OrthogonalPathGenerator`](path-planner/orthogonal_path_generator.h)):
 
-$$\hat{p}_k = \alpha p_{\text{meas},k} + (1-\alpha)\hat{p}_{k-1}$$
-
-where $\hat{p}_k = [\hat{x}_k, \hat{y}_k, \hat{z}_k]^T$ is the smoothed 3D position vector in the arena frame, $p_{\text{meas},k}$ is the instantaneous camera observation, and $\alpha = 0.5$ is the temporal smoothing factor. The estimator tracks running spatial variance:
-
-$$\sigma_k^2 = (1-\alpha)\sigma_{k-1}^2 + \alpha |p_{\text{meas},k} - \hat{p}_k|^2$$
-
-Goal tracking states transition deterministically:
-- `SEARCHING (0)`: No detections or high measurement noise.
-- `CONVERGING (1)`: Target detected; accumulating confidence.
-- `LOCKED (2)`: Spatial variance satisfies $\sigma^2 \le 0.04\text{ m}^2$ (ready for flight traversal).
-- `OCCLUDED (3)`: Target lost for $> 0.5\text{ s}$; persists last known estimate before re-searching.
+1. **3D Unit Normal Vector**: Derived from the gate's 3D orientation ($\phi, \theta, \psi$):
+   $$\hat{n} = [\cos(\psi)\cos(\theta), \ \sin(\psi)\cos(\theta), \ -\sin(\theta)]^T$$
+2. **Traversal Sign Locking**: Determined by the vehicle's initial entrance side:
+   $$\Delta = (p_{\text{drone}} - p_{\text{gate}}) \cdot \hat{n}$$
+   If $\Delta \ge 0$, entry is from the $+ \hat{n}$ face (`traversal_sign = -1.0`); otherwise entry is from the $- \hat{n}$ face (`traversal_sign = +1.0`). Once assigned, the direction sign is strictly locked to prevent corridor flips under sensor noise.
+3. **Standoff Targets**: With standoff $d_s = 0.75\text{ m}$:
+   $$p_{\text{entry}} = p_{\text{gate}} - \text{sign} \cdot d_s \cdot \hat{n}, \quad p_{\text{exit}} = p_{\text{gate}} + \text{sign} \cdot d_s \cdot \hat{n}$$
 
 ---
 
-### 2. Artificial Potential Field (APF) Path Planner
-The kinematic solver [`PathPlanner`](path-planner/path_planner.h) computes 3D translational velocity vectors to guide the quadcopter cleanly through target gates while avoiding collisions with non-target obstacles.
+### 2. Stateful Goal Position Estimator & Outlier Rejection
+Incoming gate observations are filtered by [`GoalEstimator`](goal-estimator/goal_estimator.h) using exponential temporal smoothing and multi-frame glitch rejection:
 
-For each target gate, trajectory generation establishes approach and exit waypoints offset along the gate aperture normal $\hat{n}_{\text{gate}}$:
-$$w_{\text{approach}} = \hat{p}_{\text{gate}} - d_{\text{standoff}} \hat{n}_{\text{gate}}, \quad w_{\text{exit}} = \hat{p}_{\text{gate}} + d_{\text{standoff}} \hat{n}_{\text{gate}}$$
-with standoff distance $d_{\text{standoff}} = 0.50\text{ m}$.
+1. **Exponential Smoothing**:
+   $$\hat{p}_k = \alpha_{\text{eff}} \cdot p_{\text{meas}} + (1 - \alpha_{\text{eff}}) \cdot \hat{p}_{k-1}$$
+   Damped to $\alpha_{\text{eff}} = 0.125$ for edge-clipped or low-confidence contours.
+2. **Spatial Outlier Rejection**: Discards single-frame anomalous jumps $> 0.35\text{ m}$. If $\ge 3$ consecutive frames confirm the new location, the filter concludes the gate legitimately moved and snaps to the new position.
+3. **Planar Yaw Symmetry Projection**: For planar symmetric gates, normal vector flips $> 90^\circ$ are projected back:
+   $$\Delta\psi \leftarrow \Delta\psi - \operatorname{sgn}(\Delta\psi)\pi \quad \text{if } |\Delta\psi| > \frac{\pi}{2}$$
 
-The commanded velocity combines three vector components:
-1. **Attractive Field**: Guides vehicle toward the active waypoint:
+---
+
+### 3. Artificial Potential Field (APF) Path Planner
+The kinematic planner ([`PathPlanner`](path-planner/path_planner.h)) combines waypoint guidance with obstacle avoidance:
+
+1. **Attractive Field**: Guides vehicle toward active waypoint $w$:
    $$v_{\text{att}} = k_{\text{att}} \frac{w - p}{\|w - p\|}$$
-2. **Repulsive Obstacle Field**: Pushes away from non-target obstacles within influence radius $d_{\text{influence}}$:
+2. **Repulsive Obstacle Field**: Repels vehicle from non-target gates within influence radius $d_{\text{influence}} = 0.80\text{ m}$:
    $$v_{\text{rep},i} = k_{\text{rep}} \left(\frac{1}{d_i} - \frac{1}{d_{\text{influence}}}\right) \frac{r_i}{d_i^3}$$
-3. **Orthogonal Vortex Swirl Field**: Injected perpendicular to the line of centers to prevent collinear local minima lockup:
-   $$v_{\text{vortex},i} = k_{\text{vortex}} [-r_{y,i}, r_{x,i}, 0]^T$$
-
-The total velocity vector is clamped against physical kinematic ceilings:
-$$v_{\text{cmd}} = \operatorname{clamp}\left(v_{\text{att}} + \sum v_{\text{rep},i} + \sum v_{\text{vortex},i}, v_{\max}\right)$$
-with $v_{xy,\max} = 2.0\text{ m/s}$ horizontally and $v_{z,\max} = 1.0\text{ m/s}$ vertically, satisfying **ER 3** and **ER 6**.
+3. **Kinematic Clamping**: Enforces horizontal ceiling $v_{xy,\max} = 2.0\text{ m/s}$, vertical ceiling $v_{z,\max} = 1.0\text{ m/s}$, and yaw rate $\dot{\psi}_{\max} = 1.0\text{ rad/s}$.
 
 ---
 
-### 3. Authoritative Surveyed Tag Map (Compile-Time ROM)
-As established in system requirements, **the Autopilot (not the FCU) is the authoritative owner of the arena survey coordinates**.
-
-1. **Configuration**: Surveyed tags are specified in human-readable JSON ([`config/surveyed_tags.json`](config/surveyed_tags.json)):
-   ```json
-   {
-     "id": 1,
-     "label": "Gate 1 Entrance Marker",
-     "position_ned": [1.5, -0.3, 1.0],
-     "attitude_rpy_deg": [0.0, 0.0, 0.0],
-     "size_m": 0.16
-   }
-   ```
-2. **Pre-Compile Code Generator**: CMake runs [`scripts/generate_tag_map.py`](scripts/generate_tag_map.py) whenever `surveyed_tags.json` is modified. It precomputes unit quaternions $(w, x, y, z)$ at build time, computes a SHA-256 fingerprint, and emits [`include/generated_surveyed_tags.h`](include/generated_surveyed_tags.h).
-3. **Optimized ROM Table**: Emits `constexpr CompiledSurveyedTagEntry COMPILED_SURVEYED_TAGS[]` stored in flash/ROM (zero heap allocation, zero startup parsing overhead).
-4. **Fast Lookup**: `findCompiledSurveyedTag(id)` provides branchless $O(\log N)$ binary search lookup.
-5. **Node Preloading**: `loadCompiledSurveyedTags(*this)` is called directly in the `AutopilotNode` constructor, ensuring the drone is flight-ready upon boot.
+### 4. Authoritative Surveyed Tag Map (Compile-Time ROM)
+The Autopilot is the authoritative owner of the arena survey coordinates:
+1. Tags are defined in [`config/surveyed_tags.json`](config/surveyed_tags.json).
+2. CMake compiles this into a zero-allocation `constexpr` lookup table [`include/generated_surveyed_tags.h`](include/generated_surveyed_tags.h).
+3. Preloaded into [`AutopilotNode`](autopilot_node.h) at startup (`loadCompiledSurveyedTags`).
 
 ---
 
-### 4. MAVLink v2 Protocol & Drift Correction Bridge
-[`MavlinkDaemon`](mavlink-daemon/mavlink_daemon.h) connects the SBC to the ArduPilot FCU over serial UART (`/dev/flightcontroller` at 921,600 baud):
-
+### 5. MAVLink v2 Protocol & Drift Correction Bridge
+[`MavlinkDaemon`](mavlink-daemon/mavlink_daemon.h) connects the companion computer to ArduPilot:
 - **Guidance Setpoints**: Transmits `SET_POSITION_TARGET_LOCAL_NED` (Msg #84) in GUIDED mode at 20 Hz.
-- **Global Drift Handling**: When the vision system detects an AprilTag, `AutopilotNode` resolves its pose and forwards `VISION_POSITION_ESTIMATE` (Msg #102) to the FCU. ArduPilot's EKF3 fuses this measurement to instantly arrest accumulated optical flow dead-reckoning drift without requiring extra hardware wiring.
-- **Telemetry Ingestion**: Decodes `LOCAL_POSITION_NED` (Msg #32), `ATTITUDE` (Msg #30), and `HEARTBEAT` (Msg #0) to update internal vehicle states.
+- **Global Drift Handling**: Forwards observed AprilTags as `VISION_POSITION_ESTIMATE` (Msg #102) to the FCU, arresting optical flow dead-reckoning drift in EKF3.
+- **Telemetry Ingestion**: Decodes `LOCAL_POSITION_NED` (Msg #32), `ATTITUDE` (Msg #30), and `HEARTBEAT` (Msg #0).
 
 ---
 
 ## Safety Watchdogs & Failsafes
 
-The subsystem implements three redundant software watchdogs:
-
-1. **Vision Loss Watchdog**: If valid vision packets cease for more than `0.20 s` during autonomous flight, the autopilot triggers an immediate controlled descent or hold.
-2. **Emergency Stop (E-Stop)**: An operator E-Stop command received from the UI triggers an instantaneous motor disarm override within $\le 150\text{ ms}$ (satisfying **ER 10**).
-3. **Telemetry Link Watchdog**: If MAVLink telemetry heartbeats from the FCU drop for $> 200\text{ ms}$, the autopilot signals failsafe mode (satisfying **ER 9**).
+1. **Vision Loss Watchdog**: If vision packets cease for $> 0.20\text{ s}$ during autonomous flight, an E-Stop is triggered.
+2. **Emergency Stop (E-Stop)**: UI E-Stop disarms motors within $\le 150\text{ ms}$ (**ER 10**).
+3. **Telemetry Link Watchdog**: Failsafe mode triggers if FCU heartbeats drop for $> 1.0\text{ s}$ (**ER 9**).
 
 ---
 
 ## Software-in-the-Loop (SIL) Simulation
 
-The simulation subsystem allows testing the complete autonomy stack on a standard workstation:
-
 ```bash
 # 1. Start the real-time 3D web visualizer server
 python3 autopilot/sim/sim_web.py --port 8080
 
-# 2. Run a simulated autonomous mission scenario in another terminal
+# 2. Run automated headless scenario verification
 ./build/autopilot/sim/autopilot_sim_runner --scenario nominal --duration 45
 
 # 3. Test optical flow drift with AprilTag correction
@@ -203,12 +228,15 @@ python3 autopilot/sim/sim_web.py --port 8080
 
 ### Host Compilation & CTest
 ```bash
-# Build with CMake
+# Configure and build
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 
-# Run full test suite (20 tests)
+# Run full CTest suite (68 tests)
 ctest --test-dir build --output-on-failure
+
+# Run Python simulation test suite (24 tests)
+python3 -m unittest discover -s autopilot/sim/tests/
 ```
 
 ### Embedded Cross-Compilation
