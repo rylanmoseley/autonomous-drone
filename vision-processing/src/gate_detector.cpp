@@ -209,8 +209,8 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
 
         const std::vector<SimGateSpec> specs = {
             {"Circle",   1, 0.500, cv::Scalar(255, 100, 0)},
-            {"Triangle", 2, 0.666, cv::Scalar(0, 0, 255)},
-            {"Square",   3, 0.414, cv::Scalar(0, 255, 0)}
+            {"Triangle", 2, 0.6062, cv::Scalar(0, 0, 255)},
+            {"Square",   3, 0.35356, cv::Scalar(0, 255, 0)}
         };
 
         cv::Mat mask_blue  = cv::Mat::zeros(frame.size(), CV_8UC1);
@@ -310,10 +310,10 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
                 if (bbox.y <= 2) {
                     // Apex is clipped at top of camera frame at close range (< 0.95m).
                     // Reconstruct true aperture center from the unclipped bottom base:
-                    // For an upright equilateral triangle (width W=0.666m, base-to-center H_bc=0.205m):
-                    // ratio_base_to_center = 0.205 / 0.666 ~ 0.308
+                    // For an upright equilateral triangle (width W=0.6062m, base-to-center H_bc=0.175m):
+                    // ratio_base_to_center = 0.175 / 0.6062 = 0.28868
                     double y_base = bbox.y + bbox.height;
-                    double cy_reconstructed = y_base - 0.308 * gate_size_px;
+                    double cy_reconstructed = y_base - 0.28868 * gate_size_px;
                     res.posY_m = (cy_reconstructed - frame.rows / 2.0) * (distance_m / effective_focal);
                     res.center.y = static_cast<int>(std::round(cy_reconstructed));
                 }
@@ -323,51 +323,9 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
             res.is_3d = false;
 
             if (spec.shape == "Triangle") {
-                // Find apex (min y) and bottom corners (max y left, max y right)
-                int min_y = frame.rows;
-                for (const auto& pt : contour) {
-                    if (pt.y < min_y) min_y = pt.y;
-                }
-                double apex_sum_x = 0.0, apex_sum_y = 0.0;
-                int apex_cnt = 0;
-                for (const auto& pt : contour) {
-                    if (pt.y <= min_y + 4) {
-                        apex_sum_x += pt.x;
-                        apex_sum_y += pt.y;
-                        apex_cnt++;
-                    }
-                }
-                double apex_x = (apex_cnt > 0) ? (apex_sum_x / apex_cnt) : cx;
-                double apex_y = (apex_cnt > 0) ? (apex_sum_y / apex_cnt) : min_y;
-
-                int max_y_left = -1, max_y_right = -1;
-                for (const auto& pt : contour) {
-                    if (pt.x < apex_x - 5) {
-                        if (pt.y > max_y_left) max_y_left = pt.y;
-                    } else if (pt.x > apex_x + 5) {
-                        if (pt.y > max_y_right) max_y_right = pt.y;
-                    }
-                }
-
-                double bl_x = bbox.x, bl_y = bbox.y + bbox.height;
-                double br_x = bbox.x + bbox.width, br_y = bbox.y + bbox.height;
-                int bl_cnt = 0, br_cnt = 0;
-                double bl_sum_x = 0, bl_sum_y = 0;
-                double br_sum_x = 0, br_sum_y = 0;
-
-                for (const auto& pt : contour) {
-                    if (pt.x < apex_x - 5 && max_y_left >= 0 && pt.y >= max_y_left - 4) {
-                        bl_sum_x += pt.x;
-                        bl_sum_y += pt.y;
-                        bl_cnt++;
-                    } else if (pt.x > apex_x + 5 && max_y_right >= 0 && pt.y >= max_y_right - 4) {
-                        br_sum_x += pt.x;
-                        br_sum_y += pt.y;
-                        br_cnt++;
-                    }
-                }
-                if (bl_cnt > 0) { bl_x = bl_sum_x / bl_cnt; bl_y = bl_sum_y / bl_cnt; }
-                if (br_cnt > 0) { br_x = br_sum_x / br_cnt; br_y = br_sum_y / br_cnt; }
+                double perim = cv::arcLength(contour, true);
+                std::vector<cv::Point> approx;
+                cv::approxPolyDP(contour, approx, 0.04 * perim, true);
 
                 bool solved_pnp = false;
                 cv::Mat camMat = (cv::Mat_<double>(3, 3) << effective_focal, 0.0, frame.cols / 2.0,
@@ -375,25 +333,65 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
                                                             0.0, 0.0, 1.0);
                 cv::Mat distCoeffs = cv::Mat::zeros(4, 1, CV_64F);
 
-                if (!touches_edge && bl_cnt > 0 && br_cnt > 0 && apex_cnt > 0) {
-                    std::vector<cv::Point2f> img_pts = {
-                        cv::Point2f(static_cast<float>(apex_x), static_cast<float>(apex_y)),
-                        cv::Point2f(static_cast<float>(br_x), static_cast<float>(br_y)),
-                        cv::Point2f(static_cast<float>((bl_x + br_x) * 0.5), static_cast<float>((bl_y + br_y) * 0.5)),
-                        cv::Point2f(static_cast<float>(bl_x), static_cast<float>(bl_y))
+                if (!touches_edge && approx.size() == 3) {
+                    // Find apex as the vertex with minimum y (topmost in camera frame)
+                    int apex_i = 0;
+                    if (approx[1].y < approx[apex_i].y) apex_i = 1;
+                    if (approx[2].y < approx[apex_i].y) apex_i = 2;
+
+                    int i1 = (apex_i + 1) % 3;
+                    int i2 = (apex_i + 2) % 3;
+                    int v_right_i = (approx[i1].x > approx[i2].x) ? i1 : i2;
+                    int v_left_i = (approx[i1].x > approx[i2].x) ? i2 : i1;
+
+                    cv::Point2f apex = approx[apex_i];
+                    cv::Point2f v_right = approx[v_right_i];
+                    cv::Point2f v_left = approx[v_left_i];
+                    cv::Point2f mid = (v_right + v_left) * 0.5f;
+
+                    // Evaluate both front-facing and rear-facing vertex permutations
+                    std::vector<std::vector<cv::Point2f>> candidates = {
+                        { apex, v_right, mid, v_left },
+                        { apex, v_left, mid, v_right }
                     };
-                    cv::Mat rvec, tvec;
-                    if (cv::solvePnP(triangle_object_points_, img_pts, camMat, distCoeffs, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE)) {
+
+                    double best_err = 1e9;
+                    cv::Mat best_rvec, best_tvec;
+                    bool solved = false;
+
+                    for (const auto& img_pts : candidates) {
+                        cv::Mat rvec, tvec;
+                        if (cv::solvePnP(triangle_object_points_, img_pts, camMat, distCoeffs, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE)) {
+                            std::vector<cv::Point2f> proj;
+                            cv::projectPoints(triangle_object_points_, rvec, tvec, camMat, distCoeffs, proj);
+                            double err = 0;
+                            for (size_t k = 0; k < img_pts.size(); ++k) {
+                                err += cv::norm(proj[k] - img_pts[k]);
+                            }
+                            if (err < best_err) {
+                                best_err = err;
+                                best_rvec = rvec;
+                                best_tvec = tvec;
+                                solved = true;
+                            }
+                        }
+                    }
+
+                    if (solved && best_err < 10.0) {
                         cv::Mat rotMat;
-                        cv::Rodrigues(rvec, rotMat);
+                        cv::Rodrigues(best_rvec, rotMat);
                         double pnp_yaw = -std::atan2(rotMat.at<double>(0, 2), rotMat.at<double>(2, 2));
                         if (std::abs(pnp_yaw) <= 3.14159) {
+                            res.posX_m = best_tvec.at<double>(0);
+                            res.posY_m = best_tvec.at<double>(1);
+                            res.posZ_m = best_tvec.at<double>(2);
                             res.yaw_rad = pnp_yaw;
-                            res.yaw_deg = pnp_yaw * (180.0 / CV_PI);
-                            res.pitch_rad = 0.0;
-                            res.roll_rad = 0.0;
-                            res.pitch_deg = 0.0;
-                            res.roll_deg = 0.0;
+                            res.pitch_rad = std::atan2(-rotMat.at<double>(1, 2),
+                                std::hypot(rotMat.at<double>(0, 2), rotMat.at<double>(2, 2)));
+                            res.roll_rad = std::atan2(rotMat.at<double>(1, 0), rotMat.at<double>(1, 1));
+                            res.yaw_deg = res.yaw_rad * (180.0 / CV_PI);
+                            res.pitch_deg = res.pitch_rad * (180.0 / CV_PI);
+                            res.roll_deg = res.roll_rad * (180.0 / CV_PI);
                             res.is_3d = true;
                             solved_pnp = true;
                         }
@@ -401,8 +399,8 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
                 }
 
                 if (!solved_pnp) {
-                    double w_left = apex_x - bl_x;
-                    double w_right = br_x - apex_x;
+                    double w_left = cx - bbox.x;
+                    double w_right = (bbox.x + bbox.width) - cx;
                     if (w_left > 5 && w_right > 5) {
                         double asym = (w_left - w_right) / (w_left + w_right);
                         double sin_yaw = asym * (2.0 * distance_m / 0.606);
@@ -418,23 +416,61 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
                 std::vector<cv::Point> approx;
                 cv::approxPolyDP(contour, approx, 0.04 * perim, true);
                 if (approx.size() == 4) {
-                    auto img_pts = orderQuadPoints(approx);
+                    auto quad = orderQuadPoints(approx);
+                    std::vector<std::vector<cv::Point2f>> candidates = {
+                        quad,
+                        { quad[1], quad[0], quad[3], quad[2] }
+                    };
+
+                    const std::vector<cv::Point3f> square_pts = {
+                        {-0.17678f, -0.17678f, 0.0f},
+                        { 0.17678f, -0.17678f, 0.0f},
+                        { 0.17678f,  0.17678f, 0.0f},
+                        {-0.17678f,  0.17678f, 0.0f}
+                    };
+
                     cv::Mat camMat = (cv::Mat_<double>(3, 3) << effective_focal, 0.0, frame.cols / 2.0,
                                                                 0.0, effective_focal, frame.rows / 2.0,
                                                                 0.0, 0.0, 1.0);
                     cv::Mat distCoeffs = cv::Mat::zeros(4, 1, CV_64F);
-                    cv::Mat rvec, tvec;
-                    if (cv::solvePnP(square_object_points_, img_pts, camMat, distCoeffs, rvec, tvec)) {
+
+                    double best_err = 1e9;
+                    cv::Mat best_rvec, best_tvec;
+                    bool solved = false;
+
+                    for (const auto& img_pts : candidates) {
+                        cv::Mat rvec, tvec;
+                        if (cv::solvePnP(square_pts, img_pts, camMat, distCoeffs, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE)) {
+                            std::vector<cv::Point2f> proj;
+                            cv::projectPoints(square_pts, rvec, tvec, camMat, distCoeffs, proj);
+                            double err = 0;
+                            for (size_t k = 0; k < img_pts.size(); ++k) {
+                                err += cv::norm(proj[k] - img_pts[k]);
+                            }
+                            if (err < best_err) {
+                                best_err = err;
+                                best_rvec = rvec;
+                                best_tvec = tvec;
+                                solved = true;
+                            }
+                        }
+                    }
+
+                    if (solved && best_err < 10.0) {
                         cv::Mat rotMat;
-                        cv::Rodrigues(rvec, rotMat);
+                        cv::Rodrigues(best_rvec, rotMat);
                         double pnp_yaw = -std::atan2(rotMat.at<double>(0, 2), rotMat.at<double>(2, 2));
                         if (std::abs(pnp_yaw) <= 3.14159) {
+                            res.posX_m = best_tvec.at<double>(0);
+                            res.posY_m = best_tvec.at<double>(1);
+                            res.posZ_m = best_tvec.at<double>(2);
                             res.yaw_rad = pnp_yaw;
-                            res.yaw_deg = pnp_yaw * (180.0 / CV_PI);
-                            res.pitch_rad = 0.0;
-                            res.roll_rad = 0.0;
-                            res.pitch_deg = 0.0;
-                            res.roll_deg = 0.0;
+                            res.pitch_rad = std::atan2(-rotMat.at<double>(1, 2),
+                                std::hypot(rotMat.at<double>(0, 2), rotMat.at<double>(2, 2)));
+                            res.roll_rad = std::atan2(rotMat.at<double>(1, 0), rotMat.at<double>(1, 1));
+                            res.yaw_deg = res.yaw_rad * (180.0 / CV_PI);
+                            res.pitch_deg = res.pitch_rad * (180.0 / CV_PI);
+                            res.roll_deg = res.roll_rad * (180.0 / CV_PI);
                             res.is_3d = true;
                         }
                     }

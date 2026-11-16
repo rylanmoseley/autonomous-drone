@@ -350,6 +350,8 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     if (sequencer.use_tube_constraint) {
                         raw_target.y = sequencer.tube_rail_y;
                         if (sequencer.tube_rail_z != 0.0f) raw_target.z = std::abs(sequencer.tube_rail_z);
+                        raw_target.pitch = 0.0;
+                        raw_target.roll = 0.0;
                     }
 
                     if (sequencer.new_goal || !has_orthogonal_path_) {
@@ -431,6 +433,11 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         if (planner.isOrthogonalTraversalCompleted(current_pose, active_orthogonal_path_, sequencer.traverse_ticks)) {
                             sequencer.advanceSequence(raw_target);
                         }
+                    }
+
+                    if (sequencer.use_tube_constraint) {
+                        cmd.target_y = sequencer.tube_rail_y;
+                        if (sequencer.tube_rail_z != 0.0f) cmd.target_z = std::abs(sequencer.tube_rail_z);
                     }
                 } else {
                     state_machine.setState(FlightState::FLIGHT_STATE_GOAL_SEEK);

@@ -17,9 +17,6 @@ enable_testing()
 # Shared schemas and data contracts
 add_subdirectory(shared)
 
-# Autopilot & Simulator
-add_subdirectory(autopilot)
-
 # Vision Processing Subsystem
 find_package(OpenCV QUIET)
 if(OpenCV_FOUND)
@@ -28,5 +25,8 @@ if(OpenCV_FOUND)
 else()
     message(WARNING "OpenCV not found: skipping vision-processing (install libopencv-dev to build)")
 endif()
+
+# Autopilot & Simulator
+add_subdirectory(autopilot)
 
 # add_subdirectory(ui)
