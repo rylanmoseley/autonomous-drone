@@ -2,10 +2,11 @@
 #include "flight_control_interface.h"
 #include "mavlink_protocol.h"
 #include "vision_packet.h"
+#include "mavlink_packet_codec.h"
+#include "mavlink_message_dispatcher.h"
+#include "mavlink_network_channel.h"
+#include "mavlink_fcu_watchdog.h"
 #include <string>
-#include <mutex>
-#include <thread>
-#include <atomic>
 
 class MavlinkDaemon {
 public:
@@ -26,25 +27,14 @@ public:
     void start();
     void stop();
 
+    // Accessors for modular subcomponents
+    MavlinkNetworkChannel& getChannel() { return channel_; }
+    const MavlinkNetworkChannel& getChannel() const { return channel_; }
+    MavlinkMessageDispatcher& getDispatcher() { return dispatcher_; }
+    const MavlinkMessageDispatcher& getDispatcher() const { return dispatcher_; }
+
 private:
-    void receiveLoop();
-
-    int local_port_;
-    std::string remote_ip_;
-    int remote_port_;
-    int socket_fd_;
-    
-    std::atomic<bool> running_;
-    std::thread rx_thread_;
-    
-    Telemetry current_telemetry_{};
-    std::chrono::steady_clock::time_point last_telemetry_time_{};
-    bool has_telemetry_{false};
-    mutable std::mutex telem_mutex_;
-
-    MavlinkVisionPositionEstimate last_vision_est_{};
-    bool has_vision_est_{false};
-    uint32_t vision_est_count_{0};
+    MavlinkNetworkChannel channel_;
+    MavlinkMessageDispatcher dispatcher_;
     uint8_t tx_seq_{0};
-    mutable std::mutex vision_mutex_;
 };
