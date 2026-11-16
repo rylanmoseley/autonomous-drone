@@ -18,7 +18,8 @@ public:
         const Pose& adjusted_target,
         double approach_dx,
         double approach_dy,
-        int align_ticks) const;
+        int align_ticks,
+        double approach_dz = 0.0) const;
 
     bool isTraversalCompleted(
         const Pose& current_pose,

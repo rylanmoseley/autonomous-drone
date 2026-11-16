@@ -866,7 +866,9 @@ def start_backend_nodes():
     repo_dir = os.path.dirname(autopilot_dir)
 
     vision_bin = os.path.join(repo_dir, "vision-processing", "vision_node")
-    autopilot_bin = os.path.join(autopilot_dir, "autopilot_node_bin")
+    autopilot_bin = os.path.join(repo_dir, "build", "autopilot", "autopilot_node")
+    if not (os.path.isfile(autopilot_bin) and os.access(autopilot_bin, os.X_OK)):
+        autopilot_bin = os.path.join(autopilot_dir, "autopilot_node_bin")
 
     # Start vision_node if executable exists
     if os.path.isfile(vision_bin) and os.access(vision_bin, os.X_OK):
@@ -892,7 +894,9 @@ def ensure_backend_nodes():
     repo_dir = os.path.dirname(autopilot_dir)
 
     vision_bin = os.path.join(repo_dir, "vision-processing", "vision_node")
-    autopilot_bin = os.path.join(autopilot_dir, "autopilot_node_bin")
+    autopilot_bin = os.path.join(repo_dir, "build", "autopilot", "autopilot_node")
+    if not (os.path.isfile(autopilot_bin) and os.access(autopilot_bin, os.X_OK)):
+        autopilot_bin = os.path.join(autopilot_dir, "autopilot_node_bin")
 
     v_running = any(p.poll() is None and "vision_node" in str(p.args) for p in backend_procs)
     if not v_running and os.path.isfile(vision_bin) and os.access(vision_bin, os.X_OK):

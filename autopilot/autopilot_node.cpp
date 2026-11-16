@@ -327,10 +327,8 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                 }
 
                 if (found) {
-                    if (sequencer.goal_phase == 0 || sequencer.goal_phase == 1) {
-                        active_target_pose = estimated_pose;
-                        has_active_target = true;
-                    }
+                    active_target_pose = estimated_pose;
+                    has_active_target = true;
                 } else if (has_active_target) {
                     estimated_pose = active_target_pose;
                     found = true;
@@ -348,7 +346,7 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                     state_machine.setState(FlightState::FLIGHT_STATE_PATH_FOLLOWING);
                     state = state_machine.getState();
                     cmd.enable = true;
-                    Pose raw_target = (sequencer.goal_phase == 2) ? active_target_pose : estimated_pose;
+                    Pose raw_target = estimated_pose;
                     if (sequencer.use_tube_constraint) {
                         raw_target.y = sequencer.tube_rail_y;
                         if (sequencer.tube_rail_z != 0.0f) raw_target.z = std::abs(sequencer.tube_rail_z);
@@ -362,7 +360,7 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         sequencer.seek_ticks = 0;
                         sequencer.traverse_ticks = 0;
                         updateApproachDirection(raw_target);
-                    } else if (sequencer.goal_phase < 2) {
+                    } else {
                         std::vector<TrackedGoal> known_goals = estimator.getAllKnownGoals();
                         std::vector<PathPlanner::Obstacle> obstacles;
                         obstacles.reserve(known_goals.size());
@@ -415,7 +413,7 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         cmd.target_yaw = adjusted_target.yaw;
 
                         if (planner.isBoresightAligned(current_pose, raw_target, adjusted_target,
-                                                       approach_dx, approach_dy, sequencer.align_ticks)) {
+                                                       approach_dx, approach_dy, sequencer.align_ticks, approach_dz)) {
                             sequencer.goal_phase = 2;
                             sequencer.align_ticks = 0;
                             sequencer.traverse_ticks = 0;

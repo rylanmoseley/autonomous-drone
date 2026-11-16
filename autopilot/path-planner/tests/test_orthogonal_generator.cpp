@@ -59,3 +59,32 @@ TEST(OrthogonalPathGeneratorTest, TraversalLineLookaheadProjection) {
     Pose drone_exit = {2.75, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
     EXPECT_TRUE(gen.isOrthogonalTraversalCompleted(drone_exit, path, 10));
 }
+
+TEST(OrthogonalPathGeneratorTest, TraversalCrossTrackThrottlesLookahead) {
+    OrthogonalPathGenerator gen;
+    Pose goal = {2.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+    Pose ref = {0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+    auto path = gen.generateOrthogonalPath(goal, ref, {}, 0.75);
+
+    // Case 1: Drone centered on line at entry point (lat_err = 0.0) -> nominal lookahead
+    Pose drone_centered = {1.25, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+    Pose target_nom = gen.planOrthogonalTraversalTarget(drone_centered, path, 0.35);
+    EXPECT_NEAR(target_nom.x - 1.25, 0.35, 1e-4);
+
+    // Case 2: Drone with 6cm lateral offset (lat_err = 0.06m) -> lookahead throttled by ~50%
+    Pose drone_offset = {1.25, 0.06, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+    Pose target_throttled = gen.planOrthogonalTraversalTarget(drone_offset, path, 0.35);
+    // Commanded target Y must remain strictly on the orthogonal line (Y = 0.0)
+    EXPECT_NEAR(target_throttled.y, 0.0, 1e-4);
+    EXPECT_NEAR(target_throttled.z, 1.0, 1e-4);
+    // Along-track advance is throttled down:
+    double advance = target_throttled.x - 1.25;
+    EXPECT_LT(advance, 0.25);
+    EXPECT_GT(advance, 0.10);
+
+    // Case 3: Large lateral offset (lat_err = 0.15m) -> maximum throttle (along-track advance clamped to 10%)
+    Pose drone_large_err = {1.25, 0.15, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+    Pose target_min = gen.planOrthogonalTraversalTarget(drone_large_err, path, 0.35);
+    EXPECT_NEAR(target_min.y, 0.0, 1e-4);
+    EXPECT_NEAR(target_min.x - 1.25, 0.35 * 0.10, 1e-4);
+}

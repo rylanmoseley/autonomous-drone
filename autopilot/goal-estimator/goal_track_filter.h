@@ -20,8 +20,10 @@ public:
     // Initializes a new TrackedGoal from a hypothesis
     static TrackedGoal initializeTrackedGoal(int shape_type, const PoseHypothesis& hyp, double current_time);
 
-    // Helper: extracts yaw angle (radians) from quaternion
+    // Helper: extracts yaw, pitch, roll angles (radians) from quaternion
     static double extractYaw(const Quatf& q);
+    static double extractPitch(const Quatf& q);
+    static double extractRoll(const Quatf& q);
 
     double getAlpha() const { return alpha_; }
     void setAlpha(double alpha) { alpha_ = alpha; }

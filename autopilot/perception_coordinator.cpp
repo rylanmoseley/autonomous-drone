@@ -104,11 +104,24 @@ VisionPacket PerceptionCoordinator::transformVisionGoals(const VisionPacket& pkt
 
             Quatf q = hyp.orientation_cam;
             double cam_yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
-            double world_yaw = std::atan2(std::sin(cur.yaw + cam_yaw), std::cos(cur.yaw + cam_yaw));
+            double sinp = 2.0 * (q.w * q.y - q.z * q.x);
+            double cam_pitch = (std::abs(sinp) >= 1.0) ? std::copysign(M_PI / 2.0, sinp) : std::asin(sinp);
+            double cam_roll = std::atan2(2.0 * (q.w * q.x + q.y * q.z), 1.0 - 2.0 * (q.x * q.x + q.y * q.y));
 
-            double cy_w = std::cos(world_yaw * 0.5);
-            double sy_w = std::sin(world_yaw * 0.5);
-            hyp.orientation_cam = Quatf{static_cast<float>(cy_w), 0.0f, 0.0f, static_cast<float>(sy_w)};
+            double world_yaw = std::atan2(std::sin(cur.yaw + cam_yaw), std::cos(cur.yaw + cam_yaw));
+            double world_pitch = cur.pitch + cam_pitch;
+            double world_roll = cur.roll + cam_roll;
+
+            double cy_w = std::cos(world_yaw * 0.5), sy_w = std::sin(world_yaw * 0.5);
+            double cp_w = std::cos(world_pitch * 0.5), sp_w = std::sin(world_pitch * 0.5);
+            double cr_w = std::cos(world_roll * 0.5), sr_w = std::sin(world_roll * 0.5);
+
+            Quatf q_world;
+            q_world.w = static_cast<float>(cr_w * cp_w * cy_w + sr_w * sp_w * sy_w);
+            q_world.x = static_cast<float>(sr_w * cp_w * cy_w - cr_w * sp_w * sy_w);
+            q_world.y = static_cast<float>(cr_w * sp_w * cy_w + sr_w * cp_w * sy_w);
+            q_world.z = static_cast<float>(cr_w * cp_w * sy_w - sr_w * sp_w * cy_w);
+            hyp.orientation_cam = q_world;
         }
     }
 

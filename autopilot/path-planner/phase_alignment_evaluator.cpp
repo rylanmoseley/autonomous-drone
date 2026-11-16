@@ -40,28 +40,33 @@ bool PhaseAlignmentEvaluator::isStandoffReached(
 
 bool PhaseAlignmentEvaluator::isBoresightAligned(
     const Pose& current_pose,
-    const Pose& raw_target,
+    const Pose& /*raw_target*/,
     const Pose& adjusted_target,
     double approach_dx,
     double approach_dy,
-    int align_ticks) const {
+    int align_ticks,
+    double approach_dz) const {
 
     double dyaw = std::atan2(std::sin(adjusted_target.yaw - current_pose.yaw),
                              std::cos(adjusted_target.yaw - current_pose.yaw));
-    double d_gate_x = current_pose.x - raw_target.x;
-    double d_gate_y = current_pose.y - raw_target.y;
-    double e_perp = -d_gate_x * approach_dy + d_gate_y * approach_dx;
-    double e_z = current_pose.z - raw_target.z;
-    double lat_err = std::hypot(e_perp, e_z);
     double delta_x = current_pose.x - adjusted_target.x;
     double delta_y = current_pose.y - adjusted_target.y;
-    double e_along = delta_x * approach_dx + delta_y * approach_dy;
+    double delta_z = current_pose.z - adjusted_target.z;
 
-    bool tight_aligned = (align_ticks >= 6 && std::abs(dyaw) < 0.08 && lat_err < 0.045 && std::abs(e_along) < 0.25);
-    bool relaxed_aligned = (align_ticks > 15 && std::abs(dyaw) < 0.12 && lat_err < 0.075);
-    bool watchdog_aligned = (align_ticks > 30 && std::abs(dyaw) < 0.18 && lat_err < 0.110);
-    bool forced_watchdog = (align_ticks > 45 && std::abs(dyaw) < 0.28 && lat_err < 0.160);
-    bool timeout_aligned = (align_ticks > 60);
+    // Along-track position relative to entry_point (positive = inside the approach tunnel toward gate):
+    double e_along = delta_x * approach_dx + delta_y * approach_dy + delta_z * approach_dz;
+
+    // Perpendicular cross-track error vector from the 3D approach line:
+    double e_perp_x = delta_x - e_along * approach_dx;
+    double e_perp_y = delta_y - e_along * approach_dy;
+    double e_perp_z = delta_z - e_along * approach_dz;
+    double lat_err = std::sqrt(e_perp_x * e_perp_x + e_perp_y * e_perp_y + e_perp_z * e_perp_z);
+
+    bool tight_aligned = (align_ticks >= 6 && std::abs(dyaw) < 0.08 && lat_err < 0.045 && std::abs(e_along) < 0.20);
+    bool relaxed_aligned = (align_ticks > 15 && std::abs(dyaw) < 0.12 && lat_err < 0.065 && std::abs(e_along) < 0.28);
+    bool watchdog_aligned = (align_ticks > 30 && std::abs(dyaw) < 0.18 && lat_err < 0.085 && std::abs(e_along) < 0.35);
+    bool forced_watchdog = (align_ticks > 45 && std::abs(dyaw) < 0.25 && lat_err < 0.110 && std::abs(e_along) < 0.45);
+    bool timeout_aligned = (align_ticks > 70 && (lat_err < 0.140 || align_ticks > 90));
 
     return (tight_aligned || relaxed_aligned || watchdog_aligned || forced_watchdog || timeout_aligned);
 }

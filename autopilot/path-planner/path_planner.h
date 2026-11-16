@@ -152,8 +152,9 @@ public:
         const Pose& adjusted_target,
         double approach_dx,
         double approach_dy,
-        int align_ticks) const {
-        return phase_evaluator_.isBoresightAligned(current_pose, raw_target, adjusted_target, approach_dx, approach_dy, align_ticks);
+        int align_ticks,
+        double approach_dz = 0.0) const {
+        return phase_evaluator_.isBoresightAligned(current_pose, raw_target, adjusted_target, approach_dx, approach_dy, align_ticks, approach_dz);
     }
 
     bool isTraversalCompleted(

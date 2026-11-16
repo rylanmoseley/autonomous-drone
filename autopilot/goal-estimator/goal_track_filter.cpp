@@ -28,6 +28,17 @@ double GoalTrackFilter::extractYaw(const Quatf& q) {
     return std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
 }
 
+double GoalTrackFilter::extractPitch(const Quatf& q) {
+    double sinp = 2.0 * (q.w * q.y - q.z * q.x);
+    if (std::abs(sinp) >= 1.0)
+        return std::copysign(M_PI / 2.0, sinp);
+    return std::asin(sinp);
+}
+
+double GoalTrackFilter::extractRoll(const Quatf& q) {
+    return std::atan2(2.0 * (q.w * q.x + q.y * q.z), 1.0 - 2.0 * (q.x * q.x + q.y * q.y));
+}
+
 TrackedGoal GoalTrackFilter::initializeTrackedGoal(int shape_type, const PoseHypothesis& hyp, double current_time) {
     TrackedGoal tg;
     tg.shape_type = static_cast<uint8_t>(shape_type);
@@ -37,6 +48,8 @@ TrackedGoal GoalTrackFilter::initializeTrackedGoal(int shape_type, const PoseHyp
     tg.pose.y = hyp.position_cam.y;
     tg.pose.z = hyp.position_cam.z;
     tg.pose.yaw = extractYaw(hyp.orientation_cam);
+    tg.pose.pitch = extractPitch(hyp.orientation_cam);
+    tg.pose.roll = extractRoll(hyp.orientation_cam);
     tg.pose.confidence = hyp.confidence;
     tg.determinate = true;
     tg.last_update_time = current_time;
@@ -46,6 +59,8 @@ TrackedGoal GoalTrackFilter::initializeTrackedGoal(int shape_type, const PoseHyp
 bool GoalTrackFilter::updateGoalTrack(TrackedGoal& goal, const PoseHypothesis& hyp, double current_time, bool timed_out) {
     Vec3f pos = hyp.position_cam;
     double yaw = extractYaw(hyp.orientation_cam);
+    double pitch = extractPitch(hyp.orientation_cam);
+    double roll = extractRoll(hyp.orientation_cam);
     int key = goal.shape_type;
 
     if (timed_out) {
@@ -53,6 +68,8 @@ bool GoalTrackFilter::updateGoalTrack(TrackedGoal& goal, const PoseHypothesis& h
         goal.pose.y = pos.y;
         goal.pose.z = pos.z;
         goal.pose.yaw = yaw;
+        goal.pose.pitch = pitch;
+        goal.pose.roll = roll;
     } else {
         // Spatial outlier rejection: if position jumps by > 0.35m from converged track, discard single-frame glitch.
         // However, if >= 3 consecutive frames consistently report the new location, the goal has legitimately moved!
@@ -70,6 +87,8 @@ bool GoalTrackFilter::updateGoalTrack(TrackedGoal& goal, const PoseHypothesis& h
             goal.pose.y = pos.y;
             goal.pose.z = pos.z;
             goal.pose.yaw = yaw;
+            goal.pose.pitch = pitch;
+            goal.pose.roll = roll;
             outlier_jump_counts_[key] = 0;
         } else {
             outlier_jump_counts_[key] = 0;
@@ -93,6 +112,8 @@ bool GoalTrackFilter::updateGoalTrack(TrackedGoal& goal, const PoseHypothesis& h
             }
             goal.pose.yaw = std::atan2(std::sin(goal.pose.yaw + eff_alpha * dyaw),
                                        std::cos(goal.pose.yaw + eff_alpha * dyaw));
+            goal.pose.pitch = eff_alpha * pitch + (1.0 - eff_alpha) * goal.pose.pitch;
+            goal.pose.roll = eff_alpha * roll + (1.0 - eff_alpha) * goal.pose.roll;
         }
     }
 

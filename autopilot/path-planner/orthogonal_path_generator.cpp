@@ -118,8 +118,22 @@ Pose OrthogonalPathGenerator::planOrthogonalTraversalTarget(
     double dz = current_pose.z - path.entry_point.z;
     double s = dx * path.normal_x + dy * path.normal_y + dz * path.normal_z;
 
+    // Cross-track error vector and perpendicular distance from the 3D orthogonal line:
+    double d_along_x = s * path.normal_x;
+    double d_along_y = s * path.normal_y;
+    double d_along_z = s * path.normal_z;
+    double e_perp_x = dx - d_along_x;
+    double e_perp_y = dy - d_along_y;
+    double e_perp_z = dz - d_along_z;
+    double lat_err = std::sqrt(e_perp_x * e_perp_x + e_perp_y * e_perp_y + e_perp_z * e_perp_z);
+
+    // Modulate lookahead progress based on cross-track alignment:
+    // If the drone has cross-track deviation, throttle down along-track advance so the commanded
+    // velocity pulls aggressively back onto the orthogonal line, preventing diagonal corner-cutting.
+    double eff_lookahead = lookahead_dist * std::max(0.10, 1.0 - (lat_err / 0.10));
+
     // Advance lookahead along the line:
-    double s_target = std::min(path.total_length, std::max(0.0, s + lookahead_dist));
+    double s_target = std::min(path.total_length, std::max(0.0, s + eff_lookahead));
 
     // Target point strictly on the orthogonal line passing through gate center:
     Pose target;

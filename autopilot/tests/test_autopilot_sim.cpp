@@ -1023,4 +1023,38 @@ TEST(AutopilotSimulationHarnessTest, MultipleSequentialMissions) {
     EXPECT_EQ(rep3.collision_count, 0u);
 }
 
+// 26. Verify Strict Orthogonal Straight Punch-Through Traversal with Minimal Cross-Track Error
+TEST(AutopilotSimulationHarnessTest, TraversalCrossTrackApertureStraightPass) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.01;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 101;
+
+    AutopilotSimHarness harness(cfg);
+    harness.setupMission({SHAPE_CIRCLE}, MISSION_END_LAND);
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, 0.0, 1.0, 0.0);
+
+    MissionReport report = harness.runUntil(30.0, 0.05);
+    EXPECT_TRUE(report.mission_completed);
+    EXPECT_EQ(report.collision_count, 0u);
+
+    // Analyze trajectory when passing through the aperture corridor (X in [2.2, 2.8]):
+    double max_cross_track = 0.0;
+    int aperture_points = 0;
+    for (const auto& pt : harness.getTrajectory()) {
+        if (pt.true_pose.x >= 2.2 && pt.true_pose.x <= 2.8) {
+            double cross_track = std::hypot(pt.true_pose.y - 0.0, pt.true_pose.z - 1.0);
+            if (cross_track > max_cross_track) {
+                max_cross_track = cross_track;
+            }
+            aperture_points++;
+        }
+    }
+
+    EXPECT_GT(aperture_points, 5);
+    // Commanded traversal must hug the orthogonal line with < 0.035m cross-track deviation
+    EXPECT_LT(max_cross_track, 0.035);
+}
+
 

@@ -99,3 +99,38 @@ TEST(GoalTrackFilterTest, PlanarYawSymmetry) {
     // Symmetry projection should map it close to 0.0, NOT flip to 180 deg
     EXPECT_NEAR(tg.pose.yaw, -0.025, 0.05);
 }
+
+TEST(GoalTrackFilterTest, PitchAndRollExtractionAndSmoothing) {
+    GoalTrackFilter filter(0.5);
+    PoseHypothesis hyp;
+    hyp.position_cam = {2.0f, 0.0f, 1.0f};
+
+    // Pitch = 20 deg (0.349 rad): q = (cos(10 deg), 0, sin(10 deg), 0)
+    double p = 20.0 * M_PI / 180.0;
+    hyp.orientation_cam = {
+        static_cast<float>(std::cos(p * 0.5)),
+        0.0f,
+        static_cast<float>(std::sin(p * 0.5)),
+        0.0f
+    };
+    hyp.confidence = 0.95f;
+
+    TrackedGoal tg = GoalTrackFilter::initializeTrackedGoal(SHAPE_CIRCLE, hyp, 1.0);
+    EXPECT_NEAR(tg.pose.pitch, p, 1e-3);
+    EXPECT_NEAR(tg.pose.roll, 0.0, 1e-3);
+    EXPECT_NEAR(tg.pose.yaw, 0.0, 1e-3);
+
+    // Update with pitch = 30 deg
+    double p2 = 30.0 * M_PI / 180.0;
+    hyp.orientation_cam = {
+        static_cast<float>(std::cos(p2 * 0.5)),
+        0.0f,
+        static_cast<float>(std::sin(p2 * 0.5)),
+        0.0f
+    };
+    filter.updateGoalTrack(tg, hyp, 1.1, false);
+
+    // Smoothed with alpha = 0.5 -> expected ~25 deg
+    double expected_p = 0.5 * p2 + 0.5 * p;
+    EXPECT_NEAR(tg.pose.pitch, expected_p, 1e-3);
+}
