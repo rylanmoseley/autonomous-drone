@@ -53,6 +53,25 @@ size_t MavlinkPacketCodec::encodeVisionPositionEstimate(
     );
 }
 
+size_t MavlinkPacketCodec::encodeCommandLong(
+    const MavlinkCommandLong& cmd,
+    uint8_t seq,
+    uint8_t* out_buffer,
+    size_t out_max_size)
+{
+    return mavlink_encode_packet(
+        out_buffer,
+        out_max_size,
+        seq,
+        1,                            // sysid: 1
+        MAV_COMP_ID_ONBOARD_COMPUTER, // compid: 191
+        MAVLINK_MSG_ID_COMMAND_LONG,  // msgid: 76
+        MAVLINK_CRC_EXTRA_COMMAND_LONG, // crc_extra: 152
+        &cmd,
+        sizeof(cmd)
+    );
+}
+
 bool MavlinkPacketCodec::verifyAndExtract(
     const uint8_t* buffer,
     size_t len,
@@ -60,7 +79,7 @@ bool MavlinkPacketCodec::verifyAndExtract(
     const uint8_t*& out_payload,
     uint8_t& out_payload_len)
 {
-    if (len < 12 || buffer[0] != MAVLINK_STX_V2) {
+    if (!buffer || len < 12 || buffer[0] != MAVLINK_STX_V2) {
         return false;
     }
 
@@ -81,6 +100,8 @@ bool MavlinkPacketCodec::verifyAndExtract(
     else if (msgid == MAVLINK_MSG_ID_ATTITUDE) crc_extra = MAVLINK_CRC_EXTRA_ATTITUDE;
     else if (msgid == MAVLINK_MSG_ID_VISION_POSITION_ESTIMATE) crc_extra = MAVLINK_CRC_EXTRA_VISION_POSITION_ESTIMATE;
     else if (msgid == MAVLINK_MSG_ID_SET_POSITION_TARGET_LOCAL_NED) crc_extra = MAVLINK_CRC_EXTRA_SET_POSITION_TARGET_LOCAL_NED;
+    else if (msgid == MAVLINK_MSG_ID_HEARTBEAT) crc_extra = MAVLINK_CRC_EXTRA_HEARTBEAT;
+    else if (msgid == MAVLINK_MSG_ID_COMMAND_LONG) crc_extra = MAVLINK_CRC_EXTRA_COMMAND_LONG;
     else return false; // Unknown message ID
 
     uint16_t calc_crc = 0xFFFF;

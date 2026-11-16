@@ -289,7 +289,7 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
 
             cv::Moments m = cv::moments(contour);
             double cx = (m.m00 > 0) ? (m.m10 / m.m00) : (bbox.x + bbox.width / 2.0);
-            double cy = (m.m00 > 0) ? (m.m01 / m.m00) : (bbox.y + bbox.height / 2.0);
+            double cy = (m.m00 > 0) ? (m.m01 / m.m00) : (spec.shape == "Triangle" ? (bbox.y + bbox.height - bbox.height / 3.0) : (bbox.y + bbox.height / 2.0));
             cv::Point center(static_cast<int>(std::round(cx)), static_cast<int>(std::round(cy)));
 
             double gate_size_px = std::max(bbox.width, bbox.height);
@@ -646,12 +646,18 @@ VisionPacket GateDetector::toVisionPacket(const std::vector<GateDetectionResult>
         GoalMeasurement& gm = packet.goals[i];
         if (res.shape == "Circle") {
             gm.shape_type = SHAPE_CIRCLE;
+            gm.is_detected = 1;
         } else if (res.shape == "Triangle") {
             gm.shape_type = SHAPE_TRIANGLE;
-        } else {
+            gm.is_detected = 1;
+        } else if (res.shape == "Square") {
             gm.shape_type = SHAPE_SQUARE;
+            gm.is_detected = 1;
+        } else {
+            gm.shape_type = SHAPE_NONE;
+            gm.is_detected = 0;
+            continue;
         }
-        gm.is_detected = 1;
         gm.centroid.u = static_cast<float>(res.center.x);
         gm.centroid.v = static_cast<float>(res.center.y);
         gm.contour_area = static_cast<float>(res.bbox_size);

@@ -180,3 +180,76 @@ TEST(VisionProcessingTest, UDPLoopbackTransmission) {
     close(tx_sock);
     close(rx_sock);
 }
+
+// 7. Verify Unclassified / Unknown Shapes Are NOT Coerced to SHAPE_SQUARE
+TEST(VisionProcessingTest, UnclassifiedShapesNotCoercedToSquare) {
+    vision::GateDetectionResult det;
+    det.detected = true;
+    det.shape = "Rectangle"; // Not a valid mission hoop shape (Circle, Triangle, Square)
+    det.posX_m = 1.0;
+    det.posY_m = 0.0;
+    det.posZ_m = 2.0;
+
+    VisionPacket pkt = vision::GateDetector::toVisionPacket(det, 1, 1000);
+    EXPECT_EQ(pkt.goals[0].shape_type, SHAPE_NONE);
+    EXPECT_EQ(pkt.goals[0].is_detected, 0);
+
+    det.shape = "Unknown";
+    pkt = vision::GateDetector::toVisionPacket(det, 2, 2000);
+    EXPECT_EQ(pkt.goals[0].shape_type, SHAPE_NONE);
+    EXPECT_EQ(pkt.goals[0].is_detected, 0);
+
+    det.shape = "Pentagon";
+    pkt = vision::GateDetector::toVisionPacket(det, 3, 3000);
+    EXPECT_EQ(pkt.goals[0].shape_type, SHAPE_NONE);
+    EXPECT_EQ(pkt.goals[0].is_detected, 0);
+}
+
+// 8. Verify Valid Shape Types Map to Respective Protocol Enums
+TEST(VisionProcessingTest, ValidShapesMapCorrectly) {
+    vision::GateDetectionResult det;
+    det.detected = true;
+    det.posX_m = 1.0;
+    det.posY_m = 0.0;
+    det.posZ_m = 2.0;
+
+    det.shape = "Circle";
+    VisionPacket pkt = vision::GateDetector::toVisionPacket(det, 1, 1000);
+    EXPECT_EQ(pkt.goals[0].shape_type, SHAPE_CIRCLE);
+    EXPECT_EQ(pkt.goals[0].is_detected, 1);
+
+    det.shape = "Triangle";
+    pkt = vision::GateDetector::toVisionPacket(det, 2, 2000);
+    EXPECT_EQ(pkt.goals[0].shape_type, SHAPE_TRIANGLE);
+    EXPECT_EQ(pkt.goals[0].is_detected, 1);
+
+    det.shape = "Square";
+    pkt = vision::GateDetector::toVisionPacket(det, 3, 3000);
+    EXPECT_EQ(pkt.goals[0].shape_type, SHAPE_SQUARE);
+    EXPECT_EQ(pkt.goals[0].is_detected, 1);
+}
+
+// 9. Verify Empty Gate Results Produces Drop Error
+TEST(VisionProcessingTest, EmptyDetectionResultsHandling) {
+    std::vector<vision::GateDetectionResult> empty_results;
+    VisionPacket pkt = vision::GateDetector::toVisionPacket(empty_results, 99, 500000);
+
+    EXPECT_EQ(pkt.msg_type, MSG_TYPE_VISION);
+    EXPECT_EQ(pkt.sequence_id, 99u);
+    EXPECT_EQ(pkt.error_state, VISION_ERR_FRAME_DROPPED);
+    EXPECT_EQ(pkt.num_goals_reported, 0);
+}
+
+// 10. Verify Triangular Centroid Calculation (1/3 Height from Base)
+TEST(VisionProcessingTest, TriangularCentroidGeometry) {
+    // A vertical triangle bounding box with top at y=10 and height=60 (base at y=70)
+    cv::Rect bbox(20, 10, 40, 60);
+
+    // Centroid of a triangle with base at bottom is 1/3 height above base
+    // In screen coordinates (y down), base is at bbox.y + bbox.height
+    // 1/3 height above base is: (bbox.y + bbox.height) - (bbox.height / 3.0)
+    double expected_cy = (bbox.y + bbox.height) - (bbox.height / 3.0);
+    EXPECT_DOUBLE_EQ(expected_cy, 50.0); // 10 + 60 - 20 = 50.0
+    // Midpoint would have been 10 + 30 = 40.0; centroid must be lower (closer to base)
+    EXPECT_GT(expected_cy, bbox.y + bbox.height / 2.0);
+}

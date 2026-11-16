@@ -262,7 +262,7 @@ TEST(AutopilotSimulationHarnessTest, TagToMavlinkVisionPositionEstimate) {
     EXPECT_EQ(est.usec, 555000ULL);
     EXPECT_FLOAT_EQ(est.x, 1.5f);
     EXPECT_FLOAT_EQ(est.y, -2.0f);
-    EXPECT_FLOAT_EQ(est.z, 0.9f);
+    EXPECT_FLOAT_EQ(est.z, -0.9f);
     EXPECT_NEAR(est.roll, 0.0f, 1e-4);
     EXPECT_NEAR(est.pitch, 0.0f, 1e-4);
     EXPECT_NEAR(est.yaw, M_PI / 2.0, 1e-4);
@@ -276,12 +276,14 @@ TEST(AutopilotSimulationHarnessTest, TagToMavlinkVisionPositionEstimate) {
 // 9. AutopilotNode Tag Pass-Through Verification
 TEST(AutopilotSimulationHarnessTest, TagPassThroughForwarding) {
     AutopilotNode autopilot;
+    autopilot.registerSurveyedTag(10, {3.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f});
+    autopilot.registerSurveyedTag(11, {4.0f, -1.0f, 1.2f}, {1.0f, 0.0f, 0.0f, 0.0f});
 
     VisionPacket pkt{};
     pkt.msg_type = MSG_TYPE_VISION;
     pkt.sequence_id = 101;
     pkt.timestamp_ns = 2500000000ULL; // 2.5s
-    pkt.num_tags_detected = 2;
+    pkt.num_tags_detected = 3;
 
     pkt.tags[0].tag_id = 10;
     pkt.tags[0].is_valid = 1;
@@ -295,9 +297,16 @@ TEST(AutopilotSimulationHarnessTest, TagPassThroughForwarding) {
     pkt.tags[1].camera_att_world = {1.0f, 0.0f, 0.0f, 0.0f};
     pkt.tags[1].confidence = 0.85f;
 
+    // Tag 99 is NOT in surveyed registry - should be ignored by EKF forwarding
+    pkt.tags[2].tag_id = 99;
+    pkt.tags[2].is_valid = 1;
+    pkt.tags[2].camera_pos_world = {5.0f, 0.0f, 1.0f};
+    pkt.tags[2].camera_att_world = {1.0f, 0.0f, 0.0f, 0.0f};
+    pkt.tags[2].confidence = 0.80f;
+
     autopilot.handleVisionPacket(pkt, 2.5);
 
-    EXPECT_EQ(autopilot.tags_received_count, 2u);
+    EXPECT_EQ(autopilot.tags_received_count, 3u);
     EXPECT_EQ(autopilot.tags_forwarded_count, 2u);
     EXPECT_TRUE(autopilot.fcu.hasVisionPositionEstimate());
     EXPECT_EQ(autopilot.fcu.getVisionEstimateCount(), 2u);
@@ -305,7 +314,7 @@ TEST(AutopilotSimulationHarnessTest, TagPassThroughForwarding) {
     MavlinkVisionPositionEstimate last_est = autopilot.fcu.getLastVisionPositionEstimate();
     EXPECT_FLOAT_EQ(last_est.x, 4.0f);
     EXPECT_FLOAT_EQ(last_est.y, -1.0f);
-    EXPECT_FLOAT_EQ(last_est.z, 1.2f);
+    EXPECT_FLOAT_EQ(last_est.z, -1.2f);
 }
 
 // 10. Follower Drift Reset via Global Vision Reading
@@ -686,7 +695,7 @@ TEST(AutopilotSimulationHarnessTest, SurveyedTagAttitudeDriftCorrection) {
     MavlinkVisionPositionEstimate est = tag_to_mavlink_vision_position(tag, 12345678ULL);
     EXPECT_FLOAT_EQ(est.x, 2.1f);
     EXPECT_FLOAT_EQ(est.y, -1.4f);
-    EXPECT_FLOAT_EQ(est.z, 1.15f);
+    EXPECT_FLOAT_EQ(est.z, -1.15f);
     EXPECT_NEAR(est.yaw, 45.0 * M_PI / 180.0, 1e-3);
     EXPECT_NEAR(est.pitch, 10.0 * M_PI / 180.0, 1e-3);
     EXPECT_NEAR(est.roll, -5.0 * M_PI / 180.0, 1e-3);

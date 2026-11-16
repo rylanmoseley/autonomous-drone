@@ -64,12 +64,9 @@ if [ -f "$VISION_BIN" ]; then
     echo "[INFO] Installing vision_node into /opt/drone/bin/..."
     cp "$VISION_BIN" "$ROOTFS_DIR/opt/drone/bin/vision_node"
     chmod 755 "$ROOTFS_DIR/opt/drone/bin/vision_node"
-elif [ -f "$REPO_DIR/build/vision-processing/vision_node" ]; then
-    # Fallback to host vision build if cross OpenCV sysroot was omitted
-    echo "[INFO] Using compiled vision_node from build tree..."
-    cp "$REPO_DIR/build/vision-processing/vision_node" "$ROOTFS_DIR/opt/drone/bin/vision_node"
-    chmod 755 "$ROOTFS_DIR/opt/drone/bin/vision_node"
 else
+    # Do not copy host x86_64 binary into target ARM rootfs
+    echo "[INFO] Vision binary not found for target architecture $TARGET."
     echo "[INFO] Creating placeholder vision_node runner script..."
     cat > "$ROOTFS_DIR/opt/drone/bin/vision_node" <<'EOF'
 #!/usr/bin/env bash

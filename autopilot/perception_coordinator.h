@@ -1,6 +1,7 @@
 #pragma once
 #include <map>
 #include <mutex>
+#include <atomic>
 #include <cstdint>
 #include "vision_packet.h"
 #include "flight_control_interface.h"
@@ -29,19 +30,23 @@ public:
     // Processes tag measurements: verifies against surveyed map and forwards to FCU via MAVLink
     void processTagForwarding(const VisionPacket& pkt, double current_time, MavlinkDaemon& fcu);
 
-    uint32_t getTagsReceivedCount() const { return tags_received_count; }
-    uint32_t getTagsForwardedCount() const { return tags_forwarded_count; }
-    uint32_t getSurveyedTagsVerifiedCount() const { return surveyed_tags_verified_count_; }
-    TagMeasurement getLastTagMeasurement() const { return last_tag_measurement; }
+    uint32_t getTagsReceivedCount() const { return tags_received_count.load(); }
+    uint32_t getTagsForwardedCount() const { return tags_forwarded_count.load(); }
+    uint32_t getSurveyedTagsVerifiedCount() const { return surveyed_tags_verified_count_.load(); }
+    TagMeasurement getLastTagMeasurement() const {
+        std::lock_guard<std::mutex> lock(last_tag_mutex_);
+        return last_tag_measurement;
+    }
 
     void resetCounts();
 
-    uint32_t tags_received_count{0};
-    uint32_t tags_forwarded_count{0};
-    uint32_t surveyed_tags_verified_count_{0};
+    std::atomic<uint32_t> tags_received_count{0};
+    std::atomic<uint32_t> tags_forwarded_count{0};
+    std::atomic<uint32_t> surveyed_tags_verified_count_{0};
     TagMeasurement last_tag_measurement{};
 
 private:
     std::map<uint16_t, SurveyedTagPose> surveyed_tags_;
     mutable std::mutex tag_map_mutex_;
+    mutable std::mutex last_tag_mutex_;
 };

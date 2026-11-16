@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <thread>
+#include <cstring>
 
 TEST(MavlinkDaemonTest, SendAndReceive) {
     MavlinkDaemon daemon(24550, "127.0.0.1", 24551);
@@ -25,20 +26,27 @@ TEST(MavlinkDaemonTest, SendAndReceive) {
     setsockopt(fcu_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     // Test sendFlightCommand
-    FlightCommand cmd;
+    FlightCommand cmd = {};
+    cmd.enable = true;
     cmd.target_x = 10.0;
     daemon.sendFlightCommand(cmd);
 
-    char buffer[1024];
+    uint8_t buffer[1024];
     struct sockaddr_in from_addr;
     socklen_t from_len = sizeof(from_addr);
     int n = recvfrom(fcu_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from_addr, &from_len);
-    
-    EXPECT_EQ(n, static_cast<int>(sizeof(FlightCommand)));
-    if (n == static_cast<int>(sizeof(FlightCommand))) {
-        FlightCommand received_cmd;
-        memcpy(&received_cmd, buffer, sizeof(FlightCommand));
-        EXPECT_DOUBLE_EQ(received_cmd.target_x, 10.0);
+    ASSERT_GT(n, 0);
+
+    uint32_t msgid = 0;
+    const uint8_t* payload = nullptr;
+    uint8_t payload_len = 0;
+    bool ok = MavlinkPacketCodec::verifyAndExtract(buffer, n, msgid, payload, payload_len);
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(msgid, MAVLINK_MSG_ID_SET_POSITION_TARGET_LOCAL_NED);
+    if (ok && msgid == MAVLINK_MSG_ID_SET_POSITION_TARGET_LOCAL_NED) {
+        MavlinkSetPositionTargetLocalNed tgt{};
+        std::memcpy(&tgt, payload, sizeof(tgt));
+        EXPECT_FLOAT_EQ(tgt.x, 10.0f);
     }
 
     // Test getTelemetry
@@ -111,7 +119,7 @@ TEST(MavlinkDaemonTest, SendVisionPositionEstimateMavlinkV2) {
         EXPECT_EQ(received_est.usec, 1000000ULL);
         EXPECT_FLOAT_EQ(received_est.x, 2.5f);
         EXPECT_FLOAT_EQ(received_est.y, -1.2f);
-        EXPECT_FLOAT_EQ(received_est.z, 0.8f);
+        EXPECT_FLOAT_EQ(received_est.z, -0.8f);
         EXPECT_NEAR(received_est.yaw, 0.0f, 1e-4);
         EXPECT_GT(received_est.covariance[0], 0.0f); // Non-zero position variance
     }
@@ -200,7 +208,7 @@ TEST(MavlinkDaemonTest, SendMavlinkSetPositionTargetMsg84) {
     tv.tv_usec = 150000;
     setsockopt(fcu_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    FlightCommand cmd;
+    FlightCommand cmd{};
     cmd.target_x = 2.5;
     cmd.target_y = -1.2;
     cmd.target_z = 1.0; // Altitude 1.0m
@@ -208,28 +216,27 @@ TEST(MavlinkDaemonTest, SendMavlinkSetPositionTargetMsg84) {
     cmd.enable = true;
     daemon.sendFlightCommand(cmd);
 
-    // Read both packets sent (1: raw struct, 2: MAVLink Msg #84)
     uint8_t buffer[512];
-    bool received_msg84 = false;
-    for (int i = 0; i < 2; ++i) {
-        struct sockaddr_in from;
-        socklen_t from_len = sizeof(from);
-        int n = recvfrom(fcu_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
-        if (n >= 12 && buffer[0] == MAVLINK_STX_V2) {
-            uint32_t msgid = static_cast<uint32_t>(buffer[7]) |
-                             (static_cast<uint32_t>(buffer[8]) << 8) |
-                             (static_cast<uint32_t>(buffer[9]) << 16);
-            if (msgid == MAVLINK_MSG_ID_SET_POSITION_TARGET_LOCAL_NED) {
-                received_msg84 = true;
-                const auto* tgt = reinterpret_cast<const MavlinkSetPositionTargetLocalNed*>(buffer + 10);
-                EXPECT_NEAR(tgt->x, 2.5f, 1e-4);
-                EXPECT_NEAR(tgt->y, -1.2f, 1e-4);
-                EXPECT_NEAR(tgt->z, -1.0f, 1e-4); // NED altitude is negative Z
-                EXPECT_NEAR(tgt->yaw, 0.785f, 1e-4);
-            }
-        }
+    struct sockaddr_in from;
+    socklen_t from_len = sizeof(from);
+    int n = recvfrom(fcu_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
+    ASSERT_GT(n, 0);
+
+    uint32_t msgid = 0;
+    const uint8_t* payload = nullptr;
+    uint8_t payload_len = 0;
+    bool ok = MavlinkPacketCodec::verifyAndExtract(buffer, n, msgid, payload, payload_len);
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(msgid, MAVLINK_MSG_ID_SET_POSITION_TARGET_LOCAL_NED);
+
+    if (ok && msgid == MAVLINK_MSG_ID_SET_POSITION_TARGET_LOCAL_NED) {
+        MavlinkSetPositionTargetLocalNed tgt{};
+        std::memcpy(&tgt, payload, sizeof(tgt));
+        EXPECT_NEAR(tgt.x, 2.5f, 1e-4);
+        EXPECT_NEAR(tgt.y, -1.2f, 1e-4);
+        EXPECT_NEAR(tgt.z, -1.0f, 1e-4); // NED altitude is negative Z
+        EXPECT_NEAR(tgt.yaw, 0.785f, 1e-4);
     }
-    EXPECT_TRUE(received_msg84);
 
     daemon.stop();
     close(fcu_sock);
@@ -272,6 +279,134 @@ TEST(MavlinkDaemonTest, CorruptedCrcDropped) {
     Telemetry telem = daemon.getTelemetry();
     EXPECT_NE(telem.current_pose.x, 99.0);
     EXPECT_NE(telem.current_pose.y, 99.0);
+
+    daemon.stop();
+    close(fcu_sock);
+}
+
+// Verify Emergency Disarm MAVLink Msg #76 on E-Stop
+TEST(MavlinkDaemonTest, EmergencyDisarmOnEstopCommand) {
+    MavlinkDaemon daemon(24610, "127.0.0.1", 24611);
+    daemon.start();
+
+    int fcu_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in fcu_addr;
+    fcu_addr.sin_family = AF_INET;
+    fcu_addr.sin_port = htons(24611);
+    fcu_addr.sin_addr.s_addr = INADDR_ANY;
+    bind(fcu_sock, (struct sockaddr *)&fcu_addr, sizeof(fcu_addr));
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 150000;
+    setsockopt(fcu_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    FlightCommand cmd{};
+    cmd.enable = true;
+    cmd.estop = true;
+    daemon.sendFlightCommand(cmd);
+
+    uint8_t buffer[512];
+    struct sockaddr_in from;
+    socklen_t from_len = sizeof(from);
+    int n = recvfrom(fcu_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
+    ASSERT_GT(n, 0);
+
+    uint32_t msgid = 0;
+    const uint8_t* payload = nullptr;
+    uint8_t payload_len = 0;
+    bool ok = MavlinkPacketCodec::verifyAndExtract(buffer, n, msgid, payload, payload_len);
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(msgid, MAVLINK_MSG_ID_COMMAND_LONG);
+
+    if (ok && msgid == MAVLINK_MSG_ID_COMMAND_LONG) {
+        MavlinkCommandLong cmd_long{};
+        std::memcpy(&cmd_long, payload, sizeof(cmd_long));
+        EXPECT_EQ(cmd_long.command, MAV_CMD_COMPONENT_ARM_DISARM);
+        EXPECT_FLOAT_EQ(cmd_long.param1, 0.0f);       // 0 = Disarm
+        EXPECT_FLOAT_EQ(cmd_long.param2, 21196.0f);   // 21196 = Force immediate cutoff
+        EXPECT_EQ(cmd_long.target_system, 1);
+        EXPECT_EQ(cmd_long.target_component, MAV_COMP_ID_AUTOPILOT1);
+    }
+
+    daemon.stop();
+    close(fcu_sock);
+}
+
+// Verify Emergency Disarm MAVLink Msg #76 on Disable
+TEST(MavlinkDaemonTest, EmergencyDisarmOnDisableCommand) {
+    MavlinkDaemon daemon(24620, "127.0.0.1", 24621);
+    daemon.start();
+
+    int fcu_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in fcu_addr;
+    fcu_addr.sin_family = AF_INET;
+    fcu_addr.sin_port = htons(24621);
+    fcu_addr.sin_addr.s_addr = INADDR_ANY;
+    bind(fcu_sock, (struct sockaddr *)&fcu_addr, sizeof(fcu_addr));
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 150000;
+    setsockopt(fcu_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    FlightCommand cmd{};
+    cmd.enable = false; // Disabled
+    cmd.estop = false;
+    daemon.sendFlightCommand(cmd);
+
+    uint8_t buffer[512];
+    struct sockaddr_in from;
+    socklen_t from_len = sizeof(from);
+    int n = recvfrom(fcu_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
+    ASSERT_GT(n, 0);
+
+    uint32_t msgid = 0;
+    const uint8_t* payload = nullptr;
+    uint8_t payload_len = 0;
+    bool ok = MavlinkPacketCodec::verifyAndExtract(buffer, n, msgid, payload, payload_len);
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(msgid, MAVLINK_MSG_ID_COMMAND_LONG);
+
+    daemon.stop();
+    close(fcu_sock);
+}
+
+// Verify that NO Raw 34-byte struct is double-dispatched alongside MAVLink v2
+TEST(MavlinkDaemonTest, NoRawStructDoubleDispatch) {
+    MavlinkDaemon daemon(24630, "127.0.0.1", 24631);
+    daemon.start();
+
+    int fcu_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in fcu_addr;
+    fcu_addr.sin_family = AF_INET;
+    fcu_addr.sin_port = htons(24631);
+    fcu_addr.sin_addr.s_addr = INADDR_ANY;
+    bind(fcu_sock, (struct sockaddr *)&fcu_addr, sizeof(fcu_addr));
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 50000; // 50ms timeout
+    setsockopt(fcu_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    FlightCommand cmd{};
+    cmd.enable = true;
+    cmd.estop = false;
+    cmd.target_x = 3.14;
+    daemon.sendFlightCommand(cmd);
+
+    // 1st receive: Should be MAVLink Msg #84
+    uint8_t buffer[512];
+    struct sockaddr_in from;
+    socklen_t from_len = sizeof(from);
+    int n = recvfrom(fcu_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
+    ASSERT_GT(n, 0);
+    EXPECT_EQ(buffer[0], MAVLINK_STX_V2);
+    EXPECT_NE(n, static_cast<int>(sizeof(FlightCommand))); // MUST NOT be 34 bytes raw struct!
+
+    // 2nd receive: Socket should be empty (no double-dispatch)
+    n = recvfrom(fcu_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
+    EXPECT_EQ(n, -1); // Timeout! No second packet sent.
 
     daemon.stop();
     close(fcu_sock);

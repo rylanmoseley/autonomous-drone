@@ -21,8 +21,26 @@ void MavlinkDaemon::stop() {
 }
 
 void MavlinkDaemon::sendFlightCommand(const FlightCommand& cmd) {
-    // 1. Direct FlightCommand struct for test suite and legacy harness compatibility
-    channel_.sendData(&cmd, sizeof(FlightCommand));
+    // 1. If E-Stop or disarmed, immediately issue MAVLink Msg #76 COMMAND_LONG emergency disarm
+    if (cmd.estop || !cmd.enable) {
+        uint8_t cmd_buffer[128];
+        MavlinkCommandLong disarm_cmd = {};
+        disarm_cmd.param1 = 0.0f;       // 0 = Disarm
+        disarm_cmd.param2 = 21196.0f;   // 21196 = Force emergency disarm immediately
+        disarm_cmd.command = MAV_CMD_COMPONENT_ARM_DISARM;
+        disarm_cmd.target_system = 1;
+        disarm_cmd.target_component = MAV_COMP_ID_AUTOPILOT1;
+
+        size_t cmd_len = MavlinkPacketCodec::encodeCommandLong(
+            disarm_cmd,
+            tx_seq_++,
+            cmd_buffer,
+            sizeof(cmd_buffer)
+        );
+        if (cmd_len > 0) {
+            channel_.sendData(cmd_buffer, cmd_len);
+        }
+    }
 
     // 2. MAVLink Msg #84 SET_POSITION_TARGET_LOCAL_NED for standard ArduPilot FCU
     uint8_t packet_buffer[128];

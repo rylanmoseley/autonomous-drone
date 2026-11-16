@@ -17,7 +17,7 @@ public:
 
     // State transition helpers triggered by UI or Mission Events
     void handleArmCommand();
-    void handleDisarmCommand();
+    void handleDisarmCommand(bool force = false);
     void handleStartMissionCommand(bool in_air);
     void handlePauseMissionCommand();
     void handleResumeMissionCommand();

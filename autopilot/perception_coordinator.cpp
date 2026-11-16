@@ -42,6 +42,7 @@ void PerceptionCoordinator::resetCounts() {
     tags_received_count = 0;
     tags_forwarded_count = 0;
     surveyed_tags_verified_count_ = 0;
+    std::lock_guard<std::mutex> lock(last_tag_mutex_);
     last_tag_measurement = {};
 }
 
@@ -102,25 +103,34 @@ VisionPacket PerceptionCoordinator::transformVisionGoals(const VisionPacket& pkt
             hyp.position_cam.y = static_cast<float>(world_y);
             hyp.position_cam.z = static_cast<float>(world_z);
 
-            Quatf q = hyp.orientation_cam;
-            double cam_yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
-            double sinp = 2.0 * (q.w * q.y - q.z * q.x);
-            double cam_pitch = (std::abs(sinp) >= 1.0) ? std::copysign(M_PI / 2.0, sinp) : std::asin(sinp);
-            double cam_roll = std::atan2(2.0 * (q.w * q.x + q.y * q.z), 1.0 - 2.0 * (q.x * q.x + q.y * q.y));
+            Quatf q_cam = hyp.orientation_cam;
 
-            double world_yaw = std::atan2(std::sin(cur.yaw + cam_yaw), std::cos(cur.yaw + cam_yaw));
-            double world_pitch = cur.pitch + cam_pitch;
-            double world_roll = cur.roll + cam_roll;
+            // Drone orientation quaternion:
+            double cy_d = std::cos(cur.yaw * 0.5), sy_d = std::sin(cur.yaw * 0.5);
+            double cp_d = std::cos(cur.pitch * 0.5), sp_d = std::sin(cur.pitch * 0.5);
+            double cr_d = std::cos(cur.roll * 0.5), sr_d = std::sin(cur.roll * 0.5);
 
-            double cy_w = std::cos(world_yaw * 0.5), sy_w = std::sin(world_yaw * 0.5);
-            double cp_w = std::cos(world_pitch * 0.5), sp_w = std::sin(world_pitch * 0.5);
-            double cr_w = std::cos(world_roll * 0.5), sr_w = std::sin(world_roll * 0.5);
+            Quatf q_drone;
+            q_drone.w = static_cast<float>(cr_d * cp_d * cy_d + sr_d * sp_d * sy_d);
+            q_drone.x = static_cast<float>(sr_d * cp_d * cy_d - cr_d * sp_d * sy_d);
+            q_drone.y = static_cast<float>(cr_d * sp_d * cy_d + sr_d * cp_d * sy_d);
+            q_drone.z = static_cast<float>(cr_d * cp_d * sy_d - sr_d * sp_d * cy_d);
 
+            // Compound rotation: q_world = q_drone * q_cam
             Quatf q_world;
-            q_world.w = static_cast<float>(cr_w * cp_w * cy_w + sr_w * sp_w * sy_w);
-            q_world.x = static_cast<float>(sr_w * cp_w * cy_w - cr_w * sp_w * sy_w);
-            q_world.y = static_cast<float>(cr_w * sp_w * cy_w + sr_w * cp_w * sy_w);
-            q_world.z = static_cast<float>(cr_w * cp_w * sy_w - sr_w * sp_w * cy_w);
+            q_world.w = q_drone.w * q_cam.w - q_drone.x * q_cam.x - q_drone.y * q_cam.y - q_drone.z * q_cam.z;
+            q_world.x = q_drone.w * q_cam.x + q_drone.x * q_cam.w + q_drone.y * q_cam.z - q_drone.z * q_cam.y;
+            q_world.y = q_drone.w * q_cam.y - q_drone.x * q_cam.z + q_drone.y * q_cam.w + q_drone.z * q_cam.x;
+            q_world.z = q_drone.w * q_cam.z + q_drone.x * q_cam.y - q_drone.y * q_cam.x + q_drone.z * q_cam.w;
+
+            float norm = std::sqrt(q_world.w * q_world.w + q_world.x * q_world.x +
+                                   q_world.y * q_world.y + q_world.z * q_world.z);
+            if (norm > 1e-6f) {
+                q_world.w /= norm;
+                q_world.x /= norm;
+                q_world.y /= norm;
+                q_world.z /= norm;
+            }
             hyp.orientation_cam = q_world;
         }
     }
@@ -135,13 +145,14 @@ void PerceptionCoordinator::processTagForwarding(const VisionPacket& pkt, double
             tags_received_count++;
             if (hasSurveyedTag(tag.tag_id)) {
                 surveyed_tags_verified_count_++;
+                uint64_t usec = (pkt.timestamp_ns > 0)
+                    ? (pkt.timestamp_ns / 1000)
+                    : static_cast<uint64_t>(current_time * 1e6);
+                fcu.sendVisionPositionEstimate(tag, usec);
+                tags_forwarded_count++;
+                std::lock_guard<std::mutex> lock(last_tag_mutex_);
+                last_tag_measurement = tag;
             }
-            uint64_t usec = (pkt.timestamp_ns > 0)
-                ? (pkt.timestamp_ns / 1000)
-                : static_cast<uint64_t>(current_time * 1e6);
-            fcu.sendVisionPositionEstimate(tag, usec);
-            tags_forwarded_count++;
-            last_tag_measurement = tag;
         }
     }
 }

@@ -217,9 +217,10 @@ void FcuFollowerSimulator::correctDriftWithVision(const TagMeasurement& tag) {
 
 void FcuFollowerSimulator::correctDriftWithVisionEstimate(const MavlinkVisionPositionEstimate& est) {
     // EKF innovation: difference between external vision position and internal FCU feedback pose
+    // In MAVLink Msg #102 (NED), est.z is positive down. Convert to NEU altitude (-est.z):
     double err_x = est.x - feedback_pose_.x;
     double err_y = est.y - feedback_pose_.y;
-    double err_z = est.z - feedback_pose_.z;
+    double err_z = (-est.z) - feedback_pose_.z;
 
     // Kalman gain weighting based on observation covariance
     float pos_var = (est.covariance[0] > 0.0f) ? est.covariance[0] : 0.01f;

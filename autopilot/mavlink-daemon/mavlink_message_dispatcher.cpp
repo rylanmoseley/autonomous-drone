@@ -10,7 +10,7 @@ bool MavlinkMessageDispatcher::dispatchPacket(const uint8_t* buffer, size_t len)
     if (!buffer || len == 0) return false;
 
     // 1. Direct mock Telemetry struct (used by tests and in-process simulator)
-    if (len == sizeof(Telemetry)) {
+    if (len == sizeof(Telemetry) && buffer[0] != MAVLINK_STX_V2) {
         Telemetry telem;
         std::memcpy(&telem, buffer, sizeof(Telemetry));
         dispatchTelemetryStruct(telem);
@@ -41,6 +41,11 @@ bool MavlinkMessageDispatcher::dispatchPacket(const uint8_t* buffer, size_t len)
         std::memcpy(&vpe, payload, sizeof(vpe));
         dispatchVisionPositionEstimate(vpe);
         return true;
+    } else if (msgid == MAVLINK_MSG_ID_HEARTBEAT) {
+        std::lock_guard<std::mutex> lock(telem_mutex_);
+        last_telemetry_time_ = std::chrono::steady_clock::now();
+        has_telemetry_ = true;
+        return true;
     }
 
     return false;
@@ -58,6 +63,8 @@ void MavlinkMessageDispatcher::dispatchLocalPositionNed(const MavlinkLocalPositi
     current_telemetry_.current_pose.x = pos.x;
     current_telemetry_.current_pose.y = pos.y;
     current_telemetry_.current_pose.z = -pos.z; // Convert ArduPilot NED Down to internal NEU altitude!
+    current_telemetry_.current_pose.timestamp = pos.time_boot_ms * 1e-3;
+    current_telemetry_.current_pose.confidence = 1.0;
     last_telemetry_time_ = std::chrono::steady_clock::now();
     has_telemetry_ = true;
 }
@@ -67,6 +74,10 @@ void MavlinkMessageDispatcher::dispatchAttitude(const MavlinkAttitude& att) {
     current_telemetry_.current_pose.roll = att.roll;
     current_telemetry_.current_pose.pitch = att.pitch;
     current_telemetry_.current_pose.yaw = att.yaw;
+    if (current_telemetry_.current_pose.timestamp == 0.0) {
+        current_telemetry_.current_pose.timestamp = att.time_boot_ms * 1e-3;
+    }
+    current_telemetry_.current_pose.confidence = 1.0;
     last_telemetry_time_ = std::chrono::steady_clock::now();
     has_telemetry_ = true;
 }

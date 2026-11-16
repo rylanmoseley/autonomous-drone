@@ -20,25 +20,37 @@ bool TelemetryBridge::openSockets(int ui_port, int vision_port, const std::strin
     // UI Socket
     ui_sock_ = socket(AF_INET, SOCK_DGRAM, 0);
     if (ui_sock_ >= 0) {
+        int opt = 1;
+        setsockopt(ui_sock_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
         struct sockaddr_in ui_addr;
         std::memset(&ui_addr, 0, sizeof(ui_addr));
         ui_addr.sin_family = AF_INET;
         ui_addr.sin_port = htons(ui_port);
         ui_addr.sin_addr.s_addr = INADDR_ANY;
-        bind(ui_sock_, (struct sockaddr *)&ui_addr, sizeof(ui_addr));
-        setsockopt(ui_sock_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        if (bind(ui_sock_, (struct sockaddr *)&ui_addr, sizeof(ui_addr)) < 0) {
+            close(ui_sock_);
+            ui_sock_ = -1;
+        } else {
+            setsockopt(ui_sock_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        }
     }
 
     // Vision Socket
     vision_sock_ = socket(AF_INET, SOCK_DGRAM, 0);
     if (vision_sock_ >= 0) {
+        int opt = 1;
+        setsockopt(vision_sock_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
         struct sockaddr_in vision_addr;
         std::memset(&vision_addr, 0, sizeof(vision_addr));
         vision_addr.sin_family = AF_INET;
         vision_addr.sin_port = htons(vision_port);
         vision_addr.sin_addr.s_addr = INADDR_ANY;
-        bind(vision_sock_, (struct sockaddr *)&vision_addr, sizeof(vision_addr));
-        setsockopt(vision_sock_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        if (bind(vision_sock_, (struct sockaddr *)&vision_addr, sizeof(vision_addr)) < 0) {
+            close(vision_sock_);
+            vision_sock_ = -1;
+        } else {
+            setsockopt(vision_sock_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        }
     }
 
     // Telemetry Broadcast Socket

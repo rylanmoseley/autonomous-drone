@@ -18,6 +18,7 @@ double SafetySupervisor::getTimeSinceLastVision() const {
 bool SafetySupervisor::shouldTripEstop(FlightState current_state, double time_since_fcu_telemetry) const {
     if (current_state == FlightState::FLIGHT_STATE_ESTOP_TRIPPED ||
         current_state == FlightState::FLIGHT_STATE_STANDBY_DISARM ||
+        current_state == FlightState::FLIGHT_STATE_ARMED ||
         current_state == FlightState::FLIGHT_STATE_ROTOR_STOPPED) {
         return false;
     }

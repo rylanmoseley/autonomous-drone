@@ -73,3 +73,54 @@ TEST(MissionStateMachineTest, EstopTripping) {
     EXPECT_EQ(sm.getState(), FlightState::FLIGHT_STATE_ESTOP_TRIPPED);
     EXPECT_TRUE(sm.isEstopActive());
 }
+
+TEST(MissionStateMachineTest, InFlightDisarmRejectedUnlessForced) {
+    std::vector<FlightState> in_flight_states = {
+        FlightState::FLIGHT_STATE_TAKEOFF,
+        FlightState::FLIGHT_STATE_PATH_FOLLOWING,
+        FlightState::FLIGHT_STATE_GOAL_SEEK,
+        FlightState::FLIGHT_STATE_HOVER_WAIT,
+        FlightState::FLIGHT_STATE_LANDING
+    };
+
+    for (FlightState state : in_flight_states) {
+        MissionStateMachine sm;
+        sm.handleArmCommand();
+        sm.setState(state);
+        EXPECT_TRUE(sm.isArmed());
+
+        // Unforced in-flight disarm command MUST be rejected to prevent motor cut
+        sm.handleDisarmCommand(false);
+        EXPECT_EQ(sm.getState(), state);
+        EXPECT_TRUE(sm.isArmed());
+
+        // Explicit emergency forced disarm MUST be honored
+        sm.handleDisarmCommand(true);
+        EXPECT_EQ(sm.getState(), FlightState::FLIGHT_STATE_STANDBY_DISARM);
+        EXPECT_FALSE(sm.isArmed());
+    }
+}
+
+TEST(MissionStateMachineTest, DisarmAllowedOnGround) {
+    // 1. Armed on ground -> Disarm moves to STANDBY_DISARM
+    MissionStateMachine sm;
+    sm.handleArmCommand();
+    EXPECT_EQ(sm.getState(), FlightState::FLIGHT_STATE_ARMED);
+    EXPECT_TRUE(sm.isArmed());
+
+    sm.handleDisarmCommand(false);
+    EXPECT_EQ(sm.getState(), FlightState::FLIGHT_STATE_STANDBY_DISARM);
+    EXPECT_FALSE(sm.isArmed());
+
+    // 2. Rotor stopped on ground -> Disarm remains disarmed
+    sm.setState(FlightState::FLIGHT_STATE_ROTOR_STOPPED);
+    sm.handleDisarmCommand(false);
+    EXPECT_EQ(sm.getState(), FlightState::FLIGHT_STATE_STANDBY_DISARM);
+    EXPECT_FALSE(sm.isArmed());
+
+    // 3. E-stop tripped -> Disarm transitions to STANDBY_DISARM and clears armed
+    sm.setState(FlightState::FLIGHT_STATE_ESTOP_TRIPPED);
+    sm.handleDisarmCommand(false);
+    EXPECT_EQ(sm.getState(), FlightState::FLIGHT_STATE_STANDBY_DISARM);
+    EXPECT_FALSE(sm.isArmed());
+}
