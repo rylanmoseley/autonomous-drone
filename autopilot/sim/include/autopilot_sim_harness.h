@@ -3,57 +3,13 @@
 #include "follower_simulator.h"
 #include "autopilot_node.h"
 #include "collision_detector.h"
+#include "sim_types.h"
+#include "sim_camera_perception.h"
 #include <vector>
 #include <functional>
 #include <string>
 
 namespace sim {
-
-struct SimulatedGoal {
-    uint8_t shape_type; // SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE
-    double x;           // Position in World NED
-    double y;
-    double z;
-    double yaw;         // Heading (radians)
-};
-
-struct SimulatedTag {
-    uint16_t tag_id;
-    double x;           // World NED coordinates of tag anchor
-    double y;
-    double z;
-    double roll{0.0};
-    double pitch{0.0};
-    double yaw{0.0};
-    float confidence{1.0f};
-};
-
-struct TrajectoryPoint {
-    double timestamp;
-    Pose true_pose;
-    Pose feedback_pose;
-    FlightCommand command;
-    FlightState flight_state;
-};
-
-struct CollisionRecord {
-    double timestamp{0.0};
-    uint8_t shape_type{0};
-    std::string description;
-    Pose drone_pose{};
-    double clearance{0.0};
-};
-
-struct SimPerceptionConfig {
-    bool fov_filtering_enabled{false};      // If true, enforce camera frustum checks
-    double h_fov_deg{70.0};                 // Horizontal field of view (+-35 deg)
-    double v_fov_deg{50.0};                 // Vertical field of view (+-25 deg)
-    double min_range_m{0.15};               // Minimum detection distance
-    double max_range_m{6.0};                // Maximum detection distance
-    bool occlusion_check_enabled{false};    // Check gate-to-gate line-of-sight occlusion
-    bool proximity_dropout_enabled{false};  // Camera edge clipping at close range
-    double proximity_dropout_dist{0.35};    // Proximity dropout distance (m)
-};
 
 struct MissionReport {
     bool mission_completed{false};
@@ -108,6 +64,8 @@ public:
     const AutopilotNode& getAutopilot() const { return autopilot_; }
     FcuFollowerSimulator& getFollower() { return follower_; }
     const FcuFollowerSimulator& getFollower() const { return follower_; }
+    SimCameraPerception& getPerception() { return perception_; }
+    const SimCameraPerception& getPerception() const { return perception_; }
     const std::vector<TrajectoryPoint>& getTrajectory() const { return trajectory_; }
     const std::vector<SimulatedGoal>& getGoals() const { return simulated_goals_; }
     const std::vector<SimulatedTag>& getTags() const { return simulated_tags_; }
@@ -117,13 +75,14 @@ public:
     void setVisionEnabled(bool enabled) { vision_enabled_ = enabled; }
     void setDriftCorrectionEnabled(bool enabled) { drift_correction_enabled_ = enabled; }
 
-    // Perception simulation config
-    void setPerceptionConfig(const SimPerceptionConfig& cfg) { perception_cfg_ = cfg; }
-    const SimPerceptionConfig& getPerceptionConfig() const { return perception_cfg_; }
+    // Perception simulation config forwarding
+    void setPerceptionConfig(const SimPerceptionConfig& cfg) { perception_.setConfig(cfg); }
+    const SimPerceptionConfig& getPerceptionConfig() const { return perception_.getConfig(); }
 
 private:
     AutopilotNode autopilot_;
     FcuFollowerSimulator follower_;
+    SimCameraPerception perception_;
     std::vector<SimulatedGoal> simulated_goals_;
     std::vector<SimulatedTag> simulated_tags_;
     std::vector<TrajectoryPoint> trajectory_;
@@ -134,7 +93,6 @@ private:
     bool vision_enabled_{true};
     bool drift_correction_enabled_{true};
     uint32_t vision_seq_id_{0};
-    SimPerceptionConfig perception_cfg_{};
 
     void injectVisionTelemetry(double current_time);
 };

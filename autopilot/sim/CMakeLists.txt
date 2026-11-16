@@ -3,6 +3,8 @@ project(autopilot_sim LANGUAGES CXX)
 
 add_library(autopilot_sim STATIC
     src/follower_simulator.cpp
+    src/collision_detector.cpp
+    src/sim_camera_perception.cpp
     src/autopilot_sim_harness.cpp
 )
 

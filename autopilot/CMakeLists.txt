@@ -85,6 +85,14 @@ target_link_libraries(test_autopilot_sim PRIVATE
 )
 gtest_discover_tests(test_autopilot_sim)
 
+# Camera Perception Isolated Unit Tests
+add_executable(test_sim_perception tests/test_sim_perception.cpp)
+target_link_libraries(test_sim_perception PRIVATE
+    GTest::gtest_main
+    autopilot_sim
+)
+gtest_discover_tests(test_sim_perception)
+
 # Python Simulator Unit & Contract Tests
 if(Python3_FOUND)
     add_test(NAME test_sim_web COMMAND ${Python3_EXECUTABLE} -m unittest discover -s ${CMAKE_CURRENT_SOURCE_DIR}/sim/tests)
