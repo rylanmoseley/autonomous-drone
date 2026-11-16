@@ -5,16 +5,10 @@
 #include "vision_packet.h"
 #include "telemetry_packet.h"
 #include "flight_control_interface.h"
-
-struct TrackedGoal {
-    uint8_t shape_type = SHAPE_NONE;
-    int goal_id = 0;
-    uint8_t state = TRACK_STATE_SEARCHING;
-    Pose pose = {};
-    float spatial_variance = 0.0f;
-    double last_update_time = 0.0;
-    bool determinate = false;
-};
+#include "tracked_goal.h"
+#include "goal_track_filter.h"
+#include "goal_registry.h"
+#include "goal_telemetry_formatter.h"
 
 class GoalEstimator {
 public:
@@ -28,11 +22,14 @@ public:
     void clearGoal(uint8_t shape_type);
     void reset();
 
+    // Direct access to modular subcomponents
+    GoalTrackFilter& getFilter() { return filter_; }
+    const GoalTrackFilter& getFilter() const { return filter_; }
+    GoalRegistry& getRegistry() { return registry_; }
+    const GoalRegistry& getRegistry() const { return registry_; }
+
 private:
-    std::map<int, TrackedGoal> tracked_goals_;
-    std::map<int, TrackedGoal> last_known_goals_;
-    std::map<int, int> outlier_jump_counts_;
-    std::mutex mutex_;
-    double alpha_;
+    GoalTrackFilter filter_;
+    GoalRegistry registry_;
     double timeout_sec_;
 };
