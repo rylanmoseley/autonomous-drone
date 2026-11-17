@@ -283,3 +283,38 @@ TEST(VisionProcessingTest, SimGateOuterDimensions) {
     }
     EXPECT_TRUE(found_square);
 }
+
+// 12. Verify Multi-Contour Split Handling at Close Range
+// When a gate hoop's apex or sides clip the image boundary, it splits into multiple disjoint
+// contours (e.g. left and right vertical legs). The detector must aggregate all valid contours
+// of that color and estimate the true centered aperture position, rather than skewing onto a single leg.
+TEST(VisionProcessingTest, MultiContourApertureCenteringAtCloseRange) {
+    vision::GateDetector detector(vision::FOCAL_LENGTH);
+    detector.setSimMode(true);
+
+    cv::Mat frame = cv::Mat::zeros(240, 320, CV_8UC3);
+    // Draw two separate vertical legs of a red triangle (apex and base clipped beyond borders)
+    // Left leg at x in [60, 80], right leg at x in [240, 260], both from y=0 to y=239
+    cv::Rect left_leg(60, 0, 20, 240);
+    cv::Rect right_leg(240, 0, 20, 240);
+    cv::rectangle(frame, left_leg, cv::Scalar(0, 0, 255), -1);
+    cv::rectangle(frame, right_leg, cv::Scalar(0, 0, 255), -1);
+
+    auto results = detector.detectAllGates(frame, false);
+    ASSERT_FALSE(results.empty());
+
+    bool found_triangle = false;
+    for (const auto& r : results) {
+        if (r.shape == "Triangle") {
+            found_triangle = true;
+            // The combined center must be near the image horizontal center (160 px)
+            EXPECT_NEAR(r.center.x, 160.0, 10.0);
+            // posX_m must be centered within 0.05m of 0.0m, NEVER skewed to +0.28m or -0.28m
+            EXPECT_NEAR(r.posX_m, 0.0, 0.05);
+            // Distance must be estimated from the full combined width (200 px), not single leg width (20 px)
+            EXPECT_LT(r.posZ_m, 1.0);
+            EXPECT_GT(r.posZ_m, 0.3);
+        }
+    }
+    EXPECT_TRUE(found_triangle);
+}

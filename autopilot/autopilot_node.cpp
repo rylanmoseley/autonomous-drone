@@ -384,7 +384,7 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         sequencer.seek_ticks = 0;
                         sequencer.traverse_ticks = 0;
                         updateApproachDirection(raw_target);
-                    } else {
+                    } else if (sequencer.goal_phase != 2) {
                         std::vector<TrackedGoal> known_goals = estimator.getAllKnownGoals();
                         std::vector<PathPlanner::Obstacle> obstacles;
                         obstacles.reserve(known_goals.size());

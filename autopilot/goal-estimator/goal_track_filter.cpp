@@ -101,9 +101,21 @@ bool GoalTrackFilter::updateGoalTrack(TrackedGoal& goal, const PoseHypothesis& h
                 eff_alpha = alpha_ * 0.25; // Damp updates from marginal or edge-clipped contours
             }
 
-            goal.pose.x = eff_alpha * pos.x + (1.0 - eff_alpha) * goal.pose.x;
-            goal.pose.y = eff_alpha * pos.y + (1.0 - eff_alpha) * goal.pose.y;
-            goal.pose.z = eff_alpha * pos.z + (1.0 - eff_alpha) * goal.pose.z;
+            double step_x = eff_alpha * (pos.x - goal.pose.x);
+            double step_y = eff_alpha * (pos.y - goal.pose.y);
+            double step_z = eff_alpha * (pos.z - goal.pose.z);
+            double step_len = std::sqrt(step_x * step_x + step_y * step_y + step_z * step_z);
+            double max_step = (hyp.confidence < 0.85f) ? 0.04 : 0.12;
+            if (goal.state == TRACK_STATE_LOCKED && step_len > max_step && step_len > 1e-6) {
+                double scale = max_step / step_len;
+                step_x *= scale;
+                step_y *= scale;
+                step_z *= scale;
+            }
+
+            goal.pose.x += step_x;
+            goal.pose.y += step_y;
+            goal.pose.z += step_z;
 
             double dyaw = std::atan2(std::sin(yaw - goal.pose.yaw), std::cos(yaw - goal.pose.yaw));
             if (goal.state == TRACK_STATE_LOCKED && std::abs(dyaw) > M_PI / 2.0) {
