@@ -32,6 +32,16 @@ void GoalEstimator::updateEstimates(const std::vector<GoalMeasurement>& measurem
             }
         } else {
             TrackedGoal tg = GoalTrackFilter::initializeTrackedGoal(gm.shape_type, hyp, current_time);
+            auto it_lk = last_known.find(key);
+            if (it_lk != last_known.end()) {
+                double dyaw = std::atan2(std::sin(tg.pose.yaw - it_lk->second.pose.yaw),
+                                         std::cos(tg.pose.yaw - it_lk->second.pose.yaw));
+                if (std::abs(dyaw) > 1.5707963267948966) {
+                    dyaw = (dyaw > 0.0) ? (dyaw - 3.14159265358979323846) : (dyaw + 3.14159265358979323846);
+                    tg.pose.yaw = std::atan2(std::sin(it_lk->second.pose.yaw + dyaw),
+                                             std::cos(it_lk->second.pose.yaw + dyaw));
+                }
+            }
             tracked[key] = tg;
             last_known[key] = tg;
         }

@@ -78,6 +78,7 @@ AutopilotNode::~AutopilotNode() {
 
 void AutopilotNode::start() {
     running = true;
+    safety.enableFcuWatchdog(true, 1.0);
     fcu.start();
     ui_thread = std::thread(&AutopilotNode::ui_loop, this);
     vision_thread = std::thread(&AutopilotNode::vision_loop, this);
@@ -101,39 +102,50 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
     switch (pkt.command) {
         case UI_CMD_ARM:
             state_machine.handleArmCommand();
-            is_armed = 1;
-            estop_active = 0;
+            is_armed = state_machine.isArmed() ? 1 : 0;
+            estop_active = state_machine.isEstopActive() ? 1 : 0;
             state = state_machine.getState();
             break;
-        case UI_CMD_DISARM:
+        case UI_CMD_DISARM: {
+            bool in_air = (getCurrentPose().z > 0.4);
+            if (in_air) {
+                // Reject in-flight disarm unless land or estop
+                break;
+            }
             state_machine.handleDisarmCommand();
-            is_armed = 0;
-            estop_active = 0;
+            is_armed = state_machine.isArmed() ? 1 : 0;
+            estop_active = state_machine.isEstopActive() ? 1 : 0;
             state = state_machine.getState();
-            sequencer.reset();
-            estimator.reset();
-            planner.reset();
+            if (!state_machine.isArmed()) {
+                sequencer.reset();
+                estimator.reset();
+                planner.reset();
+            }
             break;
+        }
         case UI_CMD_START_MISSION: {
-            bool in_air = (last_current_pose_.z > 0.4);
+            Pose cur_p = getCurrentPose();
+            bool in_air = (cur_p.z > 0.4);
             state_machine.handleStartMissionCommand(in_air);
             is_armed = 1;
             estop_active = 0;
             state = state_machine.getState();
-            sequencer.startMission(pkt, last_current_pose_);
+            sequencer.startMission(pkt, cur_p);
             planner.reset();
             break;
         }
-        case UI_CMD_SET_SEQUENCE:
-            sequencer.updateSequence(pkt, last_current_pose_);
+        case UI_CMD_SET_SEQUENCE: {
+            Pose cur_p = getCurrentPose();
+            sequencer.updateSequence(pkt, cur_p);
             if (is_armed && (state == FlightState::FLIGHT_STATE_HOVER_WAIT ||
                              state == FlightState::FLIGHT_STATE_PATH_FOLLOWING ||
                              state == FlightState::FLIGHT_STATE_GOAL_SEEK)) {
-                state = (last_current_pose_.z > 0.4) ? FlightState::FLIGHT_STATE_PATH_FOLLOWING : FlightState::FLIGHT_STATE_TAKEOFF;
+                state = (cur_p.z > 0.4) ? FlightState::FLIGHT_STATE_PATH_FOLLOWING : FlightState::FLIGHT_STATE_TAKEOFF;
                 state_machine.setState(state);
             }
             planner.reset();
             break;
+        }
         case UI_CMD_SET_CONSTRAINTS:
             sequencer.setConstraints(pkt.use_tube_constraint, pkt.tube_rail_y, pkt.tube_rail_z);
             break;
@@ -185,23 +197,26 @@ void AutopilotNode::handleUICommand(const UICommandPacket& pkt, const struct soc
 void AutopilotNode::ui_loop() {
     char buffer[4096];
     while (running) {
+        int sock = telemetry_bridge.getUiSocket();
+        if (sock < 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
         struct sockaddr_in from; socklen_t from_len = sizeof(from);
-        int n = recvfrom(telemetry_bridge.getUiSocket(), buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
+        int n = recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
         if (n == sizeof(UICommandPacket)) {
             UICommandPacket* pkt = reinterpret_cast<UICommandPacket*>(buffer);
             if (pkt->msg_type == MSG_TYPE_UI_CMD) {
                 handleUICommand(*pkt, from, from_len);
             }
+        } else if (n < 0 && (errno != EAGAIN && errno != EWOULDBLOCK)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 }
 
 void AutopilotNode::handleVisionPacket(const VisionPacket& pkt, double current_time) {
-    Pose cur;
-    {
-        std::lock_guard<std::mutex> lock(pose_mutex_);
-        cur = last_current_pose_;
-    }
+    Pose cur = getCurrentPose();
     if (cur.z == 0.0 && cur.x == 0.0 && cur.y == 0.0) {
         cur = fcu.getTelemetry().current_pose;
     }
@@ -216,8 +231,13 @@ void AutopilotNode::handleVisionPacket(const VisionPacket& pkt, double current_t
 void AutopilotNode::vision_loop() {
     char buffer[2048];
     while (running) {
+        int sock = telemetry_bridge.getVisionSocket();
+        if (sock < 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
         struct sockaddr_in from; socklen_t from_len = sizeof(from);
-        int n = recvfrom(telemetry_bridge.getVisionSocket(), buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
+        int n = recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &from_len);
         if (n == sizeof(VisionPacket)) {
             VisionPacket* pkt = reinterpret_cast<VisionPacket*>(buffer);
             if (pkt->msg_type == MSG_TYPE_VISION) {
@@ -225,6 +245,8 @@ void AutopilotNode::vision_loop() {
                     std::chrono::steady_clock::now().time_since_epoch()).count();
                 handleVisionPacket(*pkt, current_time);
             }
+        } else if (n < 0 && (errno != EAGAIN && errno != EWOULDBLOCK)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 }
@@ -261,7 +283,7 @@ void AutopilotNode::updateApproachDirection(const Pose& target_pose) {
         obstacles.push_back({g.pose.x, g.pose.y, g.pose.z, g.shape_type});
     }
 
-    Pose ref_pose = last_current_pose_;
+    Pose ref_pose = getCurrentPose();
     active_orthogonal_path_ = planner.generateOrthogonalPath(target_pose, ref_pose, obstacles, 0.75);
     has_orthogonal_path_ = true;
 
@@ -362,7 +384,7 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                         sequencer.seek_ticks = 0;
                         sequencer.traverse_ticks = 0;
                         updateApproachDirection(raw_target);
-                    } else {
+                    } else if (sequencer.goal_phase != 2) {
                         std::vector<TrackedGoal> known_goals = estimator.getAllKnownGoals();
                         std::vector<PathPlanner::Obstacle> obstacles;
                         obstacles.reserve(known_goals.size());
@@ -371,8 +393,20 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                             obstacles.push_back({g.pose.x, g.pose.y, g.pose.z, g.shape_type});
                         }
                         Pose ref_pose = current_pose;
-                        active_orthogonal_path_ = planner.generateOrthogonalPath(
+                        PathPlanner::OrthogonalPath new_path = planner.generateOrthogonalPath(
                             raw_target, ref_pose, obstacles, 0.75, active_orthogonal_path_.traversal_sign);
+                        // Traversal corridor stability: ensure new_path maintains the established traversal direction
+                        double dot_corridor = new_path.normal_x * approach_dx +
+                                              new_path.normal_y * approach_dy +
+                                              new_path.normal_z * approach_dz;
+                        if (dot_corridor < 0.0) {
+                            std::swap(new_path.entry_point, new_path.exit_point);
+                            new_path.normal_x = -new_path.normal_x;
+                            new_path.normal_y = -new_path.normal_y;
+                            new_path.normal_z = -new_path.normal_z;
+                            new_path.traversal_sign = -new_path.traversal_sign;
+                        }
+                        active_orthogonal_path_ = new_path;
                         approach_dx = active_orthogonal_path_.normal_x;
                         approach_dy = active_orthogonal_path_.normal_y;
                         approach_dz = active_orthogonal_path_.normal_z;
@@ -472,8 +506,10 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                             sequencer.standoff_ticks = 0;
                             sequencer.seek_ticks = 0;
                             sequencer.traverse_ticks = 0;
-                            sequencer.new_goal = true;
-                            updateApproachDirection(stale_goal.pose);
+                            sequencer.new_goal = false;
+                            if (!has_orthogonal_path_) {
+                                updateApproachDirection(stale_goal.pose);
+                            }
                             Pose standoff_target_entry = planner.planStandoffTarget(
                                 current_pose, stale_goal.pose, approach_dx, approach_dy).entrance_standoff;
                             cmd = planner.plan(current_pose, standoff_target_entry, dt);

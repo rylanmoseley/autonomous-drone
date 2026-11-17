@@ -26,13 +26,13 @@ bool PhaseAlignmentEvaluator::isStandoffReached(
         bool close_to_standoff = (dist_to_standoff < 0.25 && lat_corr_err < 0.15);
         bool progressive_standoff = (standoff_ticks > 25 && (dist_to_standoff < 0.40 || dist_to_adj < 0.25) && lat_corr_err < 0.25);
         bool relaxed_standoff = (standoff_ticks > 40 && (dist_to_standoff < 0.55 || dist_to_adj < 0.40) && lat_corr_err < 0.35);
-        bool timeout_standoff = (standoff_ticks > 60 && (dist_to_standoff < 0.70 || dist_to_adj < 0.50));
+        bool timeout_standoff = (standoff_ticks > 60 && (dist_to_standoff < 0.70 || dist_to_adj < 0.50) && lat_corr_err < 0.45);
         if (close_to_standoff || progressive_standoff || relaxed_standoff || timeout_standoff) {
             return true;
         }
-    } else if (standoff_ticks > 80 && dot_fwd <= -0.20 && (dist_to_standoff < 0.80 || dist_to_adj < 0.60)) {
+    } else if (standoff_ticks > 80 && dot_fwd <= -0.20 && (dist_to_standoff < 0.80 || dist_to_adj < 0.60) && lat_corr_err < 0.50) {
         return true;
-    } else if (standoff_ticks > 100) {
+    } else if (standoff_ticks > 120 && lat_corr_err < 0.50) {
         return true;
     }
     return false;
@@ -62,13 +62,14 @@ bool PhaseAlignmentEvaluator::isBoresightAligned(
     double e_perp_z = delta_z - e_along * approach_dz;
     double lat_err = std::sqrt(e_perp_x * e_perp_x + e_perp_y * e_perp_y + e_perp_z * e_perp_z);
 
+    // Maximum allowable cross-track error is strictly bounded by 0.085m (aperture collision boundary).
+    // Traversal must never be triggered if cross-track error exceeds 0.085m, regardless of tick count.
     bool tight_aligned = (align_ticks >= 6 && std::abs(dyaw) < 0.08 && lat_err < 0.045 && std::abs(e_along) < 0.20);
     bool relaxed_aligned = (align_ticks > 15 && std::abs(dyaw) < 0.12 && lat_err < 0.065 && std::abs(e_along) < 0.28);
     bool watchdog_aligned = (align_ticks > 30 && std::abs(dyaw) < 0.18 && lat_err < 0.085 && std::abs(e_along) < 0.35);
-    bool forced_watchdog = (align_ticks > 45 && std::abs(dyaw) < 0.25 && lat_err < 0.110 && std::abs(e_along) < 0.45);
-    bool timeout_aligned = (align_ticks > 70 && (lat_err < 0.140 || align_ticks > 90));
+    bool timeout_aligned = (align_ticks > 70 && std::abs(dyaw) < 0.20 && lat_err < 0.085 && std::abs(e_along) < 0.40);
 
-    return (tight_aligned || relaxed_aligned || watchdog_aligned || forced_watchdog || timeout_aligned);
+    return (tight_aligned || relaxed_aligned || watchdog_aligned || timeout_aligned);
 }
 
 bool PhaseAlignmentEvaluator::isTraversalCompleted(

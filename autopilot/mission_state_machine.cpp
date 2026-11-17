@@ -26,8 +26,16 @@ void MissionStateMachine::handleArmCommand() {
     }
 }
 
-void MissionStateMachine::handleDisarmCommand() {
+void MissionStateMachine::handleDisarmCommand(bool force) {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (!force && (state_ == FlightState::FLIGHT_STATE_TAKEOFF ||
+                   state_ == FlightState::FLIGHT_STATE_PATH_FOLLOWING ||
+                   state_ == FlightState::FLIGHT_STATE_GOAL_SEEK ||
+                   state_ == FlightState::FLIGHT_STATE_HOVER_WAIT ||
+                   state_ == FlightState::FLIGHT_STATE_LANDING)) {
+        // Disarm rejected while airborne; require explicit LAND or ESTOP
+        return;
+    }
     is_armed_ = false;
     estop_active_ = false;
     state_ = FlightState::FLIGHT_STATE_STANDBY_DISARM;

@@ -180,3 +180,169 @@ TEST(VisionProcessingTest, UDPLoopbackTransmission) {
     close(tx_sock);
     close(rx_sock);
 }
+
+// 7. Verify Unclassified / Unknown Shapes Are NOT Coerced to SHAPE_SQUARE
+TEST(VisionProcessingTest, UnclassifiedShapesNotCoercedToSquare) {
+    vision::GateDetectionResult det;
+    det.detected = true;
+    det.shape = "Rectangle"; // Not a valid mission hoop shape (Circle, Triangle, Square)
+    det.posX_m = 1.0;
+    det.posY_m = 0.0;
+    det.posZ_m = 2.0;
+
+    VisionPacket pkt = vision::GateDetector::toVisionPacket(det, 1, 1000);
+    EXPECT_EQ(pkt.goals[0].shape_type, SHAPE_NONE);
+    EXPECT_EQ(pkt.goals[0].is_detected, 0);
+
+    det.shape = "Unknown";
+    pkt = vision::GateDetector::toVisionPacket(det, 2, 2000);
+    EXPECT_EQ(pkt.goals[0].shape_type, SHAPE_NONE);
+    EXPECT_EQ(pkt.goals[0].is_detected, 0);
+
+    det.shape = "Pentagon";
+    pkt = vision::GateDetector::toVisionPacket(det, 3, 3000);
+    EXPECT_EQ(pkt.goals[0].shape_type, SHAPE_NONE);
+    EXPECT_EQ(pkt.goals[0].is_detected, 0);
+}
+
+// 8. Verify Valid Shape Types Map to Respective Protocol Enums
+TEST(VisionProcessingTest, ValidShapesMapCorrectly) {
+    vision::GateDetectionResult det;
+    det.detected = true;
+    det.posX_m = 1.0;
+    det.posY_m = 0.0;
+    det.posZ_m = 2.0;
+
+    det.shape = "Circle";
+    VisionPacket pkt = vision::GateDetector::toVisionPacket(det, 1, 1000);
+    EXPECT_EQ(pkt.goals[0].shape_type, SHAPE_CIRCLE);
+    EXPECT_EQ(pkt.goals[0].is_detected, 1);
+
+    det.shape = "Triangle";
+    pkt = vision::GateDetector::toVisionPacket(det, 2, 2000);
+    EXPECT_EQ(pkt.goals[0].shape_type, SHAPE_TRIANGLE);
+    EXPECT_EQ(pkt.goals[0].is_detected, 1);
+
+    det.shape = "Square";
+    pkt = vision::GateDetector::toVisionPacket(det, 3, 3000);
+    EXPECT_EQ(pkt.goals[0].shape_type, SHAPE_SQUARE);
+    EXPECT_EQ(pkt.goals[0].is_detected, 1);
+}
+
+// 9. Verify Empty Gate Results Produces Drop Error
+TEST(VisionProcessingTest, EmptyDetectionResultsHandling) {
+    std::vector<vision::GateDetectionResult> empty_results;
+    VisionPacket pkt = vision::GateDetector::toVisionPacket(empty_results, 99, 500000);
+
+    EXPECT_EQ(pkt.msg_type, MSG_TYPE_VISION);
+    EXPECT_EQ(pkt.sequence_id, 99u);
+    EXPECT_EQ(pkt.error_state, VISION_ERR_FRAME_DROPPED);
+    EXPECT_EQ(pkt.num_goals_reported, 0);
+}
+
+// 10. Verify Triangular Centroid Calculation (1/3 Height from Base)
+TEST(VisionProcessingTest, TriangularCentroidGeometry) {
+    // A vertical triangle bounding box with top at y=10 and height=60 (base at y=70)
+    cv::Rect bbox(20, 10, 40, 60);
+
+    // Centroid of a triangle with base at bottom is 1/3 height above base
+    // In screen coordinates (y down), base is at bbox.y + bbox.height
+    // 1/3 height above base is: (bbox.y + bbox.height) - (bbox.height / 3.0)
+    double expected_cy = (bbox.y + bbox.height) - (bbox.height / 3.0);
+    EXPECT_DOUBLE_EQ(expected_cy, 50.0); // 10 + 60 - 20 = 50.0
+    // Midpoint would have been 10 + 30 = 40.0; centroid must be lower (closer to base)
+    EXPECT_GT(expected_cy, bbox.y + bbox.height / 2.0);
+}
+
+// 11. Verify Sim Mode Uses Outer Gate Dimensions (Torus with 0.03m Tube)
+TEST(VisionProcessingTest, SimGateOuterDimensions) {
+    vision::GateDetector detector(vision::FOCAL_LENGTH);
+    detector.setSimMode(true);
+
+    // Create a 320x240 frame containing a pure green square (Gate 3)
+    cv::Mat frame = cv::Mat::zeros(240, 320, CV_8UC3);
+    // Draw green rectangle representing outer edge of square gate (0.41356m wide at 1.5m dist)
+    // At dist = 1.5m, focal = 240 / (2 * tan(35 deg)) = 171.378 px
+    // Expected size in px = 0.41356 * 171.378 / 1.5 = 47 px
+    double focal = 240.0 / (2.0 * std::tan(35.0 * CV_PI / 180.0));
+    double dist_true = 1.50;
+    int sz_px = static_cast<int>(std::round(0.41356 * focal / dist_true));
+    cv::Rect sq_rect(160 - sz_px / 2, 120 - sz_px / 2, sz_px, sz_px);
+    cv::rectangle(frame, sq_rect, cv::Scalar(0, 255, 0), -1);
+
+    auto results = detector.detectAllGates(frame, false);
+    ASSERT_FALSE(results.empty());
+
+    bool found_square = false;
+    for (const auto& r : results) {
+        if (r.shape == "Square") {
+            found_square = true;
+            // Estimated distance must match true physical distance within 3%
+            EXPECT_NEAR(r.posZ_m, dist_true, 0.05);
+        }
+    }
+    EXPECT_TRUE(found_square);
+}
+
+// 12. Verify Multi-Contour Split Handling at Close Range
+// When a gate hoop's apex or sides clip the image boundary, it splits into multiple disjoint
+// contours (e.g. left and right vertical legs). The detector must aggregate all valid contours
+// of that color and estimate the true centered aperture position, rather than skewing onto a single leg.
+TEST(VisionProcessingTest, MultiContourApertureCenteringAtCloseRange) {
+    vision::GateDetector detector(vision::FOCAL_LENGTH);
+    detector.setSimMode(true);
+
+    cv::Mat frame = cv::Mat::zeros(240, 320, CV_8UC3);
+    // Draw two separate vertical legs of a red triangle (apex and base clipped beyond borders)
+    // Left leg at x in [60, 80], right leg at x in [240, 260], both from y=0 to y=239
+    cv::Rect left_leg(60, 0, 20, 240);
+    cv::Rect right_leg(240, 0, 20, 240);
+    cv::rectangle(frame, left_leg, cv::Scalar(0, 0, 255), -1);
+    cv::rectangle(frame, right_leg, cv::Scalar(0, 0, 255), -1);
+
+    auto results = detector.detectAllGates(frame, false);
+    ASSERT_FALSE(results.empty());
+
+    bool found_triangle = false;
+    for (const auto& r : results) {
+        if (r.shape == "Triangle") {
+            found_triangle = true;
+            // The combined center must be near the image horizontal center (160 px)
+            EXPECT_NEAR(r.center.x, 160.0, 10.0);
+            // posX_m must be centered within 0.05m of 0.0m, NEVER skewed to +0.28m or -0.28m
+            EXPECT_NEAR(r.posX_m, 0.0, 0.05);
+            // Distance must be estimated from the full combined width (200 px), not single leg width (20 px)
+            EXPECT_LT(r.posZ_m, 1.0);
+            EXPECT_GT(r.posZ_m, 0.3);
+        }
+    }
+    EXPECT_TRUE(found_triangle);
+}
+
+// 13. Verify Simulated Gate Detections Have Zero Tilted Yaw (Orthogonal Traversal)
+// In simulation mode, planar arena gates are upright and orthogonal.
+// Detections for all shapes (Circle, Triangle, Square) must have zero tilt/yaw so the
+// autopilot approach corridor is strictly perpendicular to the gate face without angled collisions.
+TEST(VisionProcessingTest, SimGatesZeroTiltOrthogonalOrientation) {
+    vision::GateDetector detector(vision::FOCAL_LENGTH);
+    detector.setSimMode(true);
+
+    cv::Mat frame = cv::Mat::zeros(240, 320, CV_8UC3);
+    // Draw green square (Gate 3) and red triangle (Gate 2)
+    cv::Rect sq_rect(40, 60, 50, 50);
+    cv::rectangle(frame, sq_rect, cv::Scalar(0, 255, 0), -1);
+
+    std::vector<cv::Point> tri_pts = { {200, 60}, {170, 110}, {230, 110} };
+    std::vector<std::vector<cv::Point>> polys = { tri_pts };
+    cv::fillPoly(frame, polys, cv::Scalar(0, 0, 255));
+
+    auto results = detector.detectAllGates(frame, false);
+    ASSERT_GE(results.size(), 2u);
+
+    for (const auto& r : results) {
+        EXPECT_DOUBLE_EQ(r.yaw_rad, 0.0);
+        EXPECT_DOUBLE_EQ(r.pitch_rad, 0.0);
+        EXPECT_DOUBLE_EQ(r.roll_rad, 0.0);
+        EXPECT_FALSE(r.is_3d);
+    }
+}

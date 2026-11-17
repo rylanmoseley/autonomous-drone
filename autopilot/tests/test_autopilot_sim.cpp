@@ -262,7 +262,7 @@ TEST(AutopilotSimulationHarnessTest, TagToMavlinkVisionPositionEstimate) {
     EXPECT_EQ(est.usec, 555000ULL);
     EXPECT_FLOAT_EQ(est.x, 1.5f);
     EXPECT_FLOAT_EQ(est.y, -2.0f);
-    EXPECT_FLOAT_EQ(est.z, 0.9f);
+    EXPECT_FLOAT_EQ(est.z, -0.9f);
     EXPECT_NEAR(est.roll, 0.0f, 1e-4);
     EXPECT_NEAR(est.pitch, 0.0f, 1e-4);
     EXPECT_NEAR(est.yaw, M_PI / 2.0, 1e-4);
@@ -276,12 +276,14 @@ TEST(AutopilotSimulationHarnessTest, TagToMavlinkVisionPositionEstimate) {
 // 9. AutopilotNode Tag Pass-Through Verification
 TEST(AutopilotSimulationHarnessTest, TagPassThroughForwarding) {
     AutopilotNode autopilot;
+    autopilot.registerSurveyedTag(10, {3.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f});
+    autopilot.registerSurveyedTag(11, {4.0f, -1.0f, 1.2f}, {1.0f, 0.0f, 0.0f, 0.0f});
 
     VisionPacket pkt{};
     pkt.msg_type = MSG_TYPE_VISION;
     pkt.sequence_id = 101;
     pkt.timestamp_ns = 2500000000ULL; // 2.5s
-    pkt.num_tags_detected = 2;
+    pkt.num_tags_detected = 3;
 
     pkt.tags[0].tag_id = 10;
     pkt.tags[0].is_valid = 1;
@@ -295,9 +297,16 @@ TEST(AutopilotSimulationHarnessTest, TagPassThroughForwarding) {
     pkt.tags[1].camera_att_world = {1.0f, 0.0f, 0.0f, 0.0f};
     pkt.tags[1].confidence = 0.85f;
 
+    // Tag 99 is NOT in surveyed registry - should be ignored by EKF forwarding
+    pkt.tags[2].tag_id = 99;
+    pkt.tags[2].is_valid = 1;
+    pkt.tags[2].camera_pos_world = {5.0f, 0.0f, 1.0f};
+    pkt.tags[2].camera_att_world = {1.0f, 0.0f, 0.0f, 0.0f};
+    pkt.tags[2].confidence = 0.80f;
+
     autopilot.handleVisionPacket(pkt, 2.5);
 
-    EXPECT_EQ(autopilot.tags_received_count, 2u);
+    EXPECT_EQ(autopilot.tags_received_count, 3u);
     EXPECT_EQ(autopilot.tags_forwarded_count, 2u);
     EXPECT_TRUE(autopilot.fcu.hasVisionPositionEstimate());
     EXPECT_EQ(autopilot.fcu.getVisionEstimateCount(), 2u);
@@ -305,7 +314,7 @@ TEST(AutopilotSimulationHarnessTest, TagPassThroughForwarding) {
     MavlinkVisionPositionEstimate last_est = autopilot.fcu.getLastVisionPositionEstimate();
     EXPECT_FLOAT_EQ(last_est.x, 4.0f);
     EXPECT_FLOAT_EQ(last_est.y, -1.0f);
-    EXPECT_FLOAT_EQ(last_est.z, 1.2f);
+    EXPECT_FLOAT_EQ(last_est.z, -1.2f);
 }
 
 // 10. Follower Drift Reset via Global Vision Reading
@@ -686,7 +695,7 @@ TEST(AutopilotSimulationHarnessTest, SurveyedTagAttitudeDriftCorrection) {
     MavlinkVisionPositionEstimate est = tag_to_mavlink_vision_position(tag, 12345678ULL);
     EXPECT_FLOAT_EQ(est.x, 2.1f);
     EXPECT_FLOAT_EQ(est.y, -1.4f);
-    EXPECT_FLOAT_EQ(est.z, 1.15f);
+    EXPECT_FLOAT_EQ(est.z, -1.15f);
     EXPECT_NEAR(est.yaw, 45.0 * M_PI / 180.0, 1e-3);
     EXPECT_NEAR(est.pitch, 10.0 * M_PI / 180.0, 1e-3);
     EXPECT_NEAR(est.roll, -5.0 * M_PI / 180.0, 1e-3);
@@ -1036,5 +1045,218 @@ TEST(AutopilotSimulationHarnessTest, TraversalCrossTrackApertureStraightPass) {
     // Commanded traversal must hug the orthogonal line with < 0.035m cross-track deviation
     EXPECT_LT(max_cross_track, 0.035);
 }
+
+// Helper struct and analyzer for gate crossings
+namespace {
+struct GatePassRecord {
+    uint8_t shape{0};
+    double timestamp{0.0};
+    double direction{0.0}; // +1.0 for +X traversal, -1.0 for -X traversal
+    double cross_y{0.0};
+    double cross_z{0.0};
+};
+
+std::vector<GatePassRecord> extractGateCrossings(const std::vector<TrajectoryPoint>& trajectory) {
+    std::vector<GatePassRecord> passes;
+    for (size_t i = 1; i < trajectory.size(); ++i) {
+        double x_prev = trajectory[i - 1].true_pose.x;
+        double x_curr = trajectory[i].true_pose.x;
+        double y_curr = trajectory[i].true_pose.y;
+        double z_curr = trajectory[i].true_pose.z;
+
+        // Plane crossing at gate line X = 2.5m
+        if ((x_prev < 2.5 && x_curr >= 2.5) || (x_prev > 2.5 && x_curr <= 2.5)) {
+            double dir = (x_curr >= x_prev) ? 1.0 : -1.0;
+            // Identify gate based on Y aperture window:
+            // Gate 1 (Circle):   Y in [-1.6, -1.0]
+            // Gate 2 (Triangle): Y in [-0.35, 0.35]
+            // Gate 3 (Square):   Y in [ 1.0,  1.6]
+            if (std::abs(y_curr - (-1.3)) < 0.35 && std::abs(z_curr - 1.0) < 0.35) {
+                passes.push_back({SHAPE_CIRCLE, trajectory[i].timestamp, dir, y_curr, z_curr});
+            } else if (std::abs(y_curr - 0.0) < 0.35 && std::abs(z_curr - 1.0) < 0.35) {
+                passes.push_back({SHAPE_TRIANGLE, trajectory[i].timestamp, dir, y_curr, z_curr});
+            } else if (std::abs(y_curr - 1.3) < 0.35 && std::abs(z_curr - 1.0) < 0.35) {
+                passes.push_back({SHAPE_SQUARE, trajectory[i].timestamp, dir, y_curr, z_curr});
+            }
+        }
+    }
+    return passes;
+}
+} // anonymous namespace
+
+// 30. Verify Repeated Simulations Under Default World (Noise Disabled)
+// Runs 10 consecutive simulated runs under default world configuration with noise disabled.
+// Verifies repeatably:
+// - All goals traversed strictly in order: Gate 1 (Circle) -> Gate 2 (Triangle) -> Gate 3 (Square)
+// - Gate 1 entered from front (+X direction)
+// - Gate 2 entered from behind (-X direction) in a single pass without extra traverses
+// - Gate 3 entered from front (+X direction)
+// - Zero rim or pylon collisions across all runs
+TEST(AutopilotSimulationHarnessTest, RepeatedSimulationsDefaultWorldNoNoise) {
+    const int NUM_RUNS = 10;
+    for (int run = 0; run < NUM_RUNS; ++run) {
+        FollowerConfig cfg;
+        cfg.noise_enabled = false;
+        cfg.tau_xy = 0.15;
+        cfg.drift_vel_x = 0.0;
+        cfg.drift_vel_y = 0.0;
+
+        AutopilotSimHarness harness(cfg);
+        harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_LAND);
+        harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, -1.3, 1.0, 0.0);
+        harness.addSimulatedGoal(SHAPE_TRIANGLE, 2.5, 0.0, 1.0, 0.0);
+        harness.addSimulatedGoal(SHAPE_SQUARE, 2.5, 1.3, 1.0, 0.0);
+
+        MissionReport report = harness.runUntil(35.0, 0.05);
+        ASSERT_TRUE(report.mission_completed) << "Run " << run << " did not complete";
+        EXPECT_EQ(report.collision_count, 0u) << "Run " << run << " recorded collisions";
+        EXPECT_GT(report.min_clearance_m, 0.05) << "Run " << run << " clearance too small";
+
+        auto passes = extractGateCrossings(harness.getTrajectory());
+        ASSERT_EQ(passes.size(), 3u) << "Run " << run << " did not traverse exactly 3 gates (count=" << passes.size() << ")";
+
+        // 1. Gate 1 (Circle) first, entered from front (+X)
+        EXPECT_EQ(passes[0].shape, SHAPE_CIRCLE) << "Run " << run << " first gate not Circle";
+        EXPECT_DOUBLE_EQ(passes[0].direction, 1.0) << "Run " << run << " Gate 1 not traversed in +X direction";
+        EXPECT_NEAR(passes[0].cross_y, -1.3, 0.10);
+
+        // 2. Gate 2 (Triangle) second, entered from behind (-X), traversed exactly once
+        EXPECT_EQ(passes[1].shape, SHAPE_TRIANGLE) << "Run " << run << " second gate not Triangle";
+        EXPECT_DOUBLE_EQ(passes[1].direction, -1.0) << "Run " << run << " Gate 2 not traversed in -X direction";
+        EXPECT_NEAR(passes[1].cross_y, 0.0, 0.10);
+
+        // 3. Gate 3 (Square) third, entered from front (+X)
+        EXPECT_EQ(passes[2].shape, SHAPE_SQUARE) << "Run " << run << " third gate not Square";
+        EXPECT_DOUBLE_EQ(passes[2].direction, 1.0) << "Run " << run << " Gate 3 not traversed in +X direction";
+        EXPECT_NEAR(passes[2].cross_y, 1.3, 0.10);
+    }
+}
+
+// 31. Verify Repeated Simulations with Stochastic Follower Noise & Environmental Drift
+// Runs 10 consecutive simulated runs with varying random seeds, follower lag, Gaussian noise,
+// and wind disturbance to ensure repeatable, collision-free traversal under realistic conditions.
+TEST(AutopilotSimulationHarnessTest, RepeatedSimulationsWithNoiseAndDrift) {
+    const int NUM_RUNS = 10;
+    for (int run = 0; run < NUM_RUNS; ++run) {
+        FollowerConfig cfg;
+        cfg.noise_enabled = true;
+        cfg.pos_noise_std_xy = 0.025;
+        cfg.pos_noise_std_z = 0.015;
+        cfg.yaw_noise_std = 0.02;
+        cfg.tau_xy = 0.15;
+        cfg.random_seed = static_cast<uint32_t>(1001 + run * 37);
+
+        AutopilotSimHarness harness(cfg);
+        harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_LAND);
+        harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, -1.3, 1.0, 0.0);
+        harness.addSimulatedGoal(SHAPE_TRIANGLE, 2.5, 0.0, 1.0, 0.0);
+        harness.addSimulatedGoal(SHAPE_SQUARE, 2.5, 1.3, 1.0, 0.0);
+
+        MissionReport report = harness.runUntil(40.0, 0.05);
+        ASSERT_TRUE(report.mission_completed) << "Noisy Run " << run << " did not complete";
+        EXPECT_EQ(report.collision_count, 0u) << "Noisy Run " << run << " recorded collisions";
+        EXPECT_GT(report.min_clearance_m, 0.04) << "Noisy Run " << run << " clearance too small";
+
+        auto passes = extractGateCrossings(harness.getTrajectory());
+        ASSERT_EQ(passes.size(), 3u) << "Noisy Run " << run << " gate pass count != 3";
+
+        EXPECT_EQ(passes[0].shape, SHAPE_CIRCLE);
+        EXPECT_DOUBLE_EQ(passes[0].direction, 1.0); // Gate 1: +X direction
+        EXPECT_NEAR(passes[0].cross_y, -1.3, 0.15);
+
+        EXPECT_EQ(passes[1].shape, SHAPE_TRIANGLE);
+        EXPECT_DOUBLE_EQ(passes[1].direction, -1.0); // Gate 2: -X direction
+        EXPECT_NEAR(passes[1].cross_y, 0.0, 0.15);
+
+        EXPECT_EQ(passes[2].shape, SHAPE_SQUARE);
+        EXPECT_DOUBLE_EQ(passes[2].direction, 1.0); // Gate 3: +X direction
+        EXPECT_NEAR(passes[2].cross_y, 1.3, 0.15);
+    }
+}
+
+// 32. Verify Continuous Run-After-Run Sequence Chaining
+// Tests back-to-back mission chaining where the drone completes a mission and immediately
+// executes subsequent missions in alternating directions without state corruption or collision.
+TEST(AutopilotSimulationHarnessTest, ContinuousRunAfterRunChaining) {
+    FollowerConfig cfg;
+    cfg.noise_enabled = true;
+    cfg.pos_noise_std_xy = 0.015;
+    cfg.tau_xy = 0.15;
+    cfg.random_seed = 2024;
+
+    AutopilotSimHarness harness(cfg);
+    harness.addSimulatedGoal(SHAPE_CIRCLE, 2.5, -1.3, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_TRIANGLE, 2.5, 0.0, 1.0, 0.0);
+    harness.addSimulatedGoal(SHAPE_SQUARE, 2.5, 1.3, 1.0, 0.0);
+
+    // Sequence 1: Forward slalom Circle -> Triangle -> Square with HOVER
+    harness.setupMission({SHAPE_CIRCLE, SHAPE_TRIANGLE, SHAPE_SQUARE}, MISSION_END_HOVER);
+    MissionReport rep1 = harness.runUntil(40.0, 0.05);
+    ASSERT_TRUE(rep1.mission_completed);
+    EXPECT_EQ(rep1.collision_count, 0u);
+    auto passes1 = extractGateCrossings(harness.getTrajectory());
+    ASSERT_EQ(passes1.size(), 3u);
+    EXPECT_EQ(passes1[0].shape, SHAPE_CIRCLE);
+    EXPECT_DOUBLE_EQ(passes1[0].direction, 1.0);
+    EXPECT_EQ(passes1[1].shape, SHAPE_TRIANGLE);
+    EXPECT_DOUBLE_EQ(passes1[1].direction, -1.0);
+    EXPECT_EQ(passes1[2].shape, SHAPE_SQUARE);
+    EXPECT_DOUBLE_EQ(passes1[2].direction, 1.0);
+
+    // Sequence 2: Reverse slalom Square -> Triangle -> Circle with HOVER directly from current pose
+    UICommandPacket cmd2{};
+    cmd2.msg_type = MSG_TYPE_UI_CMD;
+    cmd2.command = UI_CMD_START_MISSION;
+    cmd2.sequence_length = 3;
+    cmd2.goal_sequence[0] = SHAPE_SQUARE;
+    cmd2.goal_sequence[1] = SHAPE_TRIANGLE;
+    cmd2.goal_sequence[2] = SHAPE_CIRCLE;
+    cmd2.end_action = MISSION_END_HOVER;
+    harness.getAutopilot().handleCommand(cmd2);
+
+    size_t traj_offset = harness.getTrajectory().size();
+    MissionReport rep2 = harness.runUntil(50.0, 0.05);
+    ASSERT_TRUE(rep2.mission_completed);
+    EXPECT_EQ(rep2.collision_count, 0u);
+
+    std::vector<TrajectoryPoint> traj2(harness.getTrajectory().begin() + traj_offset, harness.getTrajectory().end());
+    auto passes2 = extractGateCrossings(traj2);
+    ASSERT_EQ(passes2.size(), 3u);
+    // When coming from X > 3.0, Square closer end is behind: traverses -X through Square, +X through Triangle, -X through Circle
+    EXPECT_EQ(passes2[0].shape, SHAPE_SQUARE);
+    EXPECT_DOUBLE_EQ(passes2[0].direction, -1.0);
+    EXPECT_EQ(passes2[1].shape, SHAPE_TRIANGLE);
+    EXPECT_DOUBLE_EQ(passes2[1].direction, 1.0);
+    EXPECT_EQ(passes2[2].shape, SHAPE_CIRCLE);
+    EXPECT_DOUBLE_EQ(passes2[2].direction, -1.0);
+
+    // Sequence 3: Forward slalom Circle -> Triangle -> Square with LAND
+    UICommandPacket cmd3{};
+    cmd3.msg_type = MSG_TYPE_UI_CMD;
+    cmd3.command = UI_CMD_START_MISSION;
+    cmd3.sequence_length = 3;
+    cmd3.goal_sequence[0] = SHAPE_CIRCLE;
+    cmd3.goal_sequence[1] = SHAPE_TRIANGLE;
+    cmd3.goal_sequence[2] = SHAPE_SQUARE;
+    cmd3.end_action = MISSION_END_LAND;
+    harness.getAutopilot().handleCommand(cmd3);
+
+    traj_offset = harness.getTrajectory().size();
+    MissionReport rep3 = harness.runUntil(50.0, 0.05);
+    ASSERT_TRUE(rep3.mission_completed);
+    EXPECT_EQ(rep3.collision_count, 0u);
+    EXPECT_EQ(rep3.final_state, FlightState::FLIGHT_STATE_ROTOR_STOPPED);
+
+    std::vector<TrajectoryPoint> traj3(harness.getTrajectory().begin() + traj_offset, harness.getTrajectory().end());
+    auto passes3 = extractGateCrossings(traj3);
+    ASSERT_EQ(passes3.size(), 3u);
+    EXPECT_EQ(passes3[0].shape, SHAPE_CIRCLE);
+    EXPECT_DOUBLE_EQ(passes3[0].direction, 1.0);
+    EXPECT_EQ(passes3[1].shape, SHAPE_TRIANGLE);
+    EXPECT_DOUBLE_EQ(passes3[1].direction, -1.0);
+    EXPECT_EQ(passes3[2].shape, SHAPE_SQUARE);
+    EXPECT_DOUBLE_EQ(passes3[2].direction, 1.0);
+}
+
 
 

@@ -55,8 +55,9 @@ void MissionSequencer::startMission(const UICommandPacket& pkt, const Pose& curr
     active_orthogonal_path_ = {};
     last_completed_goal_pose_ = current_pose;
 
-    active_sequence_len = pkt.sequence_length;
-    std::memcpy(goal_sequence, pkt.goal_sequence, sizeof(goal_sequence));
+    active_sequence_len = std::min(pkt.sequence_length, static_cast<uint8_t>(MAX_GOAL_SEQUENCE_LEN));
+    std::memset(goal_sequence, 0, sizeof(goal_sequence));
+    std::memcpy(goal_sequence, pkt.goal_sequence, active_sequence_len);
     configured_end_action = pkt.end_action;
     hover_timeout_s = pkt.hover_timeout_s;
     use_tube_constraint = pkt.use_tube_constraint;
@@ -65,8 +66,9 @@ void MissionSequencer::startMission(const UICommandPacket& pkt, const Pose& curr
 }
 
 void MissionSequencer::updateSequence(const UICommandPacket& pkt, const Pose& current_pose) {
-    active_sequence_len = pkt.sequence_length;
-    std::memcpy(goal_sequence, pkt.goal_sequence, sizeof(goal_sequence));
+    active_sequence_len = std::min(pkt.sequence_length, static_cast<uint8_t>(MAX_GOAL_SEQUENCE_LEN));
+    std::memset(goal_sequence, 0, sizeof(goal_sequence));
+    std::memcpy(goal_sequence, pkt.goal_sequence, active_sequence_len);
     configured_end_action = pkt.end_action;
     hover_timeout_s = pkt.hover_timeout_s;
     current_seq_index = 0;

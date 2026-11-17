@@ -19,13 +19,18 @@ constexpr uint8_t MAV_COMP_ID_AUTOPILOT1 = 1;
 constexpr uint32_t MAVLINK_MSG_ID_HEARTBEAT = 0;
 constexpr uint32_t MAVLINK_MSG_ID_ATTITUDE = 30;
 constexpr uint32_t MAVLINK_MSG_ID_LOCAL_POSITION_NED = 32;
+constexpr uint32_t MAVLINK_MSG_ID_COMMAND_LONG = 76;
 constexpr uint32_t MAVLINK_MSG_ID_SET_POSITION_TARGET_LOCAL_NED = 84;
 constexpr uint32_t MAVLINK_MSG_ID_VISION_POSITION_ESTIMATE = 102;
+
+// MAV_CMD Commands
+constexpr uint16_t MAV_CMD_COMPONENT_ARM_DISARM = 400;
 
 // CRC Extra bytes for message verification
 constexpr uint8_t MAVLINK_CRC_EXTRA_HEARTBEAT = 50;
 constexpr uint8_t MAVLINK_CRC_EXTRA_ATTITUDE = 39;
 constexpr uint8_t MAVLINK_CRC_EXTRA_LOCAL_POSITION_NED = 185;
+constexpr uint8_t MAVLINK_CRC_EXTRA_COMMAND_LONG = 152;
 constexpr uint8_t MAVLINK_CRC_EXTRA_SET_POSITION_TARGET_LOCAL_NED = 143;
 constexpr uint8_t MAVLINK_CRC_EXTRA_VISION_POSITION_ESTIMATE = 158;
 
@@ -107,6 +112,21 @@ struct MavlinkHeartbeat {
     uint8_t mavlink_version;
 };
 
+// Message #76: COMMAND_LONG (33 bytes payload)
+struct MavlinkCommandLong {
+    float param1;
+    float param2;
+    float param3;
+    float param4;
+    float param5;
+    float param6;
+    float param7;
+    uint16_t command;
+    uint8_t target_system;
+    uint8_t target_component;
+    uint8_t confirmation;
+};
+
 #pragma pack(pop)
 
 // Helper CRC accumulation
@@ -175,7 +195,7 @@ inline MavlinkVisionPositionEstimate tag_to_mavlink_vision_position(
     est.usec = timestamp_us;
     est.x = tag.camera_pos_world.x;
     est.y = tag.camera_pos_world.y;
-    est.z = tag.camera_pos_world.z;
+    est.z = -tag.camera_pos_world.z; // NED convention: positive altitude (NEU) is negative Z in NED
 
     // Convert quaternion attitude to Euler angles (Roll, Pitch, Yaw in NED)
     const Quatf& q = tag.camera_att_world;

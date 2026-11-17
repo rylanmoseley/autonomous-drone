@@ -735,3 +735,285 @@ TEST(AutopilotTest, UdpTelemetryLoggerJsonSerialization) {
 
     close(rx_sock);
 }
+
+// 14. Verify Thread Safety of getCurrentPose() under high-frequency writes
+TEST(AutopilotTest, ConcurrentPoseAccessorThreadSafety) {
+    AutopilotNode node;
+    std::atomic<bool> stop_flag{false};
+
+    // Background writer thread rapidly updating telemetry
+    std::thread writer([&]() {
+        for (int i = 0; i < 2000 && !stop_flag.load(); ++i) {
+            Pose p{};
+            double val = static_cast<double>(i) * 0.1;
+            p.x = val;
+            p.y = -val; // Invariant: x == -y
+            p.z = 1.0;
+            p.confidence = 1.0;
+            node.updateTelemetry(p);
+            std::this_thread::yield();
+        }
+    });
+
+    // Reader thread reading current pose and verifying invariant
+    int reads_performed = 0;
+    for (int i = 0; i < 2000; ++i) {
+        Pose p = node.getCurrentPose();
+        // Under torn read, x and y might come from different iterations
+        if (p.confidence > 0.0) {
+            EXPECT_NEAR(p.x, -p.y, 1e-4);
+            reads_performed++;
+        }
+        std::this_thread::yield();
+    }
+
+    stop_flag.store(true);
+    writer.join();
+    EXPECT_GT(reads_performed, 0);
+}
+
+// 15. Verify Multi-Threaded Atomic Perception Counters
+TEST(AutopilotTest, PerceptionAtomicCountersThreadSafety) {
+    AutopilotNode node;
+    node.perception.resetCounts();
+
+    const int num_threads = 4;
+    const int increments_per_thread = 500;
+    std::vector<std::thread> threads;
+
+    for (int t = 0; t < num_threads; ++t) {
+        threads.emplace_back([&]() {
+            for (int i = 0; i < increments_per_thread; ++i) {
+                node.tags_received_count.fetch_add(1, std::memory_order_relaxed);
+                node.tags_forwarded_count.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+    }
+
+    for (auto& th : threads) {
+        th.join();
+    }
+
+    EXPECT_EQ(node.tags_received_count.load(), static_cast<uint32_t>(num_threads * increments_per_thread));
+    EXPECT_EQ(node.tags_forwarded_count.load(), static_cast<uint32_t>(num_threads * increments_per_thread));
+}
+
+// 16. Verify Unsurveyed Tags Are Filtered and NOT Forwarded to FCU
+TEST(AutopilotTest, UnsurveyedTagForwardingRejection) {
+    AutopilotNode node;
+    node.perception.resetCounts();
+
+    // Verify tag 1 is registered from surveyed_tags.json
+    EXPECT_TRUE(node.perception.hasSurveyedTag(1));
+    // Verify tag 999 is NOT registered
+    EXPECT_FALSE(node.perception.hasSurveyedTag(999));
+
+    VisionPacket pkt{};
+    pkt.msg_type = MSG_TYPE_VISION;
+    pkt.num_tags_detected = 2;
+    pkt.timestamp_ns = 2000000;
+
+    // Surveyed Tag 1
+    pkt.tags[0].tag_id = 1;
+    pkt.tags[0].is_valid = 1;
+    pkt.tags[0].camera_pos_world = {1.0f, -0.8f, 0.4f};
+    pkt.tags[0].camera_att_world = {1.0f, 0.0f, 0.0f, 0.0f};
+    pkt.tags[0].confidence = 0.95f;
+
+    // Unsurveyed Tag 999
+    pkt.tags[1].tag_id = 999;
+    pkt.tags[1].is_valid = 1;
+    pkt.tags[1].camera_pos_world = {9.9f, 9.9f, 9.9f};
+    pkt.tags[1].camera_att_world = {1.0f, 0.0f, 0.0f, 0.0f};
+    pkt.tags[1].confidence = 0.50f;
+
+    node.handleVisionPacket(pkt, 1.0);
+
+    // Both tags received
+    EXPECT_EQ(node.tags_received_count.load(), 2u);
+    // Only surveyed tag verified and forwarded
+    EXPECT_EQ(node.surveyed_tags_verified_count_.load(), 1u);
+    EXPECT_EQ(node.tags_forwarded_count.load(), 1u);
+    EXPECT_EQ(node.last_tag_measurement.tag_id, 1u);
+}
+
+// 17. Verify MAVLink Protocol NED Altitude Inversion
+TEST(AutopilotTest, MavlinkNedAltitudeCoordinateInversion) {
+    TagMeasurement tag{};
+    tag.tag_id = 1;
+    tag.is_valid = 1;
+    tag.camera_pos_world = {2.0f, 3.0f, 1.75f}; // Altitude +1.75m
+    tag.camera_att_world = {1.0f, 0.0f, 0.0f, 0.0f};
+
+    MavlinkVisionPositionEstimate est = tag_to_mavlink_vision_position(tag, 1000);
+    EXPECT_FLOAT_EQ(est.x, 2.0f);
+    EXPECT_FLOAT_EQ(est.y, 3.0f);
+    // In MAVLink NED: Down is positive Z, so +1.75m altitude MUST map to -1.75m Z
+    EXPECT_FLOAT_EQ(est.z, -1.75f);
+}
+
+// 18. Verify 3D Attitude Compounding in Perception Coordinator
+TEST(AutopilotTest, PerceptionAttitudeCompounding) {
+    PerceptionCoordinator coord;
+
+    VisionPacket pkt{};
+    pkt.msg_type = MSG_TYPE_VISION;
+    pkt.num_goals_reported = 1;
+    pkt.goals[0].shape_type = SHAPE_CIRCLE;
+    pkt.goals[0].is_detected = 1;
+    pkt.goals[0].num_hypotheses = 1;
+    pkt.goals[0].hypotheses[0].position_cam = {0.0f, 0.0f, 2.0f}; // 2m in front
+    // Camera reports yaw of 90 deg (pi/2)
+    pkt.goals[0].hypotheses[0].orientation_cam = {
+        static_cast<float>(std::cos(M_PI / 4.0)),
+        0.0f,
+        0.0f,
+        static_cast<float>(std::sin(M_PI / 4.0))
+    };
+
+    // Drone pose: at (1, 1, 1) facing yaw = 0
+    Pose cur{1.0, 1.0, 1.0, 0, 0, 0, 0, 1.0};
+    VisionPacket transformed = coord.transformVisionGoals(pkt, cur);
+
+    EXPECT_EQ(transformed.goals[0].is_detected, 1);
+    // Compound orientation quaternion must remain normalized
+    Quatf q = transformed.goals[0].hypotheses[0].orientation_cam;
+    float norm = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+    EXPECT_NEAR(norm, 1.0f, 1e-4);
+}
+
+// 19. Verify Side-by-Side 3-Gate Mission (Circle -> Triangle -> Square)
+// When Gate 2 times out and is re-detected from behind with inverted visual yaw,
+// the corridor must NOT flip, Gate 2 must be traversed exactly once in the correct orientation,
+// and Gate 3 must be entered cleanly without clipping the rim.
+TEST(AutopilotTest, SideBySideTimeoutReobservationSinglePassCleanTraversal) {
+    AutopilotNode node;
+
+    UICommandPacket cmd_pkt = {};
+    cmd_pkt.msg_type = MSG_TYPE_UI_CMD;
+    cmd_pkt.command = UI_CMD_START_MISSION;
+    cmd_pkt.sequence_length = 3;
+    cmd_pkt.goal_sequence[0] = SHAPE_CIRCLE;
+    cmd_pkt.goal_sequence[1] = SHAPE_TRIANGLE;
+    cmd_pkt.goal_sequence[2] = SHAPE_SQUARE;
+    cmd_pkt.end_action = MISSION_END_LAND;
+    node.handleCommand(cmd_pkt);
+
+    Pose current = {0.0, -1.3, 1.0, 0, 0, 0, 0, 1.0};
+    double dt = 0.05;
+
+    // All 3 gates at X=2.5, yaw = 0.0:
+    // Gate 1 (Circle):   (2.5, -1.3, 1.0)
+    // Gate 2 (Triangle): (2.5,  0.0, 1.0)
+    // Gate 3 (Square):   (2.5,  1.3, 1.0)
+    VisionPacket v_pkt = {};
+    v_pkt.msg_type = MSG_TYPE_VISION;
+    v_pkt.num_goals_reported = 3;
+
+    v_pkt.goals[0].shape_type = SHAPE_CIRCLE;
+    v_pkt.goals[0].is_detected = 1;
+    v_pkt.goals[0].num_hypotheses = 1;
+    v_pkt.goals[0].hypotheses[0].position_cam = {2.5f, -1.3f, 1.0f};
+    v_pkt.goals[0].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f};
+    v_pkt.goals[0].hypotheses[0].confidence = 0.98f;
+
+    v_pkt.goals[1].shape_type = SHAPE_TRIANGLE;
+    v_pkt.goals[1].is_detected = 1;
+    v_pkt.goals[1].num_hypotheses = 1;
+    v_pkt.goals[1].hypotheses[0].position_cam = {2.5f, 0.0f, 1.0f};
+    v_pkt.goals[1].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f};
+    v_pkt.goals[1].hypotheses[0].confidence = 0.98f;
+
+    v_pkt.goals[2].shape_type = SHAPE_SQUARE;
+    v_pkt.goals[2].is_detected = 1;
+    v_pkt.goals[2].num_hypotheses = 1;
+    v_pkt.goals[2].hypotheses[0].position_cam = {2.5f, 1.3f, 1.0f};
+    v_pkt.goals[2].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f};
+    v_pkt.goals[2].hypotheses[0].confidence = 0.98f;
+
+    // Initial detection at takeoff (t = 1.0)
+    node.getEstimator().updateEstimates(v_pkt, 1.0);
+
+    // Takeoff to PATH_FOLLOWING
+    node.tick(current, dt);
+    node.tick(current, dt);
+
+    // Complete Gate 1 forward (+X)
+    int ticks = 0;
+    while (node.current_seq_index == 0 && ticks < 200) {
+        node.getEstimator().updateEstimates(v_pkt, 1.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    EXPECT_EQ(node.current_seq_index, 1u);
+    EXPECT_GT(current.x, 3.0); // Exited Gate 1 at X > 3.0
+
+    // Advance time by 3.0s so Gate 2 estimator entry times out (t = 5.0)
+    // When looking at Gate 2 from behind, vision reports opposite yaw (pi)
+    VisionPacket v_behind = v_pkt;
+    v_behind.goals[1].hypotheses[0].orientation_cam = {0.0f, 0.0f, 0.0f, 1.0f}; // yaw = pi
+
+    // Run kinematic loop through Gate 2 backwards (-X traversal)
+    int triangle_pass_count = 0;
+    bool was_in_triangle_zone = false;
+    ticks = 0;
+    while (node.current_seq_index == 1 && ticks < 250) {
+        node.getEstimator().updateEstimates(v_behind, 5.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+
+        // Corridor must remain locked in -X direction
+        EXPECT_LT(node.approach_dx, -0.5);
+
+        // Check if drone passes through Gate 2 aperture (X in [2.35, 2.65] and Y in [-0.2, 0.2])
+        bool in_zone = (std::abs(current.x - 2.5) < 0.15 && std::abs(current.y - 0.0) < 0.25);
+        if (in_zone && !was_in_triangle_zone) {
+            triangle_pass_count++;
+        }
+        was_in_triangle_zone = in_zone;
+
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    // Gate 2 completed!
+    EXPECT_EQ(node.current_seq_index, 2u);
+    // CRITICAL: Gate 2 must have been traversed EXACTLY ONCE, never twice!
+    EXPECT_EQ(triangle_pass_count, 1);
+    // Drone must have exited on the -X side (X <= 2.1)
+    EXPECT_LE(current.x, 2.1);
+
+    // Now targeting Gate 3 (Square). Approach must be from front (+X traversal, approach_dx = +1.0)
+    FlightCommand cmd_sq = node.tick(current, dt);
+    EXPECT_GT(node.approach_dx, 0.5); // Must enter from front (+X)!
+    EXPECT_LT(cmd_sq.target_x, 2.0);   // Entrance standoff is in front (X < 2.0)
+
+    // Complete Gate 3 forward (+X)
+    ticks = 0;
+    while (node.current_seq_index == 2 && ticks < 250) {
+        node.getEstimator().updateEstimates(v_pkt, 10.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    // Mission sequence fully completed!
+    EXPECT_EQ(node.current_seq_index, 3u);
+    EXPECT_GT(current.x, 3.0); // Exited Gate 3 on +X side
+}

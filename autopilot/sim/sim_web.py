@@ -869,7 +869,9 @@ def start_backend_nodes():
     autopilot_dir = os.path.dirname(script_dir)
     repo_dir = os.path.dirname(autopilot_dir)
 
-    vision_bin = os.path.join(repo_dir, "vision-processing", "vision_node")
+    vision_bin = os.path.join(repo_dir, "build", "vision-processing", "vision_node")
+    if not (os.path.isfile(vision_bin) and os.access(vision_bin, os.X_OK)):
+        vision_bin = os.path.join(repo_dir, "vision-processing", "vision_node")
     autopilot_bin = os.path.join(repo_dir, "build", "autopilot", "autopilot_node")
     if not (os.path.isfile(autopilot_bin) and os.access(autopilot_bin, os.X_OK)):
         autopilot_bin = os.path.join(autopilot_dir, "autopilot_node_bin")
@@ -897,7 +899,9 @@ def ensure_backend_nodes():
     autopilot_dir = os.path.dirname(script_dir)
     repo_dir = os.path.dirname(autopilot_dir)
 
-    vision_bin = os.path.join(repo_dir, "vision-processing", "vision_node")
+    vision_bin = os.path.join(repo_dir, "build", "vision-processing", "vision_node")
+    if not (os.path.isfile(vision_bin) and os.access(vision_bin, os.X_OK)):
+        vision_bin = os.path.join(repo_dir, "vision-processing", "vision_node")
     autopilot_bin = os.path.join(repo_dir, "build", "autopilot", "autopilot_node")
     if not (os.path.isfile(autopilot_bin) and os.access(autopilot_bin, os.X_OK)):
         autopilot_bin = os.path.join(autopilot_dir, "autopilot_node_bin")
@@ -911,7 +915,7 @@ def ensure_backend_nodes():
         except Exception as e:
             print(f"[SIM] Note: Could not restart vision_node: {e}")
 
-    a_running = any(p.poll() is None and "autopilot_node_bin" in str(p.args) for p in backend_procs)
+    a_running = any(p.poll() is None and ("autopilot_node" in str(p.args)) for p in backend_procs)
     if not a_running and os.path.isfile(autopilot_bin) and os.access(autopilot_bin, os.X_OK):
         try:
             p_a = subprocess.Popen([autopilot_bin])

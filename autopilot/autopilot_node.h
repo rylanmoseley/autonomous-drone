@@ -62,18 +62,18 @@ public:
     bool& has_hover_pose_;
 
     // References to perception fields
-    uint32_t& tags_received_count;
-    uint32_t& tags_forwarded_count;
-    uint32_t& surveyed_tags_verified_count_;
+    std::atomic<uint32_t>& tags_received_count;
+    std::atomic<uint32_t>& tags_forwarded_count;
+    std::atomic<uint32_t>& surveyed_tags_verified_count_;
     TagMeasurement& last_tag_measurement;
 
     // Reference to safety watchdog field
     std::chrono::steady_clock::time_point& last_vision_time;
 
     // Flight state & UI status
-    FlightState state{FlightState::FLIGHT_STATE_STANDBY_DISARM};
-    uint8_t is_armed{0};
-    uint8_t estop_active{0};
+    std::atomic<FlightState> state{FlightState::FLIGHT_STATE_STANDBY_DISARM};
+    std::atomic<uint8_t> is_armed{0};
+    std::atomic<uint8_t> estop_active{0};
     uint32_t last_acked_cmd_id{0};
     uint32_t status_seq_id{0};
     uint32_t telem_seq_id{0};
@@ -90,7 +90,7 @@ public:
     std::thread vision_thread;
 
     std::mutex cmd_mutex;
-    std::mutex pose_mutex_;
+    mutable std::mutex pose_mutex_;
     std::mutex state_mutex;
     std::mutex vision_mutex;
 
@@ -129,6 +129,11 @@ public:
     void updateTelemetry(const Pose& pose) {
         std::lock_guard<std::mutex> lock(pose_mutex_);
         last_current_pose_ = pose;
+    }
+
+    Pose getCurrentPose() const {
+        std::lock_guard<std::mutex> lock(pose_mutex_);
+        return last_current_pose_;
     }
 
     GoalEstimator& getEstimator() { return estimator; }

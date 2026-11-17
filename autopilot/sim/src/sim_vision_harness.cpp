@@ -271,16 +271,16 @@ cv::Mat SimVisionHarness::renderFrame(
                 cv::fillPoly(render_buffer_, std::vector<std::vector<cv::Point>>{poly}, cv::Scalar(255, 0, 0));
             }
         } else if (goal.shape_type == SHAPE_TRIANGLE) {
-            // Render Gate 2 (Triangle): Pure Red (B=0, G=0, R=255), width 0.6062m, apex UP
+            // Render Gate 2 (Triangle): Pure Red (B=0, G=0, R=255), outer width 0.6662m, apex UP
             std::vector<cv::Point> poly(3);
-            if (projectLocalPoint(0.0, 0.35, poly[0]) &&
-                projectLocalPoint(0.3031, -0.175, poly[1]) &&
-                projectLocalPoint(-0.3031, -0.175, poly[2])) {
+            if (projectLocalPoint(0.0, 0.38, poly[0]) &&
+                projectLocalPoint(0.3331, -0.205, poly[1]) &&
+                projectLocalPoint(-0.3331, -0.205, poly[2])) {
                 cv::fillPoly(render_buffer_, std::vector<std::vector<cv::Point>>{poly}, cv::Scalar(0, 0, 255));
             }
         } else if (goal.shape_type == SHAPE_SQUARE) {
-            // Render Gate 3 (Square): Pure Green (B=0, G=255, R=0), half-width = 0.17678m (matching Three.js & CollisionDetector)
-            const double hw = 0.17678;
+            // Render Gate 3 (Square): Pure Green (B=0, G=255, R=0), outer half-width = 0.20678m (matching Three.js & CollisionDetector)
+            const double hw = 0.20678;
             std::vector<cv::Point> poly(4);
             if (projectLocalPoint(-hw, hw, poly[0]) &&
                 projectLocalPoint(hw, hw, poly[1]) &&

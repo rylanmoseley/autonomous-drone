@@ -22,6 +22,13 @@ public:
         uint8_t* out_buffer,
         size_t out_max_size);
 
+    // Encodes MavlinkCommandLong into MAVLink Msg #76 (COMMAND_LONG)
+    static size_t encodeCommandLong(
+        const MavlinkCommandLong& cmd,
+        uint8_t seq,
+        uint8_t* out_buffer,
+        size_t out_max_size);
+
     // Validates packet framing, message ID, and 16-bit CRC with CRC_EXTRA.
     // Returns true if valid, setting out_msgid, out_payload, and out_payload_len.
     static bool verifyAndExtract(
