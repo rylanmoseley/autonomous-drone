@@ -318,3 +318,31 @@ TEST(VisionProcessingTest, MultiContourApertureCenteringAtCloseRange) {
     }
     EXPECT_TRUE(found_triangle);
 }
+
+// 13. Verify Simulated Gate Detections Have Zero Tilted Yaw (Orthogonal Traversal)
+// In simulation mode, planar arena gates are upright and orthogonal.
+// Detections for all shapes (Circle, Triangle, Square) must have zero tilt/yaw so the
+// autopilot approach corridor is strictly perpendicular to the gate face without angled collisions.
+TEST(VisionProcessingTest, SimGatesZeroTiltOrthogonalOrientation) {
+    vision::GateDetector detector(vision::FOCAL_LENGTH);
+    detector.setSimMode(true);
+
+    cv::Mat frame = cv::Mat::zeros(240, 320, CV_8UC3);
+    // Draw green square (Gate 3) and red triangle (Gate 2)
+    cv::Rect sq_rect(40, 60, 50, 50);
+    cv::rectangle(frame, sq_rect, cv::Scalar(0, 255, 0), -1);
+
+    std::vector<cv::Point> tri_pts = { {200, 60}, {170, 110}, {230, 110} };
+    std::vector<std::vector<cv::Point>> polys = { tri_pts };
+    cv::fillPoly(frame, polys, cv::Scalar(0, 0, 255));
+
+    auto results = detector.detectAllGates(frame, false);
+    ASSERT_GE(results.size(), 2u);
+
+    for (const auto& r : results) {
+        EXPECT_DOUBLE_EQ(r.yaw_rad, 0.0);
+        EXPECT_DOUBLE_EQ(r.pitch_rad, 0.0);
+        EXPECT_DOUBLE_EQ(r.roll_rad, 0.0);
+        EXPECT_FALSE(r.is_3d);
+    }
+}
