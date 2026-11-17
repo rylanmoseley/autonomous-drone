@@ -67,7 +67,11 @@ bool GoalTrackFilter::updateGoalTrack(TrackedGoal& goal, const PoseHypothesis& h
         goal.pose.x = pos.x;
         goal.pose.y = pos.y;
         goal.pose.z = pos.z;
-        goal.pose.yaw = yaw;
+        double dyaw = std::atan2(std::sin(yaw - goal.pose.yaw), std::cos(yaw - goal.pose.yaw));
+        if (goal.state == TRACK_STATE_LOCKED && std::abs(dyaw) > M_PI / 2.0) {
+            dyaw = (dyaw > 0.0) ? (dyaw - M_PI) : (dyaw + M_PI);
+        }
+        goal.pose.yaw = std::atan2(std::sin(goal.pose.yaw + dyaw), std::cos(goal.pose.yaw + dyaw));
         goal.pose.pitch = pitch;
         goal.pose.roll = roll;
     } else {

@@ -209,8 +209,8 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
 
         const std::vector<SimGateSpec> specs = {
             {"Circle",   1, 0.500, cv::Scalar(255, 100, 0)},
-            {"Triangle", 2, 0.6062, cv::Scalar(0, 0, 255)},
-            {"Square",   3, 0.35356, cv::Scalar(0, 255, 0)}
+            {"Triangle", 2, 0.6662, cv::Scalar(0, 0, 255)},
+            {"Square",   3, 0.41356, cv::Scalar(0, 255, 0)}
         };
 
         cv::Mat mask_blue  = cv::Mat::zeros(frame.size(), CV_8UC1);
@@ -310,10 +310,10 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
                 if (bbox.y <= 2) {
                     // Apex is clipped at top of camera frame at close range (< 0.95m).
                     // Reconstruct true aperture center from the unclipped bottom base:
-                    // For an upright equilateral triangle (width W=0.6062m, base-to-center H_bc=0.175m):
-                    // ratio_base_to_center = 0.175 / 0.6062 = 0.28868
+                    // For an upright equilateral triangle (width W=0.6662m, base-to-center H_bc=0.205m):
+                    // ratio_base_to_center = 0.205 / 0.6662 = 0.3077
                     double y_base = bbox.y + bbox.height;
-                    double cy_reconstructed = y_base - 0.28868 * gate_size_px;
+                    double cy_reconstructed = y_base - 0.3077 * gate_size_px;
                     res.posY_m = (cy_reconstructed - frame.rows / 2.0) * (distance_m / effective_focal);
                     res.center.y = static_cast<int>(std::round(cy_reconstructed));
                 }
@@ -359,11 +359,18 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
                     cv::Mat best_rvec, best_tvec;
                     bool solved = false;
 
+                    const std::vector<cv::Point3f> tri_pts = {
+                        { 0.0f,    -0.38f,  0.0f }, // Apex (top)
+                        { 0.3331f,  0.205f, 0.0f }, // Bottom-Right
+                        { 0.0f,     0.205f, 0.0f }, // Base-Midpoint
+                        {-0.3331f,  0.205f, 0.0f }  // Bottom-Left
+                    };
+
                     for (const auto& img_pts : candidates) {
                         cv::Mat rvec, tvec;
-                        if (cv::solvePnP(triangle_object_points_, img_pts, camMat, distCoeffs, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE)) {
+                        if (cv::solvePnP(tri_pts, img_pts, camMat, distCoeffs, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE)) {
                             std::vector<cv::Point2f> proj;
-                            cv::projectPoints(triangle_object_points_, rvec, tvec, camMat, distCoeffs, proj);
+                            cv::projectPoints(tri_pts, rvec, tvec, camMat, distCoeffs, proj);
                             double err = 0;
                             for (size_t k = 0; k < img_pts.size(); ++k) {
                                 err += cv::norm(proj[k] - img_pts[k]);
@@ -422,11 +429,12 @@ std::vector<GateDetectionResult> GateDetector::detectAllGates(cv::Mat& frame, bo
                         { quad[1], quad[0], quad[3], quad[2] }
                     };
 
+                    const float sq_hw = 0.20678f;
                     const std::vector<cv::Point3f> square_pts = {
-                        {-0.17678f, -0.17678f, 0.0f},
-                        { 0.17678f, -0.17678f, 0.0f},
-                        { 0.17678f,  0.17678f, 0.0f},
-                        {-0.17678f,  0.17678f, 0.0f}
+                        {-sq_hw, -sq_hw, 0.0f},
+                        { sq_hw, -sq_hw, 0.0f},
+                        { sq_hw,  sq_hw, 0.0f},
+                        {-sq_hw,  sq_hw, 0.0f}
                     };
 
                     cv::Mat camMat = (cv::Mat_<double>(3, 3) << effective_focal, 0.0, frame.cols / 2.0,

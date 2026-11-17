@@ -253,3 +253,33 @@ TEST(VisionProcessingTest, TriangularCentroidGeometry) {
     // Midpoint would have been 10 + 30 = 40.0; centroid must be lower (closer to base)
     EXPECT_GT(expected_cy, bbox.y + bbox.height / 2.0);
 }
+
+// 11. Verify Sim Mode Uses Outer Gate Dimensions (Torus with 0.03m Tube)
+TEST(VisionProcessingTest, SimGateOuterDimensions) {
+    vision::GateDetector detector(vision::FOCAL_LENGTH);
+    detector.setSimMode(true);
+
+    // Create a 320x240 frame containing a pure green square (Gate 3)
+    cv::Mat frame = cv::Mat::zeros(240, 320, CV_8UC3);
+    // Draw green rectangle representing outer edge of square gate (0.41356m wide at 1.5m dist)
+    // At dist = 1.5m, focal = 240 / (2 * tan(35 deg)) = 171.378 px
+    // Expected size in px = 0.41356 * 171.378 / 1.5 = 47 px
+    double focal = 240.0 / (2.0 * std::tan(35.0 * CV_PI / 180.0));
+    double dist_true = 1.50;
+    int sz_px = static_cast<int>(std::round(0.41356 * focal / dist_true));
+    cv::Rect sq_rect(160 - sz_px / 2, 120 - sz_px / 2, sz_px, sz_px);
+    cv::rectangle(frame, sq_rect, cv::Scalar(0, 255, 0), -1);
+
+    auto results = detector.detectAllGates(frame, false);
+    ASSERT_FALSE(results.empty());
+
+    bool found_square = false;
+    for (const auto& r : results) {
+        if (r.shape == "Square") {
+            found_square = true;
+            // Estimated distance must match true physical distance within 3%
+            EXPECT_NEAR(r.posZ_m, dist_true, 0.05);
+        }
+    }
+    EXPECT_TRUE(found_square);
+}

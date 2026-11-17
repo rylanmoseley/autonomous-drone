@@ -881,3 +881,139 @@ TEST(AutopilotTest, PerceptionAttitudeCompounding) {
     float norm = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
     EXPECT_NEAR(norm, 1.0f, 1e-4);
 }
+
+// 19. Verify Side-by-Side 3-Gate Mission (Circle -> Triangle -> Square)
+// When Gate 2 times out and is re-detected from behind with inverted visual yaw,
+// the corridor must NOT flip, Gate 2 must be traversed exactly once in the correct orientation,
+// and Gate 3 must be entered cleanly without clipping the rim.
+TEST(AutopilotTest, SideBySideTimeoutReobservationSinglePassCleanTraversal) {
+    AutopilotNode node;
+
+    UICommandPacket cmd_pkt = {};
+    cmd_pkt.msg_type = MSG_TYPE_UI_CMD;
+    cmd_pkt.command = UI_CMD_START_MISSION;
+    cmd_pkt.sequence_length = 3;
+    cmd_pkt.goal_sequence[0] = SHAPE_CIRCLE;
+    cmd_pkt.goal_sequence[1] = SHAPE_TRIANGLE;
+    cmd_pkt.goal_sequence[2] = SHAPE_SQUARE;
+    cmd_pkt.end_action = MISSION_END_LAND;
+    node.handleCommand(cmd_pkt);
+
+    Pose current = {0.0, -1.3, 1.0, 0, 0, 0, 0, 1.0};
+    double dt = 0.05;
+
+    // All 3 gates at X=2.5, yaw = 0.0:
+    // Gate 1 (Circle):   (2.5, -1.3, 1.0)
+    // Gate 2 (Triangle): (2.5,  0.0, 1.0)
+    // Gate 3 (Square):   (2.5,  1.3, 1.0)
+    VisionPacket v_pkt = {};
+    v_pkt.msg_type = MSG_TYPE_VISION;
+    v_pkt.num_goals_reported = 3;
+
+    v_pkt.goals[0].shape_type = SHAPE_CIRCLE;
+    v_pkt.goals[0].is_detected = 1;
+    v_pkt.goals[0].num_hypotheses = 1;
+    v_pkt.goals[0].hypotheses[0].position_cam = {2.5f, -1.3f, 1.0f};
+    v_pkt.goals[0].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f};
+    v_pkt.goals[0].hypotheses[0].confidence = 0.98f;
+
+    v_pkt.goals[1].shape_type = SHAPE_TRIANGLE;
+    v_pkt.goals[1].is_detected = 1;
+    v_pkt.goals[1].num_hypotheses = 1;
+    v_pkt.goals[1].hypotheses[0].position_cam = {2.5f, 0.0f, 1.0f};
+    v_pkt.goals[1].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f};
+    v_pkt.goals[1].hypotheses[0].confidence = 0.98f;
+
+    v_pkt.goals[2].shape_type = SHAPE_SQUARE;
+    v_pkt.goals[2].is_detected = 1;
+    v_pkt.goals[2].num_hypotheses = 1;
+    v_pkt.goals[2].hypotheses[0].position_cam = {2.5f, 1.3f, 1.0f};
+    v_pkt.goals[2].hypotheses[0].orientation_cam = {1.0f, 0.0f, 0.0f, 0.0f};
+    v_pkt.goals[2].hypotheses[0].confidence = 0.98f;
+
+    // Initial detection at takeoff (t = 1.0)
+    node.getEstimator().updateEstimates(v_pkt, 1.0);
+
+    // Takeoff to PATH_FOLLOWING
+    node.tick(current, dt);
+    node.tick(current, dt);
+
+    // Complete Gate 1 forward (+X)
+    int ticks = 0;
+    while (node.current_seq_index == 0 && ticks < 200) {
+        node.getEstimator().updateEstimates(v_pkt, 1.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    EXPECT_EQ(node.current_seq_index, 1u);
+    EXPECT_GT(current.x, 3.0); // Exited Gate 1 at X > 3.0
+
+    // Advance time by 3.0s so Gate 2 estimator entry times out (t = 5.0)
+    // When looking at Gate 2 from behind, vision reports opposite yaw (pi)
+    VisionPacket v_behind = v_pkt;
+    v_behind.goals[1].hypotheses[0].orientation_cam = {0.0f, 0.0f, 0.0f, 1.0f}; // yaw = pi
+
+    // Run kinematic loop through Gate 2 backwards (-X traversal)
+    int triangle_pass_count = 0;
+    bool was_in_triangle_zone = false;
+    ticks = 0;
+    while (node.current_seq_index == 1 && ticks < 250) {
+        node.getEstimator().updateEstimates(v_behind, 5.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+
+        // Corridor must remain locked in -X direction
+        EXPECT_LT(node.approach_dx, -0.5);
+
+        // Check if drone passes through Gate 2 aperture (X in [2.35, 2.65] and Y in [-0.2, 0.2])
+        bool in_zone = (std::abs(current.x - 2.5) < 0.15 && std::abs(current.y - 0.0) < 0.25);
+        if (in_zone && !was_in_triangle_zone) {
+            triangle_pass_count++;
+        }
+        was_in_triangle_zone = in_zone;
+
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    // Gate 2 completed!
+    EXPECT_EQ(node.current_seq_index, 2u);
+    // CRITICAL: Gate 2 must have been traversed EXACTLY ONCE, never twice!
+    EXPECT_EQ(triangle_pass_count, 1);
+    // Drone must have exited on the -X side (X <= 2.1)
+    EXPECT_LE(current.x, 2.1);
+
+    // Now targeting Gate 3 (Square). Approach must be from front (+X traversal, approach_dx = +1.0)
+    FlightCommand cmd_sq = node.tick(current, dt);
+    EXPECT_GT(node.approach_dx, 0.5); // Must enter from front (+X)!
+    EXPECT_LT(cmd_sq.target_x, 2.0);   // Entrance standoff is in front (X < 2.0)
+
+    // Complete Gate 3 forward (+X)
+    ticks = 0;
+    while (node.current_seq_index == 2 && ticks < 250) {
+        node.getEstimator().updateEstimates(v_pkt, 10.0 + ticks * dt);
+        FlightCommand cmd = node.tick(current, dt);
+        if (cmd.enable) {
+            current.x = cmd.target_x;
+            current.y = cmd.target_y;
+            current.z = cmd.target_z;
+            current.yaw = cmd.target_yaw;
+        }
+        ticks++;
+    }
+
+    // Mission sequence fully completed!
+    EXPECT_EQ(node.current_seq_index, 3u);
+    EXPECT_GT(current.x, 3.0); // Exited Gate 3 on +X side
+}

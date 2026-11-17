@@ -393,8 +393,20 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                             obstacles.push_back({g.pose.x, g.pose.y, g.pose.z, g.shape_type});
                         }
                         Pose ref_pose = current_pose;
-                        active_orthogonal_path_ = planner.generateOrthogonalPath(
+                        PathPlanner::OrthogonalPath new_path = planner.generateOrthogonalPath(
                             raw_target, ref_pose, obstacles, 0.75, active_orthogonal_path_.traversal_sign);
+                        // Traversal corridor stability: ensure new_path maintains the established traversal direction
+                        double dot_corridor = new_path.normal_x * approach_dx +
+                                              new_path.normal_y * approach_dy +
+                                              new_path.normal_z * approach_dz;
+                        if (dot_corridor < 0.0) {
+                            std::swap(new_path.entry_point, new_path.exit_point);
+                            new_path.normal_x = -new_path.normal_x;
+                            new_path.normal_y = -new_path.normal_y;
+                            new_path.normal_z = -new_path.normal_z;
+                            new_path.traversal_sign = -new_path.traversal_sign;
+                        }
+                        active_orthogonal_path_ = new_path;
                         approach_dx = active_orthogonal_path_.normal_x;
                         approach_dy = active_orthogonal_path_.normal_y;
                         approach_dz = active_orthogonal_path_.normal_z;
@@ -494,8 +506,10 @@ FlightCommand AutopilotNode::tick(const Pose& current_pose, double dt) {
                             sequencer.standoff_ticks = 0;
                             sequencer.seek_ticks = 0;
                             sequencer.traverse_ticks = 0;
-                            sequencer.new_goal = true;
-                            updateApproachDirection(stale_goal.pose);
+                            sequencer.new_goal = false;
+                            if (!has_orthogonal_path_) {
+                                updateApproachDirection(stale_goal.pose);
+                            }
                             Pose standoff_target_entry = planner.planStandoffTarget(
                                 current_pose, stale_goal.pose, approach_dx, approach_dy).entrance_standoff;
                             cmd = planner.plan(current_pose, standoff_target_entry, dt);
