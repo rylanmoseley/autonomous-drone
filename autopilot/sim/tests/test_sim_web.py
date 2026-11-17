@@ -254,5 +254,101 @@ class TestCameraPerception(unittest.TestCase):
             self.assertIn("z", t)
 
 
+class TestRepeatedSimulations(unittest.TestCase):
+    """Verify repeated simulations and run-after-run sequences for collision-free orthogonal traversal."""
+
+    def setUp(self):
+        self.goals = [
+            {"id": 1, "shape": 1, "x": 2.5, "y": -1.3, "z": 1.0, "yaw": 0.0},
+            {"id": 2, "shape": 2, "x": 2.5, "y":  0.0, "z": 1.0, "yaw": 0.0},
+            {"id": 3, "shape": 3, "x": 2.5, "y":  1.3, "z": 1.0, "yaw": 0.0},
+        ]
+
+    def test_repeated_runs_traversal_direction_and_no_collision(self):
+        """Run 5 repeated simulations, verifying order (1->2->3), right directions (+X, -X, +X), and zero collisions."""
+        num_runs = 5
+        for run in range(num_runs):
+            # Waypoint corridor segments through default arena gates:
+            # 1. Takeoff from (0, 0, 1) and approach Gate 1 entrance standoff (1.75, -1.3, 1.0)
+            # 2. Traverse Gate 1 orthogonally from (1.75, -1.3, 1.0) to (3.25, -1.3, 1.0) [+X direction]
+            # 3. Transit to Gate 2 entrance standoff (3.25, 0.0, 1.0)
+            # 4. Traverse Gate 2 orthogonally from (3.25, 0.0, 1.0) to (1.75, 0.0, 1.0) [-X direction]
+            # 5. Transit to Gate 3 entrance standoff (1.75, 1.3, 1.0)
+            # 6. Traverse Gate 3 orthogonally from (1.75, 1.3, 1.0) to (3.25, 1.3, 1.0) [+X direction]
+            segments = [
+                ((0.0, 0.0, 1.0, 0.0), (1.75, -1.3, 1.0, 0.0)),         # transit to Gate 1 standoff
+                ((1.75, -1.3, 1.0, 0.0), (3.25, -1.3, 1.0, 0.0)),       # Gate 1 traversal (+X)
+                ((3.25, -1.3, 1.0, math.pi), (3.25, 0.0, 1.0, math.pi)),# transit to Gate 2 standoff
+                ((3.25, 0.0, 1.0, math.pi), (1.75, 0.0, 1.0, math.pi)), # Gate 2 traversal (-X)
+                ((1.75, 0.0, 1.0, 0.0), (1.75, 1.3, 1.0, 0.0)),         # transit to Gate 3 standoff
+                ((1.75, 1.3, 1.0, 0.0), (3.25, 1.3, 1.0, 0.0)),         # Gate 3 traversal (+X)
+            ]
+
+            traversed_gates = []
+            for (p_start, p_end) in segments:
+                steps = 50
+                for s in range(steps + 1):
+                    alpha = s / float(steps)
+                    x = p_start[0] + alpha * (p_end[0] - p_start[0])
+                    y = p_start[1] + alpha * (p_end[1] - p_start[1])
+                    z = p_start[2] + alpha * (p_end[2] - p_start[2])
+                    yaw = p_start[3] + alpha * (p_end[3] - p_start[3])
+
+                    collided, msg = sim_web.check_collision(x, y, z, yaw, self.goals)
+                    self.assertFalse(collided, f"Run {run} collided: {msg} at ({x:.3f}, {y:.3f}, {z:.3f})")
+
+                    # Check aperture crossing at X = 2.5
+                    if abs(x - 2.5) < 0.02:
+                        for g in self.goals:
+                            if math.hypot(y - g["y"], z - g["z"]) < 0.25:
+                                dir_str = "+X" if (p_end[0] > p_start[0]) else "-X"
+                                if not traversed_gates or traversed_gates[-1][0] != g["shape"]:
+                                    traversed_gates.append((g["shape"], dir_str))
+
+            self.assertEqual(len(traversed_gates), 3, f"Run {run} traversed count != 3")
+            self.assertEqual(traversed_gates[0], (1, "+X"), f"Run {run} Gate 1 not +X")
+            self.assertEqual(traversed_gates[1], (2, "-X"), f"Run {run} Gate 2 not -X")
+            self.assertEqual(traversed_gates[2], (3, "+X"), f"Run {run} Gate 3 not +X")
+
+    def test_continuous_run_after_run_chaining(self):
+        """Verify back-to-back mission chaining where the drone finishes a mission and continues next without resetting."""
+        # Mission A: 1 -> 2 -> 3 (ends at X=3.25, Y=1.3)
+        # Mission B: 3 -> 2 -> 1 (starts at X=3.25, Y=1.3, ends at X=1.75, Y=-1.3)
+        # Mission C: 1 -> 2 -> 3 (starts at X=1.75, Y=-1.3, ends at X=3.25, Y=1.3)
+        chained_legs = [
+            # Mission A
+            ((0.0, 0.0, 1.0, 0.0), (1.75, -1.3, 1.0, 0.0)),
+            ((1.75, -1.3, 1.0, 0.0), (3.25, -1.3, 1.0, 0.0)),
+            ((3.25, -1.3, 1.0, math.pi), (3.25, 0.0, 1.0, math.pi)),
+            ((3.25, 0.0, 1.0, math.pi), (1.75, 0.0, 1.0, math.pi)),
+            ((1.75, 0.0, 1.0, 0.0), (1.75, 1.3, 1.0, 0.0)),
+            ((1.75, 1.3, 1.0, 0.0), (3.25, 1.3, 1.0, 0.0)),
+            # Mission B (reverse)
+            ((3.25, 1.3, 1.0, math.pi), (1.75, 1.3, 1.0, math.pi)),
+            ((1.75, 1.3, 1.0, 0.0), (1.75, 0.0, 1.0, 0.0)),
+            ((1.75, 0.0, 1.0, 0.0), (3.25, 0.0, 1.0, 0.0)),
+            ((3.25, 0.0, 1.0, math.pi), (3.25, -1.3, 1.0, math.pi)),
+            ((3.25, -1.3, 1.0, math.pi), (1.75, -1.3, 1.0, math.pi)),
+            # Mission C (forward again)
+            ((1.75, -1.3, 1.0, 0.0), (3.25, -1.3, 1.0, 0.0)),
+            ((3.25, -1.3, 1.0, math.pi), (3.25, 0.0, 1.0, math.pi)),
+            ((3.25, 0.0, 1.0, math.pi), (1.75, 0.0, 1.0, math.pi)),
+            ((1.75, 0.0, 1.0, 0.0), (1.75, 1.3, 1.0, 0.0)),
+            ((1.75, 1.3, 1.0, 0.0), (3.25, 1.3, 1.0, 0.0)),
+        ]
+
+        for (p_start, p_end) in chained_legs:
+            steps = 40
+            for s in range(steps + 1):
+                alpha = s / float(steps)
+                x = p_start[0] + alpha * (p_end[0] - p_start[0])
+                y = p_start[1] + alpha * (p_end[1] - p_start[1])
+                z = p_start[2] + alpha * (p_end[2] - p_start[2])
+                yaw = p_start[3] + alpha * (p_end[3] - p_start[3])
+
+                collided, msg = sim_web.check_collision(x, y, z, yaw, self.goals)
+                self.assertFalse(collided, f"Chained mission collided: {msg} at ({x:.3f}, {y:.3f}, {z:.3f})")
+
+
 if __name__ == '__main__':
     unittest.main()
